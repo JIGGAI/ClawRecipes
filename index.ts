@@ -180,6 +180,19 @@ type AgentConfigSnippet = {
   tools?: { profile?: string; allow?: string[]; deny?: string[] };
 };
 
+type BindingMatch = {
+  channel: string;
+  accountId?: string;
+  peer?: { kind: "direct" | "group"; id: string };
+  guildId?: string;
+  teamId?: string;
+};
+
+type BindingSnippet = {
+  agentId: string;
+  match: BindingMatch;
+};
+
 function upsertAgentInConfig(cfgObj: any, snippet: AgentConfigSnippet) {
   if (!cfgObj.agents) cfgObj.agents = {};
   if (!Array.isArray(cfgObj.agents.list)) cfgObj.agents.list = [];
@@ -242,6 +255,43 @@ function ensureMainFirstInAgentsList(cfgObj: any, api: OpenClawPluginApi) {
   list.unshift(main);
 }
 
+function stableStringify(x: any) {
+  const seen = new WeakSet();
+  const sortObj = (v: any): any => {
+    if (v && typeof v === "object") {
+      if (seen.has(v)) return "[Circular]";
+      seen.add(v);
+      if (Array.isArray(v)) return v.map(sortObj);
+      const out: any = {};
+      for (const k of Object.keys(v).sort()) out[k] = sortObj(v[k]);
+      return out;
+    }
+    return v;
+  };
+  return JSON.stringify(sortObj(x));
+}
+
+function upsertBindingInConfig(cfgObj: any, binding: BindingSnippet) {
+  if (!Array.isArray(cfgObj.bindings)) cfgObj.bindings = [];
+  const list: any[] = cfgObj.bindings;
+
+  const sig = stableStringify({ agentId: binding.agentId, match: binding.match });
+  const idx = list.findIndex((b) => stableStringify({ agentId: b?.agentId, match: b?.match }) === sig);
+
+  if (idx >= 0) {
+    // Update in place (preserve ordering)
+    list[idx] = { ...list[idx], ...binding };
+    return { changed: false, note: "already-present" as const };
+  }
+
+  // Most-specific-first: if a peer match is specified, insert at front so it wins.
+  // Otherwise append.
+  if (binding.match?.peer) list.unshift(binding);
+  else list.push(binding);
+
+  return { changed: true, note: "added" as const };
+}
+
 async function applyAgentSnippetsToOpenClawConfig(api: OpenClawPluginApi, snippets: AgentConfigSnippet[]) {
   // Load the latest config from disk (not the snapshot in api.config).
   const current = (api.runtime as any).config?.loadConfig?.();
@@ -260,6 +310,20 @@ async function applyAgentSnippetsToOpenClawConfig(api: OpenClawPluginApi, snippe
 
   await (api.runtime as any).config?.writeConfigFile?.(cfgObj);
   return { updatedAgents: snippets.map((s) => s.id) };
+}
+
+async function applyBindingSnippetsToOpenClawConfig(api: OpenClawPluginApi, snippets: BindingSnippet[]) {
+  const current = (api.runtime as any).config?.loadConfig?.();
+  if (!current) throw new Error("Failed to load config via api.runtime.config.loadConfig()");
+  const cfgObj = (current.cfg ?? current) as any;
+
+  const results: any[] = [];
+  for (const s of snippets) {
+    results.push({ ...s, result: upsertBindingInConfig(cfgObj, s) });
+  }
+
+  await (api.runtime as any).config?.writeConfigFile?.(cfgObj);
+  return { updatedBindings: results };
 }
 
 async function scaffoldAgentFromRecipe(
@@ -399,6 +463,60 @@ const recipesPlugin = {
             }
 
             console.log(JSON.stringify(out, null, 2));
+          });
+
+        cmd
+          .command("bind")
+          .description("Add/update a multi-agent routing binding (writes openclaw.json bindings[])")
+          .requiredOption("--agent-id <agentId>", "Target agent id")
+          .requiredOption("--channel <channel>", "Channel name (telegram|whatsapp|discord|slack|...) ")
+          .option("--account-id <accountId>", "Channel accountId (if applicable)")
+          .option("--peer-kind <kind>", "Peer kind (direct|group)")
+          .option("--peer-id <id>", "Peer id (DM number/id or group id)")
+          .option("--guild-id <guildId>", "Discord guildId")
+          .option("--team-id <teamId>", "Slack teamId")
+          .option("--match <json>", "Full match object as JSON/JSON5 (overrides flags)")
+          .action(async (options: any) => {
+            const agentId = String(options.agentId);
+            let match: BindingMatch;
+
+            if (options.match) {
+              match = JSON5.parse(String(options.match)) as BindingMatch;
+            } else {
+              match = {
+                channel: String(options.channel),
+              };
+              if (options.accountId) match.accountId = String(options.accountId);
+              if (options.guildId) match.guildId = String(options.guildId);
+              if (options.teamId) match.teamId = String(options.teamId);
+
+              if (options.peerKind || options.peerId) {
+                if (!options.peerKind || !options.peerId) {
+                  throw new Error("--peer-kind and --peer-id must be provided together");
+                }
+                const kind = String(options.peerKind);
+                if (kind !== "direct" && kind !== "group") {
+                  throw new Error("--peer-kind must be direct|group");
+                }
+                match.peer = { kind, id: String(options.peerId) };
+              }
+            }
+
+            if (!match?.channel) throw new Error("match.channel is required");
+
+            const res = await applyBindingSnippetsToOpenClawConfig(api, [{ agentId, match }]);
+            console.log(JSON.stringify(res, null, 2));
+            console.error("Binding written. Restart gateway if required for changes to take effect.");
+          });
+
+        cmd
+          .command("bindings")
+          .description("Show current bindings from openclaw config")
+          .action(async () => {
+            const current = (api.runtime as any).config?.loadConfig?.();
+            if (!current) throw new Error("Failed to load config via api.runtime.config.loadConfig()");
+            const cfgObj = (current.cfg ?? current) as any;
+            console.log(JSON.stringify(cfgObj.bindings ?? [], null, 2));
           });
 
         cmd
