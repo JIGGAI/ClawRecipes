@@ -1,5 +1,9 @@
 # Clawcipes (OpenClaw Recipes Plugin)
 
+<p align="center">
+  <img src="./clawcipes_cook.jpg" alt="Clawcipes logo" width="240" />
+</p>
+
 Clawcipes is an OpenClaw plugin that provides **CLI-first recipes** for scaffolding specialist agents and teams from Markdown.
 
 If you like durable workflows: Clawcipes is built around a **file-first team workspace** (inbox/backlog/in-progress/done) that plays nicely with git.
