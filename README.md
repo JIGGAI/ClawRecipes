@@ -55,9 +55,15 @@ The plugin supports these config keys (with defaults):
 Config schema is defined in `openclaw.plugin.json`.
 
 ## Documentation
+Start here:
 - Installation: `docs/INSTALLATION.md`
+- Agents + skills: `docs/AGENTS_AND_SKILLS.md`
+- Tutorial (create a recipe): `docs/TUTORIAL_CREATE_RECIPE.md`
+
+Reference:
 - Commands: `docs/COMMANDS.md`
 - Recipe format: `docs/RECIPE_FORMAT.md`
+- Bundled recipes: `docs/BUNDLED_RECIPES.md`
 - Team workflow: `docs/TEAM_WORKFLOW.md`
 
 (Also see: GitHub repo https://github.com/rjdjohnston/clawcipes)
