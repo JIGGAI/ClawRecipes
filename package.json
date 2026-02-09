@@ -1,7 +1,7 @@
 {
-  "name": "@openclaw/recipes",
+  "name": "@clawcipes/recipes",
   "version": "0.1.0",
-  "description": "OpenClaw Recipes plugin (markdown recipes -> scaffold agents/teams)",
+  "description": "Clawcipes recipes plugin for OpenClaw (markdown recipes -> scaffold agents/teams)",
   "main": "index.ts",
   "type": "commonjs",
   "openclaw": {
@@ -10,7 +10,7 @@
   "scripts": {
     "test": "echo \"(no tests yet)\""
   },
-  "keywords": ["openclaw", "plugin", "recipes"],
+  "keywords": ["openclaw", "clawcipes", "plugin", "recipes"],
   "author": "",
   "license": "MIT",
   "dependencies": {

@@ -10,17 +10,26 @@ This repo is an **OpenClaw plugin** (not a standalone CLI). OpenClaw loads it an
 - (For `recipes install`) you’ll need access to ClawHub (the command runs `npx clawhub@latest ...`).
 
 ## Install
-### Option A: clone from GitHub
+### Option A (preferred): install from npm
+Once published, you can install directly via npm:
+
 ```bash
-git clone https://github.com/rjdjohnston/clawcipes.git ~/Sites/clawcipes
-openclaw plugins install -l ~/Sites/clawcipes
+openclaw plugins install @clawcipes/recipes
+openclaw gateway restart
+openclaw plugins list
+```
+
+### Option B: install from GitHub
+```bash
+git clone https://github.com/rjdjohnston/clawcipes.git ~/clawcipes
+openclaw plugins install --link ~/clawcipes
 openclaw gateway restart
 openclaw plugins list
 ```
 
 ### Option B: already cloned
 ```bash
-openclaw plugins install -l ~/Sites/clawcipes
+openclaw plugins install --link ~/clawcipes
 openclaw gateway restart
 openclaw plugins list
 ```
@@ -40,7 +49,7 @@ openclaw recipes list
 If you pull a newer version from GitHub, restart the gateway so OpenClaw reloads the plugin:
 
 ```bash
-cd ~/Sites/clawcipes
+cd ~/clawcipes
 git pull
 openclaw gateway restart
 ```

@@ -6,9 +6,19 @@ If you like durable workflows: Clawcipes is built around a **file-first team wor
 
 ## Quickstart
 ### 1) Install
+#### Option A (preferred): install from npm
+Once published:
+
 ```bash
-git clone https://github.com/rjdjohnston/clawcipes.git ~/Sites/clawcipes
-openclaw plugins install -l ~/Sites/clawcipes
+openclaw plugins install @clawcipes/recipes
+openclaw gateway restart
+openclaw plugins list
+```
+
+#### Option B: install from GitHub
+```bash
+git clone https://github.com/rjdjohnston/clawcipes.git ~/clawcipes
+openclaw plugins install --link ~/clawcipes
 openclaw gateway restart
 openclaw plugins list
 ```
