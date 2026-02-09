@@ -1,0 +1,21 @@
+{
+  "name": "@openclaw/recipes",
+  "version": "0.1.0",
+  "description": "OpenClaw Recipes plugin (markdown recipes -> scaffold agents/teams)",
+  "main": "index.ts",
+  "type": "commonjs",
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  },
+  "scripts": {
+    "test": "echo \"(no tests yet)\""
+  },
+  "keywords": ["openclaw", "plugin", "recipes"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@sinclair/typebox": "^0.34.48",
+    "json5": "^2.2.3",
+    "yaml": "^2.8.2"
+  }
+}
