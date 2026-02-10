@@ -9,12 +9,13 @@ In OpenClaw, an **agent** is a configured assistant persona with:
 - a **tool policy** (what tools it is allowed to use)
 - a **model** configuration (defaults come from OpenClaw)
 
-In Clawcipes, an agent is typically created by scaffolding a folder like:
+In Clawcipes, a **standalone** agent recipe scaffolds a dedicated workspace like:
 
 ```
-~/.openclaw/workspace/agents/<agentId>/
+~/.openclaw/workspace-<agentId>/
   SOUL.md
   AGENTS.md
+  TOOLS.md
   ...other recipe files...
 ```
 
@@ -92,8 +93,14 @@ openclaw recipes install <skill-slug>
 openclaw recipes install <skill-slug> --yes
 ```
 
-This runs ClawHub under the hood and installs into:
-- `~/.openclaw/workspace/skills/<skill-slug>` (by default)
+This runs ClawHub under the hood and installs into the **current OpenClaw workspace** skills dir:
+- `<workspace>/skills/<skill-slug>`
+
+Examples:
+- standalone agent workspace: `~/.openclaw/workspace-<agentId>/skills/<skill-slug>`
+- team workspace: `~/.openclaw/workspace-<teamId>/skills/<skill-slug>`
+
+> Note: in the new workspace policy, standalone agents live in `~/.openclaw/workspace-<agentId>` and teams live in `~/.openclaw/workspace-<teamId>`. Skill install targeting is still being refined during the experimental phase.
 
 ### Install the skills required by a recipe
 If a recipe declares skills in `requiredSkills` or `optionalSkills`:
@@ -108,7 +115,7 @@ That installs the recipe’s declared skills.
 Clawcipes currently does **not** implement a remove command.
 
 To remove a workspace-local skill:
-- delete the folder: `~/.openclaw/workspace/skills/<skill-slug>`
+- delete the folder: `<workspace>/skills/<skill-slug>`
 - restart: `openclaw gateway restart`
 
 (We can add `openclaw recipes uninstall <slug>` later if you want it to be first-class.)
@@ -118,10 +125,9 @@ Clawcipes does not (yet) include a first-class `remove-team` command.
 
 If you scaffolded a team with `scaffold-team --apply-config`, removal has two parts:
 
-1) Remove the team + agent folders (recommended: send to trash):
+1) Remove the team workspace (recommended: send to trash):
 ```bash
-trash ~/.openclaw/workspace/teams/<teamId>
-trash ~/.openclaw/workspace/agents/<teamId>-*
+trash ~/.openclaw/workspace-<teamId>
 ```
 
 2) Remove the agents from OpenClaw config:
@@ -133,9 +139,26 @@ openclaw gateway restart
 ```
 
 ## Teams: shared workspace + multiple agents
-A **team** recipe scaffolds:
-- a shared team folder under `teams/<teamId>/...`
-- multiple agents under `agents/<teamId>-<role>/...`
+A **team** recipe scaffolds a **shared workspace root** plus role folders:
+
+```
+~/.openclaw/workspace-<teamId>/
+  TEAM.md
+  inbox/
+  outbox/
+  shared/
+  notes/
+  work/
+    backlog/
+    in-progress/
+    done/
+    assignments/
+  roles/
+    <role>/
+      ...role-specific recipe files...
+```
+
+Each role agent is a separate OpenClaw agent id (`<teamId>-<role>`), but they share the same workspace root (`workspace-<teamId>`) so collaboration is file-based.
 
 The shared workspace is the source of truth for:
 - intake (`inbox/`)
@@ -148,7 +171,8 @@ Once an agent exists, there are **two layers** you can update:
 
 ### 1) The agent’s files (workspace)
 Agents are just folders under:
-- `~/.openclaw/workspace/agents/<agentId>/`
+- standalone: `~/.openclaw/workspace-<agentId>/`
+- team roles: `~/.openclaw/workspace-<teamId>/roles/<role>/`
 
 Common files:
 - `SOUL.md` — the persona / operating style
@@ -165,7 +189,7 @@ If the agent was created from a recipe, re-running scaffold with `--overwrite` w
 openclaw recipes scaffold <recipeId> --agent-id <agentId> --overwrite
 ```
 
-For teams, you typically re-run `scaffold-team`:
+For teams, you typically re-run `scaffold-team` (role files live under `roles/<role>/`):
 
 ```bash
 openclaw recipes scaffold-team <recipeId> --team-id <teamId> --overwrite
