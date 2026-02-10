@@ -55,7 +55,7 @@ openclaw recipes dispatch \
 - `openclaw recipes scaffold` (agent → `workspace-<agentId>`)
 - `openclaw recipes scaffold-team` (team → `workspace-<teamId>` + `roles/<role>/`)
 - `openclaw recipes install <idOrSlug> [--yes] [--global|--agent-id <id>|--team-id <id>]` (skills: global or scoped)
-- `openclaw recipes bind|bindings` (multi-agent routing)
+- `openclaw recipes bind|unbind|bindings` (multi-agent routing)
 - `openclaw recipes dispatch ...` (request → inbox + ticket + assignment)
 
 For full details, see `docs/COMMANDS.md`.

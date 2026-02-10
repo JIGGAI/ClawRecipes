@@ -114,6 +114,19 @@ Notes:
 - `peer.kind` must be one of: `dm|group|channel`.
 - Peer-specific bindings are inserted first (more specific wins).
 
+## `unbind`
+Remove routing binding(s) from OpenClaw config (`bindings[]`).
+
+Examples:
+
+```bash
+# Remove a specific DM binding for an agent
+openclaw recipes unbind --agent-id dev --channel telegram --peer-kind dm --peer-id 6477250615
+
+# Remove ALL bindings that match this peer (any agent)
+openclaw recipes unbind --channel telegram --peer-kind dm --peer-id 6477250615
+```
+
 ## `bindings`
 Print the current `bindings[]` from OpenClaw config.
 
