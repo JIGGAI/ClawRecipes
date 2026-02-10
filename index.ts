@@ -996,7 +996,7 @@ const recipesPlugin = {
 
         cmd
           .command("tickets")
-          .description("List tickets for a team (backlog / in-progress / done)")
+          .description("List tickets for a team (backlog / in-progress / testing / done)")
           .requiredOption("--team-id <teamId>", "Team id")
           .option("--json", "Output JSON")
           .action(async (options: any) => {
