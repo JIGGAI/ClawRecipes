@@ -23,5 +23,5 @@ Clawcipes Kitchen is under active development.
 ## Roadmap (high level)
 - Approvals UI (approve/deny + audit trail)
 - Recipe browser and scaffold flows
-- Team dashboards (backlog/in-progress/done)
+- Team dashboards (backlog/in-progress/testing/done)
 - Publishing workflow integration
