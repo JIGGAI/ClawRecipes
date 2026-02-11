@@ -78,6 +78,17 @@ Start here:
 - Agents + skills: `docs/AGENTS_AND_SKILLS.md`
 - Tutorial (create a recipe): `docs/TUTORIAL_CREATE_RECIPE.md`
 
+## Development
+### Scaffold smoke test (regression)
+A lightweight smoke check validates scaffold-team output contains the required testing workflow docs (ticket 0004).
+
+Run:
+- `npm run scaffold:smoke`
+
+Notes:
+- Creates a temporary `workspace-smoke-<timestamp>-team` under `~/.openclaw/` and then deletes it.
+- Exits non-zero on mismatch.
+
 Reference:
 - Commands: `docs/COMMANDS.md`
 - Recipe format: `docs/RECIPE_FORMAT.md`
