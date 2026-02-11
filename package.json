@@ -21,7 +21,8 @@
     "README.md"
   ],
   "scripts": {
-    "test": "echo \"(no tests yet)\""
+    "test": "npm run smoke",
+    "smoke": "node scripts/scaffold-smoke.mjs"
   },
   "keywords": [
     "openclaw",
