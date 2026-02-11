@@ -17,12 +17,7 @@ cronJobs:
     timezone: "America/New_York"
     message: "Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md."
     enabledByDefault: false
-  - id: pr-watcher
-    name: "PR watcher"
-    schedule: "*/30 7-23 * * 1-5"
-    timezone: "America/New_York"
-    message: "Automated PR watcher: check open PRs for review/merge readiness and update notes/status.md."
-    enabledByDefault: false
+  # pr-watcher omitted (enable only when a real PR integration exists)
 requiredSkills: []
 team:
   teamId: research-team
