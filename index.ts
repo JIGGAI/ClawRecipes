@@ -9,6 +9,12 @@ import { renderTeamMd, renderTicketsMd } from "./src/lib/scaffold-templates";
 import { upsertBindingInConfig as upsertBindingInConfigCore } from "./src/lib/bindings";
 import { handoffTicket as handoffTicketCore } from "./src/lib/ticket-workflow";
 import { ensureLaneDir, RecipesCliError } from "./src/lib/lanes";
+import {
+  DEFAULT_ALLOWED_PREFIXES,
+  DEFAULT_PROTECTED_TEAM_IDS,
+  executeWorkspaceCleanup,
+  planWorkspaceCleanup,
+} from "./src/lib/cleanup-workspaces";
 
 type RecipesConfig = {
   workspaceRecipesDir?: string;
@@ -1988,6 +1994,74 @@ const recipesPlugin = {
               ),
             );
           });
+
+        cmd
+          .command("cleanup-workspaces")
+          .description("Dry-run (default) or delete temporary scaffold/test workspaces under ~/.openclaw with safety rails")
+          .option("--yes", "Actually delete eligible workspaces (otherwise: dry-run)")
+          .option("--dry-run", "Force dry-run (lists candidates; deletes nothing)")
+          .option(
+            "--prefix <prefix>",
+            `Allowed teamId prefix (repeatable). Default: ${DEFAULT_ALLOWED_PREFIXES.join(", ")}`,
+            (val: string, acc: string[]) => {
+              acc.push(String(val));
+              return acc;
+            },
+            [] as string[],
+          )
+          .option("--json", "Output JSON")
+          .action(async (options: any) =>
+            runRecipesCommand("openclaw recipes cleanup-workspaces", async () => {
+              const baseWorkspace = api.config.agents?.defaults?.workspace;
+              if (!baseWorkspace) throw new Error("agents.defaults.workspace is not set in config");
+
+              // Workspaces live alongside the default workspace (same parent dir): ~/.openclaw/workspace-*
+              const rootDir = path.resolve(baseWorkspace, "..");
+
+              const prefixes: string[] = (options.prefix as string[])?.length ? (options.prefix as string[]) : [...DEFAULT_ALLOWED_PREFIXES];
+              const protectedTeamIds: string[] = [...DEFAULT_PROTECTED_TEAM_IDS];
+
+              const plan = await planWorkspaceCleanup({ rootDir, prefixes, protectedTeamIds });
+              const yes = Boolean(options.yes) && !Boolean(options.dryRun);
+              const result = await executeWorkspaceCleanup(plan, { yes });
+
+              if (options.json) {
+                console.log(JSON.stringify(result, null, 2));
+                return;
+              }
+
+              const candidates = result.candidates;
+              const skipped = result.skipped;
+
+              console.log(`Root: ${result.rootDir}`);
+              console.log(`Mode: ${result.dryRun ? "dry-run" : "delete"}`);
+              console.log(`Allowed prefixes: ${prefixes.join(", ")}`);
+              console.log(`Protected teams: ${protectedTeamIds.join(", ")}`);
+
+              console.log(`\nCandidates (${candidates.length})`);
+              for (const c of candidates) console.log(`- ${c.dirName}`);
+
+              console.log(`\nSkipped (${skipped.length})`);
+              for (const s of skipped) {
+                const label = s.dirName + (s.teamId ? ` (${s.teamId})` : "");
+                console.log(`- ${label}: ${s.reason}`);
+              }
+
+              if (result.dryRun) {
+                console.log(`\nDry-run complete. Re-run with --yes to delete the ${candidates.length} candidate(s).`);
+                return;
+              }
+
+              console.log(`\nDeleted (${result.deleted.length})`);
+              for (const p of result.deleted) console.log(`- ${p}`);
+
+              if ((result as any).deleteErrors?.length) {
+                console.log(`\nDelete errors (${(result as any).deleteErrors.length})`);
+                for (const e of (result as any).deleteErrors) console.log(`- ${e.path}: ${e.error}`);
+                process.exitCode = 1;
+              }
+            }),
+          );
       },
       { commands: ["recipes"] },
     );

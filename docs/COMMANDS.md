@@ -165,6 +165,31 @@ openclaw recipes tickets --team-id <teamId>
 openclaw recipes tickets --team-id <teamId> --json
 ```
 
+## `cleanup-workspaces`
+List (dry-run, default) or delete (with `--yes`) temporary test/scaffold team workspaces under your OpenClaw home directory.
+
+Safety rails:
+- Only considers `workspace-<teamId>` directories where `<teamId>`:
+  - ends with `-team`
+  - starts with an allowed prefix (default: `smoke-`, `qa-`, `tmp-`, `test-`)
+- Refuses symlinks
+- Protected teams (at minimum: `development-team`) are never deleted
+
+Examples:
+```bash
+# Dry-run (default): list what would be deleted
+openclaw recipes cleanup-workspaces
+
+# Actually delete eligible workspaces
+openclaw recipes cleanup-workspaces --yes
+
+# Custom prefixes (repeatable)
+openclaw recipes cleanup-workspaces --prefix smoke- --prefix qa- --yes
+
+# JSON output
+openclaw recipes cleanup-workspaces --json
+```
+
 ## `move-ticket`
 Move a ticket file between workflow stages and update the ticket’s `Status:` field.
 

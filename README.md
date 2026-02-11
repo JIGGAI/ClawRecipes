@@ -57,7 +57,8 @@ openclaw recipes dispatch \
 - `openclaw recipes install <idOrSlug> [--yes] [--global|--agent-id <id>|--team-id <id>]` (skills: global or scoped)
 - `openclaw recipes bind|unbind|bindings` (multi-agent routing)
 - `openclaw recipes dispatch ...` (request → inbox + ticket + assignment)
-- `openclaw recipes tickets|move-ticket|assign|take|complete` (file-first ticket workflow)
+- `openclaw recipes tickets|move-ticket|assign|take|handoff|complete` (file-first ticket workflow)
+- `openclaw recipes cleanup-workspaces` (safe cleanup of temporary test/scaffold workspaces)
 
 For full details, see `docs/COMMANDS.md`.
 
