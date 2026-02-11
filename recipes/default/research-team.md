@@ -69,6 +69,7 @@ templates:
     - inbox/ — intake requests
     - work/backlog/ — tickets (filename ordered: 0001-...)
     - work/in-progress/ — active tickets
+    - work/testing/ — verification / fact-check / review
     - work/done/ — completed tickets + DONE notes
     - work/sources/ — source links + captured quotes
     - work/notes/ — working notes
@@ -84,7 +85,8 @@ templates:
     1) Read new items in inbox/
     2) Create a normalized ticket in work/backlog/
     3) Assign an owner (researcher/fact-checker/summarizer)
-    4) When done, consolidate into outbox/
+    4) When ready for verification, move the ticket to work/testing/
+    5) After verification, move to work/done/ and consolidate into outbox/
 
   researcher.soul: |
     # SOUL.md
@@ -130,6 +132,10 @@ templates:
       - confidence level (high/med/low)
 
     - Write results in work/notes/fact-check-<ticket>.md.
+
+    ## QA verification
+    - When verification is complete, record results using notes/QA_CHECKLIST.md.
+    - Preferred: create work/testing/<ticket>.testing-verified.md.
 
   summarizer.soul: |
     # SOUL.md
