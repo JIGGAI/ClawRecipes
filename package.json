@@ -22,7 +22,8 @@
   ],
   "scripts": {
     "test": "npm run smoke",
-    "smoke": "node scripts/scaffold-smoke.mjs"
+    "smoke": "node scripts/scaffold-smoke.mjs",
+    "scaffold:smoke": "node scripts/scaffold-smoke.mjs"
   },
   "keywords": [
     "openclaw",
