@@ -21,7 +21,8 @@
     "README.md"
   ],
   "scripts": {
-    "test": "npm run smoke",
+    "test": "vitest run",
+    "test:smoke": "node scripts/scaffold-smoke.mjs",
     "smoke": "node scripts/scaffold-smoke.mjs",
     "scaffold:smoke": "node scripts/scaffold-smoke.mjs"
   },
@@ -37,5 +38,8 @@
     "@sinclair/typebox": "^0.34.48",
     "json5": "^2.2.3",
     "yaml": "^2.8.2"
+  },
+  "devDependencies": {
+    "vitest": "^3.2.4"
   }
 }

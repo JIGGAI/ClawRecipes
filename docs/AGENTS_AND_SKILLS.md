@@ -151,6 +151,7 @@ A **team** recipe scaffolds a **shared workspace root** plus role folders:
   work/
     backlog/
     in-progress/
+    testing/
     done/
     assignments/
   roles/
@@ -162,7 +163,7 @@ Each role agent is a separate OpenClaw agent id (`<teamId>-<role>`), but they sh
 
 The shared workspace is the source of truth for:
 - intake (`inbox/`)
-- work queue (`work/backlog`, `work/in-progress`, `work/done`)
+- work queue (`work/backlog`, `work/in-progress`, `work/testing`, `work/done`)
 - assignments (`work/assignments`)
 - deliverables (`outbox/`)
 

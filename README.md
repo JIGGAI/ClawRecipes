@@ -79,11 +79,15 @@ Start here:
 - Tutorial (create a recipe): `docs/TUTORIAL_CREATE_RECIPE.md`
 
 ## Development
+### Unit tests (vitest)
+Run:
+- `npm test`
+
 ### Scaffold smoke test (regression)
 A lightweight smoke check validates scaffold-team output contains the required testing workflow docs (ticket 0004).
 
 Run:
-- `npm run scaffold:smoke`
+- `npm run test:smoke` (or `npm run scaffold:smoke`)
 
 Notes:
 - Creates a temporary `workspace-smoke-<timestamp>-team` under `~/.openclaw/` and then deletes it.

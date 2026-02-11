@@ -188,7 +188,7 @@ openclaw recipes assign --team-id <teamId> --ticket 0007 --owner dev
 openclaw recipes assign --team-id <teamId> --ticket 0007 --owner lead
 ```
 
-Owners (current): `dev|devops|lead`.
+Owners (current): `dev|devops|lead|test`.
 
 ## `take`
 Shortcut: assign + move to in-progress.
@@ -196,6 +196,18 @@ Shortcut: assign + move to in-progress.
 ```bash
 openclaw recipes take --team-id <teamId> --ticket 0007 --owner dev
 ```
+
+## `handoff`
+QA handoff in one step: move a ticket to `work/testing/`, set `Status: testing`, assign to a tester (default `test`), and write/update the assignment stub.
+
+```bash
+openclaw recipes handoff --team-id <teamId> --ticket 0007
+openclaw recipes handoff --team-id <teamId> --ticket 0007 --tester test
+```
+
+Notes:
+- Creates `work/testing/` if missing.
+- Idempotent: if the ticket is already in `work/testing/`, it won’t re-move it; it will ensure fields + assignment stub.
 
 ## `complete`
 Shortcut: move to done + ensure `Status: done` + add `Completed:` timestamp.
@@ -214,7 +226,7 @@ openclaw recipes dispatch \
 Options:
 - `--team-id <teamId>` (required)
 - `--request <text>` (optional; prompts in TTY)
-- `--owner dev|devops|lead` (default: `dev`)
+- `--owner dev|devops|lead|test` (default: `dev`)
 - `--yes` (skip review prompt)
 
 Creates (createOnly):

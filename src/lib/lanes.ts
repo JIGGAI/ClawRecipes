@@ -1,0 +1,63 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
+export type TicketLane = 'backlog' | 'in-progress' | 'testing' | 'done' | 'assignments';
+
+export class RecipesCliError extends Error {
+  code: string;
+  command?: string;
+  missingPath?: string;
+  suggestedFix?: string;
+
+  constructor(opts: { message: string; code: string; command?: string; missingPath?: string; suggestedFix?: string }) {
+    super(opts.message);
+    this.name = 'RecipesCliError';
+    this.code = opts.code;
+    this.command = opts.command;
+    this.missingPath = opts.missingPath;
+    this.suggestedFix = opts.suggestedFix;
+  }
+}
+
+async function fileExists(p: string) {
+  try {
+    await fs.stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ensure a lane dir exists, with a one-line migration hint for older workspaces.
+ *
+ * If creation fails, throws a RecipesCliError with an actionable message.
+ */
+export async function ensureLaneDir(opts: { teamDir: string; lane: TicketLane; command?: string; quiet?: boolean }) {
+  const laneDir = path.join(opts.teamDir, 'work', opts.lane);
+  const existed = await fileExists(laneDir);
+
+  if (!existed) {
+    try {
+      await fs.mkdir(laneDir, { recursive: true });
+    } catch (e: any) {
+      throw new RecipesCliError({
+        code: 'LANE_DIR_CREATE_FAILED',
+        command: opts.command,
+        missingPath: laneDir,
+        suggestedFix: `mkdir -p ${path.join('work', opts.lane)}`,
+        message:
+          `Failed to create required lane directory: ${laneDir}` +
+          (opts.command ? ` (command: ${opts.command})` : '') +
+          (e?.message ? `\nUnderlying error: ${String(e.message)}` : ''),
+      });
+    }
+
+    if (!opts.quiet) {
+      const rel = path.join('work', opts.lane);
+      console.error(`[recipes] migration: created ${rel}/ (older workspace missing this lane)`);
+    }
+  }
+
+  return { path: laneDir, created: !existed };
+}

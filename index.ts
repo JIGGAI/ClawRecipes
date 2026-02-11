@@ -5,6 +5,11 @@ import crypto from "node:crypto";
 import JSON5 from "json5";
 import YAML from "yaml";
 
+import { renderTeamMd, renderTicketsMd } from "./src/lib/scaffold-templates";
+import { upsertBindingInConfig as upsertBindingInConfigCore } from "./src/lib/bindings";
+import { handoffTicket as handoffTicketCore } from "./src/lib/ticket-workflow";
+import { ensureLaneDir, RecipesCliError } from "./src/lib/lanes";
+
 type RecipesConfig = {
   workspaceRecipesDir?: string;
   workspaceAgentsDir?: string;
@@ -186,6 +191,34 @@ async function detectMissingSkills(installDir: string, skills: string[]) {
 
 async function ensureDir(p: string) {
   await fs.mkdir(p, { recursive: true });
+}
+
+function formatRecipesCliError(commandLabel: string, err: unknown) {
+  if (err instanceof RecipesCliError) {
+    const lines = [
+      `[recipes] ERROR: ${err.message}`,
+      `- command: ${err.command ?? commandLabel}`,
+      ...(err.missingPath ? [`- path: ${err.missingPath}`] : []),
+      ...(err.suggestedFix ? [`- suggested fix: ${err.suggestedFix}`] : []),
+    ];
+    return lines.join("\n");
+  }
+
+  if (err instanceof Error) {
+    return `[recipes] ERROR: ${err.message}\n- command: ${commandLabel}`;
+  }
+
+  return `[recipes] ERROR: ${String(err)}\n- command: ${commandLabel}`;
+}
+
+async function runRecipesCommand<T>(commandLabel: string, fn: () => Promise<T>): Promise<T | null> {
+  try {
+    return await fn();
+  } catch (err) {
+    console.error(formatRecipesCliError(commandLabel, err));
+    process.exitCode = process.exitCode && process.exitCode !== 0 ? process.exitCode : 1;
+    return null;
+  }
 }
 
 type CronInstallMode = "off" | "prompt" | "on";
@@ -565,24 +598,7 @@ function stableStringify(x: any) {
 }
 
 function upsertBindingInConfig(cfgObj: any, binding: BindingSnippet) {
-  if (!Array.isArray(cfgObj.bindings)) cfgObj.bindings = [];
-  const list: any[] = cfgObj.bindings;
-
-  const sig = stableStringify({ agentId: binding.agentId, match: binding.match });
-  const idx = list.findIndex((b) => stableStringify({ agentId: b?.agentId, match: b?.match }) === sig);
-
-  if (idx >= 0) {
-    // Update in place (preserve ordering)
-    list[idx] = { ...list[idx], ...binding };
-    return { changed: false, note: "already-present" as const };
-  }
-
-  // Most-specific-first: if a peer match is specified, insert at front so it wins.
-  // Otherwise append.
-  if (binding.match?.peer) list.unshift(binding);
-  else list.push(binding);
-
-  return { changed: true, note: "added" as const };
+  return upsertBindingInConfigCore(cfgObj, binding);
 }
 
 function removeBindingsInConfig(cfgObj: any, opts: { agentId?: string; match: BindingMatch }) {
@@ -1350,11 +1366,12 @@ const recipesPlugin = {
           .requiredOption("--to <stage>", "Destination stage: backlog|in-progress|testing|done")
           .option("--completed", "When moving to done, add Completed: timestamp")
           .option("--yes", "Skip confirmation")
-          .action(async (options: any) => {
-            const workspaceRoot = api.config.agents?.defaults?.workspace;
-            if (!workspaceRoot) throw new Error("agents.defaults.workspace is not set in config");
-            const teamId = String(options.teamId);
-            const teamDir = path.resolve(workspaceRoot, "..", `workspace-${teamId}`);
+          .action(async (options: any) =>
+            runRecipesCommand("openclaw recipes move-ticket", async () => {
+              const workspaceRoot = api.config.agents?.defaults?.workspace;
+              if (!workspaceRoot) throw new Error("agents.defaults.workspace is not set in config");
+              const teamId = String(options.teamId);
+              const teamDir = path.resolve(workspaceRoot, "..", `workspace-${teamId}`);
 
             const dest = String(options.to);
             if (!['backlog','in-progress','testing','done'].includes(dest)) {
@@ -1391,7 +1408,11 @@ const recipesPlugin = {
             if (!srcPath) throw new Error(`Ticket not found: ${ticketArg}`);
 
             const destDir = stageDir(dest);
-            await ensureDir(destDir);
+            if (dest === 'testing') {
+              await ensureLaneDir({ teamDir, lane: 'testing', command: 'openclaw recipes move-ticket' });
+            } else {
+              await ensureDir(destDir);
+            }
             const filename = path.basename(srcPath);
             const destPath = path.join(destDir, filename);
 
@@ -1450,7 +1471,7 @@ const recipesPlugin = {
             }
 
             console.log(JSON.stringify({ ok: true, moved: plan }, null, 2));
-          });
+          }));
 
         cmd
           .command("assign")
@@ -1544,6 +1565,72 @@ const recipesPlugin = {
 
             console.log(JSON.stringify({ ok: true, plan }, null, 2));
           });
+
+        cmd
+          .command("handoff")
+          .description("QA handoff: assign ticket to tester + move to testing")
+          .requiredOption("--team-id <teamId>", "Team id")
+          .requiredOption("--ticket <ticket>", "Ticket id or number")
+          .option("--tester <tester>", "Tester/owner (default: test)", "test")
+          .option("--overwrite", "Overwrite existing assignment file")
+          .option("--yes", "Skip confirmation")
+          .action(async (options: any) =>
+            runRecipesCommand("openclaw recipes handoff", async () => {
+              const workspaceRoot = api.config.agents?.defaults?.workspace;
+              if (!workspaceRoot) throw new Error("agents.defaults.workspace is not set in config");
+              const teamId = String(options.teamId);
+              const teamDir = path.resolve(workspaceRoot, "..", `workspace-${teamId}`);
+
+            const tester = String(options.tester ?? "test");
+
+            const plan = {
+              teamId,
+              ticket: String(options.ticket),
+              tester,
+              overwriteAssignment: !!options.overwrite,
+            };
+
+            if (!options.yes && process.stdin.isTTY) {
+              console.log(JSON.stringify({ plan }, null, 2));
+              const readline = await import("node:readline/promises");
+              const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+              try {
+                const ans = await rl.question(`Handoff to ${tester} and move to testing? (y/N) `);
+                const ok = ans.trim().toLowerCase() === "y" || ans.trim().toLowerCase() === "yes";
+                if (!ok) {
+                  console.error("Aborted; no changes made.");
+                  return;
+                }
+              } finally {
+                rl.close();
+              }
+            } else if (!options.yes && !process.stdin.isTTY) {
+              console.error("Refusing to handoff without confirmation in non-interactive mode. Re-run with --yes.");
+              process.exitCode = 2;
+              console.log(JSON.stringify({ ok: false, plan }, null, 2));
+              return;
+            }
+
+            const res = await handoffTicketCore({
+              teamDir,
+              ticket: String(options.ticket),
+              tester,
+              overwriteAssignment: !!options.overwrite,
+            });
+
+            console.log(
+              JSON.stringify(
+                {
+                  ok: true,
+                  moved: res.moved ? { from: res.srcPath, to: res.destPath } : null,
+                  ticket: path.relative(teamDir, res.destPath),
+                  assignment: path.relative(teamDir, res.assignmentPath),
+                },
+                null,
+                2,
+              ),
+            );
+          }));
 
         cmd
           .command("take")
@@ -1772,6 +1859,7 @@ const recipesPlugin = {
             const workDir = path.join(teamDir, "work");
             const backlogDir = path.join(workDir, "backlog");
             const inProgressDir = path.join(workDir, "in-progress");
+            const testingDir = path.join(workDir, "testing");
             const doneDir = path.join(workDir, "done");
             const assignmentsDir = path.join(workDir, "assignments");
 
@@ -1798,6 +1886,7 @@ const recipesPlugin = {
               ensureDir(workDir),
               ensureDir(backlogDir),
               ensureDir(inProgressDir),
+              ensureDir(testingDir),
               ensureDir(doneDir),
               ensureDir(assignmentsDir),
             ]);
@@ -1813,7 +1902,7 @@ const recipesPlugin = {
 
             const planMd = `# Plan — ${teamId}\n\n- (empty)\n`;
             const statusMd = `# Status — ${teamId}\n\n- (empty)\n`;
-            const ticketsMd = `# Tickets — ${teamId}\n\n## Naming\n- Backlog tickets live in work/backlog/\n- Filename ordering is the queue: 0001-..., 0002-...\n\n## Required fields\nEach ticket should include:\n- Title\n- Context\n- Requirements\n- Acceptance criteria\n- Owner (dev/devops/lead/test)\n- Status (queued/in-progress/testing/done)\n\n## Example\n\n\`\`\`md\n# 0001-example-ticket\n\nOwner: dev\nStatus: queued\n\n## Context\n...\n\n## Requirements\n- ...\n\n## Acceptance criteria\n- ...\n\`\`\`\n`;
+            const ticketsMd = renderTicketsMd(teamId);
 
             await writeFileSafely(planPath, planMd, overwrite ? "overwrite" : "createOnly");
             await writeFileSafely(statusPath, statusMd, overwrite ? "overwrite" : "createOnly");
@@ -1866,7 +1955,7 @@ const recipesPlugin = {
 
             // Create a minimal TEAM.md
             const teamMdPath = path.join(teamDir, "TEAM.md");
-            const teamMd = `# ${teamId}\n\nShared workspace for this agent team.\n\n## Folders\n- inbox/ — requests\n- outbox/ — deliverables\n- shared-context/ — curated shared context + append-only agent outputs\n- shared/ — legacy shared artifacts (back-compat)\n- notes/ — plan + status\n- work/ — working files\n`;
+            const teamMd = renderTeamMd(teamId);
             await writeFileSafely(teamMdPath, teamMd, options.overwrite ? "overwrite" : "createOnly");
 
             if (options.applyConfig) {

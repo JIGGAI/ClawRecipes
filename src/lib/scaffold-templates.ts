@@ -1,0 +1,7 @@
+export function renderTeamMd(teamId: string) {
+  return `# ${teamId}\n\nShared workspace for this agent team.\n\n## Workflow\n- Stages: backlog → in-progress → testing → done\n- Backlog: work/backlog/\n- In progress: work/in-progress/\n- Testing / QA: work/testing/\n- Done: work/done/\n\n## Folders\n- inbox/ — requests\n- outbox/ — deliverables\n- shared-context/ — curated shared context + append-only agent outputs\n- shared/ — legacy shared artifacts (back-compat)\n- notes/ — plan + status\n- work/ — working files\n`;
+}
+
+export function renderTicketsMd(teamId: string) {
+  return `# Tickets — ${teamId}\n\n## Workflow\n- Stages: backlog → in-progress → testing → done\n- Backlog tickets live in work/backlog/\n- In-progress tickets live in work/in-progress/\n- Testing / QA tickets live in work/testing/\n- Done tickets live in work/done/\n\n### QA handoff (dev → test)\nWhen development is complete:\n- Move the ticket file to work/testing/\n- Assign to test (set \`Owner: test\`)\n- Add clear test instructions / repro steps\n\n## Naming\n- Filename ordering is the queue: 0001-..., 0002-...\n\n## Required fields\nEach ticket should include:\n- Title\n- Context\n- Requirements\n- Acceptance criteria\n- Owner (dev/devops/lead/test)\n- Status (queued/in-progress/testing/done)\n\n## Example\n\n\`\`\`md\n# 0001-example-ticket\n\nOwner: dev\nStatus: queued\n\n## Context\n...\n\n## Requirements\n- ...\n\n## Acceptance criteria\n- ...\n\`\`\`\n`;
+}
