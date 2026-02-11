@@ -363,8 +363,18 @@ async function reconcileRecipeCronJobs(opts: {
     const header = `Recipe ${opts.scope.recipeId} defines ${desired.length} cron job(s).\nThese run automatically on a schedule. Install them?`;
     userOptIn = await promptYesNo(header);
     if (!userOptIn && !process.stdin.isTTY) {
-      console.error("Non-interactive mode: defaulting cron install to disabled.");
+      console.error("Non-interactive mode: skipping cron installation (no consent). Use cronInstallation=on to force install.");
     }
+  }
+
+  // Never install cron jobs without explicit consent (unless cronInstallation=on).
+  if (!userOptIn) {
+    return {
+      ok: true,
+      changed: false,
+      note: "cron-installation-declined" as const,
+      desiredCount: desired.length,
+    };
   }
 
   const statePath = path.join(opts.scope.stateDir, "notes", "cron-jobs.json");
