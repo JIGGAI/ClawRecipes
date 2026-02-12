@@ -2,6 +2,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import path from "node:path";
 import fs from "node:fs/promises";
 import crypto from "node:crypto";
+import os from "node:os";
 import JSON5 from "json5";
 import YAML from "yaml";
 
@@ -285,17 +286,73 @@ type OpenClawCronJob = {
   description?: string;
 };
 
-function spawnOpenClawJson(args: string[]) {
-  const { spawnSync } = require("node:child_process") as typeof import("node:child_process");
-  const res = spawnSync("openclaw", args, { encoding: "utf8" });
-  if (res.status !== 0) {
-    const err = new Error(`openclaw ${args.join(" ")} failed (exit=${res.status})`);
-    (err as any).stdout = res.stdout;
-    (err as any).stderr = res.stderr;
-    throw err;
+type CronStoreV1 = {
+  version: 1;
+  jobs: any[];
+};
+
+function cronStorePath() {
+  // Gateway cron store (default): ~/.openclaw/cron/jobs.json
+  return path.join(os.homedir(), ".openclaw", "cron", "jobs.json");
+}
+
+async function loadCronStore(): Promise<CronStoreV1> {
+  try {
+    const raw = await fs.readFile(cronStorePath(), "utf8");
+    const parsed = JSON.parse(raw) as CronStoreV1;
+    if (parsed && parsed.version === 1 && Array.isArray(parsed.jobs)) return parsed;
+  } catch {
+    // ignore
   }
-  const out = String(res.stdout ?? "").trim();
-  return out ? (JSON.parse(out) as any) : null;
+  return { version: 1, jobs: [] };
+}
+
+async function saveCronStore(store: CronStoreV1) {
+  const p = cronStorePath();
+  await ensureDir(path.dirname(p));
+  await fs.writeFile(p, JSON.stringify(store, null, 2) + "\n", "utf8");
+}
+
+function buildCronJobPayloadAgentTurn(message: string) {
+  return {
+    kind: "agentTurn",
+    message,
+    timeoutSeconds: 60,
+  };
+}
+
+function buildCronJobFromSpec(opts: {
+  name: string;
+  description?: string;
+  scheduleExpr: string;
+  tz?: string;
+  message: string;
+  enabled: boolean;
+  agentId: string;
+  delivery?: { channel?: string; to?: string };
+}) {
+  const now = Date.now();
+  const delivery =
+    opts.delivery?.channel && opts.delivery?.to
+      ? { mode: "announce", channel: opts.delivery.channel, to: opts.delivery.to, bestEffort: true }
+      : { mode: "announce" };
+
+  return {
+    id: crypto.randomUUID(),
+    agentId: opts.agentId || "main",
+    name: opts.name,
+    description: opts.description,
+    enabled: opts.enabled,
+    deleteAfterRun: false,
+    createdAtMs: now,
+    updatedAtMs: now,
+    schedule: { kind: "cron", expr: opts.scheduleExpr, tz: opts.tz },
+    sessionTarget: "isolated",
+    wakeMode: "next-heartbeat",
+    payload: buildCronJobPayloadAgentTurn(opts.message),
+    delivery,
+    state: {},
+  };
 }
 
 function normalizeCronJobs(frontmatter: RecipeFrontmatter): CronJobSpec[] {
@@ -381,25 +438,8 @@ async function reconcileRecipeCronJobs(opts: {
   const statePath = path.join(opts.scope.stateDir, "notes", "cron-jobs.json");
   const state = await loadCronMappingState(statePath);
 
-  let list: { jobs: OpenClawCronJob[] } | null = null;
-  try {
-    list = spawnOpenClawJson(["cron", "list", "--all", "--json"]) as { jobs: OpenClawCronJob[] };
-  } catch (err: any) {
-    // Cron reconciliation should not prevent scaffolding from completing.
-    // If the gateway is restarting or cron RPC is temporarily unavailable, skip reconciliation.
-    console.error(`Warning: failed to list cron jobs; skipping cron reconciliation for ${opts.scope.kind} ${
-      (opts.scope as any).teamId ?? (opts.scope as any).agentId
-    } (${opts.scope.recipeId}).`);
-    if (err?.stderr) console.error(String(err.stderr).trim());
-    return {
-      ok: false,
-      changed: false,
-      note: "cron-list-failed" as const,
-      desiredCount: desired.length,
-      error: { message: String(err?.message ?? err) },
-    };
-  }
-  const byId = new Map((list?.jobs ?? []).map((j) => [j.id, j] as const));
+  const store = await loadCronStore();
+  const byId = new Map((store.jobs ?? []).map((j: any) => [j.id, j] as const));
 
   const now = Date.now();
   const desiredIds = new Set(desired.map((j) => j.id));
@@ -431,65 +471,43 @@ async function reconcileRecipeCronJobs(opts: {
     const wantEnabled = userOptIn ? Boolean(j.enabledByDefault) : false;
 
     if (!existing) {
-      // Create new job.
-      const args = [
-        "cron",
-        "add",
-        "--json",
-        "--name",
+      // Create new job in cron store.
+      const newJob = buildCronJobFromSpec({
         name,
-        "--cron",
-        j.schedule,
-        "--message",
-        j.message,
-        "--announce",
-      ];
-      if (!wantEnabled) args.push("--disabled");
-      if (j.description) args.push("--description", j.description);
-      if (j.timezone) args.push("--tz", j.timezone);
-      if (j.channel) args.push("--channel", j.channel);
-      if (j.to) args.push("--to", j.to);
-      if (desiredSpec.agentId) args.push("--agent", desiredSpec.agentId);
+        description: j.description,
+        scheduleExpr: j.schedule,
+        tz: j.timezone,
+        message: j.message,
+        enabled: wantEnabled,
+        agentId: desiredSpec.agentId || "main",
+        delivery: j.channel && j.to ? { channel: j.channel, to: j.to } : undefined,
+      });
 
-      const created = spawnOpenClawJson(args) as any;
-      const newId = created?.id ?? created?.job?.id;
-      if (!newId) throw new Error("Failed to parse cron add output (missing id)");
-
-      state.entries[key] = { installedCronId: newId, specHash, updatedAtMs: now, orphaned: false };
-      results.push({ action: "created", key, installedCronId: newId, enabled: wantEnabled });
+      store.jobs.push(newJob);
+      state.entries[key] = { installedCronId: newJob.id, specHash, updatedAtMs: now, orphaned: false };
+      results.push({ action: "created", key, installedCronId: newJob.id, enabled: wantEnabled });
       continue;
     }
 
     // Update existing job if spec changed.
     if (prev?.specHash !== specHash) {
-      const editArgs = [
-        "cron",
-        "edit",
-        existing.id,
-        "--name",
-        name,
-        "--cron",
-        j.schedule,
-        "--message",
-        j.message,
-        "--announce",
-      ];
-      if (j.description) editArgs.push("--description", j.description);
-      if (j.timezone) editArgs.push("--tz", j.timezone);
-      if (j.channel) editArgs.push("--channel", j.channel);
-      if (j.to) editArgs.push("--to", j.to);
-      if (desiredSpec.agentId) editArgs.push("--agent", desiredSpec.agentId);
-
-      spawnOpenClawJson(editArgs);
+      existing.name = name;
+      existing.description = j.description ?? existing.description;
+      existing.schedule = { kind: "cron", expr: j.schedule, tz: j.timezone };
+      existing.payload = buildCronJobPayloadAgentTurn(j.message);
+      existing.agentId = desiredSpec.agentId || existing.agentId || "main";
+      if (j.channel && j.to) existing.delivery = { mode: "announce", channel: j.channel, to: j.to, bestEffort: true };
+      existing.updatedAtMs = now;
       results.push({ action: "updated", key, installedCronId: existing.id });
     } else {
       results.push({ action: "unchanged", key, installedCronId: existing.id });
     }
 
-    // Enabled precedence: if user did not opt in, force disabled. Otherwise preserve current enabled state.
+    // Enabled precedence: if user did not opt in, force disabled.
     if (!userOptIn) {
       if (existing.enabled) {
-        spawnOpenClawJson(["cron", "edit", existing.id, "--disable"]);
+        existing.enabled = false;
+        existing.updatedAtMs = now;
         results.push({ action: "disabled", key, installedCronId: existing.id });
       }
     }
@@ -505,7 +523,8 @@ async function reconcileRecipeCronJobs(opts: {
 
     const job = byId.get(entry.installedCronId);
     if (job && job.enabled) {
-      spawnOpenClawJson(["cron", "edit", job.id, "--disable"]);
+      job.enabled = false;
+      job.updatedAtMs = now;
       results.push({ action: "disabled-removed", key, installedCronId: job.id });
     }
 
@@ -513,6 +532,7 @@ async function reconcileRecipeCronJobs(opts: {
   }
 
   await writeJsonFile(statePath, state);
+  await saveCronStore(store);
 
   const changed = results.some((r) => r.action === "created" || r.action === "updated" || r.action?.startsWith("disabled"));
   return { ok: true, changed, results };
@@ -1166,28 +1186,22 @@ const recipesPlugin = {
               console.error(header);
             }
 
-            // Use clawhub CLI. Force install path based on scope.
-            const { spawnSync } = await import("node:child_process");
-            for (const slug of missing) {
-              const res = spawnSync(
-                "npx",
-                ["clawhub@latest", "--workdir", workdir, "--dir", dirName, "install", slug],
-                { stdio: "inherit" },
-              );
-              if (res.status !== 0) {
-                process.exitCode = res.status ?? 1;
-                console.error(`Failed installing ${slug} (exit=${process.exitCode}).`);
-                return;
-              }
-            }
+            // SECURITY NOTE: avoid shelling out from plugins.
+            // We intentionally do NOT auto-run `npx clawhub ...` here.
+            // Instead, print the exact commands to run manually.
+            const commands = missing.map(
+              (slug) => `npx clawhub@latest --workdir "${workdir}" --dir "${dirName}" install "${slug}"`,
+            );
 
             console.log(
               JSON.stringify(
                 {
-                  ok: true,
-                  installed: missing,
+                  ok: false,
+                  reason: "manual-install-required",
+                  missing,
                   installDir,
-                  next: `Try: openclaw skills list (or check ${installDir})`,
+                  commands,
+                  next: "Run the commands above, then: openclaw gateway restart",
                 },
                 null,
                 2,
@@ -1743,26 +1757,61 @@ const recipesPlugin = {
           .requiredOption("--team-id <teamId>", "Team id")
           .requiredOption("--ticket <ticket>", "Ticket id or number")
           .option("--yes", "Skip confirmation")
-          .action(async (options: any) => {
-            const args = [
-              'recipes',
-              'move-ticket',
-              '--team-id',
-              String(options.teamId),
-              '--ticket',
-              String(options.ticket),
-              '--to',
-              'done',
-              '--completed',
-            ];
-            if (options.yes) args.push('--yes');
+          .action(async (options: any) =>
+            runRecipesCommand("openclaw recipes complete", async () => {
+              const workspaceRoot = api.config.agents?.defaults?.workspace;
+              if (!workspaceRoot) throw new Error("agents.defaults.workspace is not set in config");
+              const teamId = String(options.teamId);
+              const teamDir = path.resolve(workspaceRoot, "..", `workspace-${teamId}`);
 
-            const { spawnSync } = await import('node:child_process');
-            const res = spawnSync('openclaw', args, { stdio: 'inherit' });
-            if (res.status !== 0) {
-              process.exitCode = res.status ?? 1;
-            }
-          });
+              const ticketArg = String(options.ticket);
+              const srcPath = await findTicketFileAnyLane({ teamDir, ticket: ticketArg });
+              if (!srcPath) throw new Error(`Ticket not found: ${ticketArg}`);
+
+              const destDir = path.join(teamDir, 'work', 'done');
+              await ensureDir(destDir);
+
+              const filename = path.basename(srcPath);
+              const destPath = path.join(destDir, filename);
+
+              const plan = { from: srcPath, to: destPath, completed: true };
+
+              if (!options.yes && process.stdin.isTTY) {
+                console.log(JSON.stringify({ plan }, null, 2));
+                const readline = await import('node:readline/promises');
+                const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+                try {
+                  const ans = await rl.question(`Move to done and mark completed? (y/N) `);
+                  const ok = ans.trim().toLowerCase() === 'y' || ans.trim().toLowerCase() === 'yes';
+                  if (!ok) {
+                    console.error('Aborted; no changes made.');
+                    return;
+                  }
+                } finally {
+                  rl.close();
+                }
+              } else if (!options.yes && !process.stdin.isTTY) {
+                console.error('Refusing to complete without confirmation in non-interactive mode. Re-run with --yes.');
+                process.exitCode = 2;
+                console.log(JSON.stringify({ ok: false, plan }, null, 2));
+                return;
+              }
+
+              const md = await fs.readFile(srcPath, 'utf8');
+              let out = md;
+              if (out.match(/^Status:\s.*$/m)) out = out.replace(/^Status:\s.*$/m, `Status: done`);
+              else out = out.replace(/^(# .+\n)/, `$1\nStatus: done\n`);
+
+              const completedIso = new Date().toISOString();
+              if (out.match(/^Completed:\s.*$/m)) out = out.replace(/^Completed:\s.*$/m, `Completed: ${completedIso}`);
+              else out = out.replace(/^(# .+\n)/, `$1\nCompleted: ${completedIso}\n`);
+
+              await fs.writeFile(srcPath, out, 'utf8');
+              if (srcPath !== destPath) await fs.rename(srcPath, destPath);
+
+              console.log(JSON.stringify({ ok: true, moved: { from: srcPath, to: destPath }, completed: completedIso }, null, 2));
+            }),
+          );
 
         cmd
           .command("scaffold")
