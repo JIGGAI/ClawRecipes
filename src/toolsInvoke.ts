@@ -31,14 +31,19 @@ export async function toolsInvoke<T = unknown>(api: any, req: ToolsInvokeRequest
   let lastErr: unknown = null;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
+      const ac = new AbortController();
+      const timeoutMs = 30_000;
+      const t = setTimeout(() => ac.abort(), timeoutMs);
+
       const res = await fetch(url, {
         method: "POST",
+        signal: ac.signal,
         headers: {
           "content-type": "application/json",
           authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(req),
-      });
+      }).finally(() => clearTimeout(t));
 
       const json = (await res.json()) as ToolsInvokeResponse;
       if (!res.ok || !json.ok) {
