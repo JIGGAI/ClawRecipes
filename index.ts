@@ -2083,4 +2083,26 @@ const recipesPlugin = {
   },
 };
 
+// Internal helpers used by unit tests. Not part of the public plugin API.
+export const __internal = {
+  ensureMainFirstInAgentsList,
+  upsertBindingInConfig,
+  removeBindingsInConfig,
+  stableStringify,
+
+  patchTicketField(md: string, key: string, value: string) {
+    const lineRe = new RegExp(`^${key}:\\s.*$`, "m");
+    if (md.match(lineRe)) return md.replace(lineRe, `${key}: ${value}`);
+    return md.replace(/^(# .+\n)/, `$1\n${key}: ${value}\n`);
+  },
+
+  patchTicketOwner(md: string, owner: string) {
+    return this.patchTicketField(md, "Owner", owner);
+  },
+
+  patchTicketStatus(md: string, status: string) {
+    return this.patchTicketField(md, "Status", status);
+  },
+};
+
 export default recipesPlugin;
