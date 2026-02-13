@@ -14,7 +14,7 @@ If you like durable workflows: ClawRecipes is built around a **file-first team w
 Once published:
 
 ```bash
-openclaw plugins install @jiggai/clawrecipes
+openclaw plugins install @jiggai/recipes
 openclaw gateway restart
 openclaw plugins list
 ```

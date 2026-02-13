@@ -14,7 +14,7 @@ This repo is an **OpenClaw plugin** (not a standalone CLI). OpenClaw loads it an
 Once published, you can install directly via npm:
 
 ```bash
-openclaw plugins install @jiggai/clawrecipes
+openclaw plugins install @jiggai/recipes
 openclaw gateway restart
 openclaw plugins list
 ```
