@@ -1001,11 +1001,11 @@ const recipesPlugin = {
           });
 
         cmd
-          .command("install")
+          .command("install-skill")
           .description(
             "Install a skill from ClawHub (confirmation-gated). Default: global (~/.openclaw/skills). Use --agent-id or --team-id for scoped installs.",
           )
-          .argument("<idOrSlug>", "Recipe id OR ClawHub skill slug")
+          .argument("<skill>", "ClawHub skill slug (e.g. github)")
           .option("--yes", "Skip confirmation prompt")
           .option("--global", "Install into global shared skills (~/.openclaw/skills) (default when no scope flags)")
           .option("--agent-id <agentId>", "Install into a specific agent workspace (workspace-<agentId>)")
@@ -1142,6 +1142,57 @@ const recipesPlugin = {
               ),
             );
           });
+
+        async function installMarketplaceRecipe(slug: string, options: any) {
+          const cfg = getCfg(api);
+          const baseWorkspace = api.config.agents?.defaults?.workspace;
+          if (!baseWorkspace) throw new Error("agents.defaults.workspace is not set in config");
+
+          const base = String(options.registryBase ?? "").replace(/\/+$/, "");
+          const s = String(slug ?? "").trim();
+          if (!s) throw new Error("slug is required");
+
+          const metaUrl = `${base}/api/marketplace/recipes/${encodeURIComponent(s)}`;
+          const metaRes = await fetch(metaUrl);
+          if (!metaRes.ok) {
+            const hint = `Recipe not found: ${s}. Did you mean:\n- openclaw recipes install ${s}   # marketplace recipe\n- openclaw recipes install-skill ${s}   # ClawHub skill`;
+            throw new Error(`Registry lookup failed (${metaRes.status}): ${metaUrl}\n\n${hint}`);
+          }
+          const metaData = (await metaRes.json()) as any;
+          const recipe = metaData?.recipe;
+          const sourceUrl = String(recipe?.sourceUrl ?? "").trim();
+          if (!metaData?.ok || !sourceUrl) {
+            throw new Error(`Registry response missing recipe.sourceUrl for ${s}`);
+          }
+
+          const mdRes = await fetch(sourceUrl);
+          if (!mdRes.ok) throw new Error(`Failed downloading recipe markdown (${mdRes.status}): ${sourceUrl}`);
+          const md = await mdRes.text();
+
+          const recipesDir = path.join(baseWorkspace, cfg.workspaceRecipesDir);
+          await ensureDir(recipesDir);
+          const destPath = path.join(recipesDir, `${s}.md`);
+
+          await writeFileSafely(destPath, md, options.overwrite ? "overwrite" : "createOnly");
+
+          console.log(JSON.stringify({ ok: true, slug: s, wrote: destPath, sourceUrl, metaUrl }, null, 2));
+        }
+
+        cmd
+          .command("install")
+          .description("Install a marketplace recipe into your workspace recipes dir (by slug)")
+          .argument("<idOrSlug>", "Marketplace recipe slug (e.g. development-team)")
+          .option("--registry-base <url>", "Marketplace API base URL", "https://clawkitchen.ai")
+          .option("--overwrite", "Overwrite existing recipe file")
+          .action(async (slug: string, options: any) => installMarketplaceRecipe(slug, options));
+
+        cmd
+          .command("install-recipe")
+          .description("Alias for: recipes install <slug>")
+          .argument("<slug>", "Marketplace recipe slug (e.g. development-team)")
+          .option("--registry-base <url>", "Marketplace API base URL", "https://clawkitchen.ai")
+          .option("--overwrite", "Overwrite existing recipe file")
+          .action(async (slug: string, options: any) => installMarketplaceRecipe(slug, options));
 
         cmd
           .command("dispatch")
