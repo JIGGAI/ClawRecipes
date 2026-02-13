@@ -386,7 +386,12 @@ async function reconcileRecipeCronJobs(opts: {
   const statePath = path.join(opts.scope.stateDir, "notes", "cron-jobs.json");
   const state = await loadCronMappingState(statePath);
 
-  const list = await cronList(opts.api);
+  // Fast path: if we have no prior installed ids for these desired jobs, skip cron.list.
+  // cron.list can be slow/hang on some setups; we can still create jobs and record ids.
+  const desiredKeys = desired.map((j) => cronKey(opts.scope as any, j.id));
+  const hasAnyInstalled = desiredKeys.some((k) => Boolean(state.entries[k]?.installedCronId));
+
+  const list = hasAnyInstalled ? await cronList(opts.api) : { jobs: [] };
   const byId = new Map((list?.jobs ?? []).map((j) => [j.id, j] as const));
 
   const now = Date.now();
