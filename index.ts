@@ -2282,6 +2282,17 @@ const recipesPlugin = {
             const teamMd = `# ${teamId}\n\nShared workspace for this agent team.\n\n## Folders\n- inbox/ — requests\n- outbox/ — deliverables\n- shared-context/ — curated shared context + append-only agent outputs\n- shared/ — legacy shared artifacts (back-compat)\n- notes/ — plan + status\n- work/ — working files\n`;
             await writeFileSafely(teamMdPath, teamMd, options.overwrite ? "overwrite" : "createOnly");
 
+            // Persist provenance (parent recipe) for UIs like ClawKitchen.
+            // This avoids brittle heuristics like teamId==recipeId guessing.
+            const teamMetaPath = path.join(teamDir, "team.json");
+            const teamMeta = {
+              teamId,
+              recipeId: recipe.id,
+              recipeName: recipe.name ?? "",
+              scaffoldedAt: new Date().toISOString(),
+            };
+            await writeJsonFile(teamMetaPath, teamMeta);
+
             if (options.applyConfig) {
               const snippets: AgentConfigSnippet[] = results.map((x: any) => x.next.configSnippet);
               await applyAgentSnippetsToOpenClawConfig(api, snippets);
