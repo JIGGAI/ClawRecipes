@@ -24,6 +24,7 @@
   "scripts": {
     "test": "vitest run",
     "test:smoke": "node scripts/scaffold-smoke.mjs",
+    "test:provenance-smoke": "node scripts/scaffold-team-provenance-smoke.mjs",
     "smoke": "node scripts/scaffold-smoke.mjs",
     "scaffold:smoke": "node scripts/scaffold-smoke.mjs"
   },
