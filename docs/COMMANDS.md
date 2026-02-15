@@ -191,11 +191,33 @@ openclaw recipes cleanup-workspaces --json
 ```
 
 ## `kitchen`
-Print the command to launch ClawRecipes Kitchen (optional UI for team dashboards, activity feed, recipes). Then run the printed command (e.g. `npx -p @jiggai/recipes clawrecipes-kitchen`).
+ClawRecipes Kitchen — launch UI and manage Basic Auth.
 
+**Launch** (default; no subcommand):
 ```bash
 openclaw recipes kitchen
 ```
+Prints the command to run (e.g. `npx -p @jiggai/recipes clawrecipes-kitchen`).
+
+**Status** — Show auth configuration:
+```bash
+openclaw recipes kitchen status
+```
+
+**Set user** — Set username and password (enables auth):
+```bash
+openclaw recipes kitchen set-user --username admin --password your-secure-password
+# Or use a password file (e.g. Docker secrets):
+openclaw recipes kitchen set-user --username admin --password-file /run/secrets/kitchen-password
+```
+
+**Enable / disable** Basic Auth:
+```bash
+openclaw recipes kitchen enable
+openclaw recipes kitchen disable
+```
+
+Restart Kitchen after changing credentials.
 
 ## `move-ticket`
 Move a ticket file between workflow stages and update the ticket’s `Status:` field.

@@ -25,9 +25,11 @@ import {
   fetchBindings,
   addBindingAPI,
   removeBindingAPI,
+  setOnUnauthorized,
   DEMO_TEAMS,
   DEMO_TEAM_ID,
 } from '../app/src/api.ts';
+import * as authStore from '../app/src/authStore';
 
 describe('api parseApiError behavior', () => {
   beforeEach(() => {
@@ -54,6 +56,36 @@ describe('api parseApiError behavior', () => {
     );
 
     await expect(fetchTeams()).rejects.toThrow('raw error text');
+  });
+
+  test('fetchTeams passes no Authorization when authStore has no header', async () => {
+    let capturedInit: RequestInit | undefined;
+    vi.stubGlobal('fetch', (url: string, init?: RequestInit) => {
+      capturedInit = init;
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([]) } as Response);
+    });
+    vi.spyOn(authStore, 'getAuthHeader').mockReturnValue(undefined);
+    await fetchTeams();
+    expect(capturedInit?.headers).toBeDefined();
+    const headers = capturedInit?.headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
+  });
+
+  test('fetchTeams on 401 clears authStore and calls onUnauthorized', async () => {
+    vi.stubGlobal('fetch', () =>
+      Promise.resolve({
+        ok: false,
+        status: 401,
+        text: () => Promise.resolve(JSON.stringify({ error: 'Unauthorized' })),
+      } as Response)
+    );
+    const clearSpy = vi.spyOn(authStore, 'clear').mockImplementation(() => {});
+    const onUnauth = vi.fn();
+    setOnUnauthorized(onUnauth);
+    await expect(fetchTeams()).rejects.toThrow(/Unauthorized/);
+    expect(clearSpy).toHaveBeenCalled();
+    expect(onUnauth).toHaveBeenCalled();
+    setOnUnauthorized(null);
   });
 
   test('removeTeam propagates API error on 400', async () => {

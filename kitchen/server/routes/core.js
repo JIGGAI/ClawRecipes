@@ -2,9 +2,14 @@ import { Router } from "express";
 import { checkOpenClaw } from "../openclaw.js";
 import { getRecentEvents, MAX_EVENTS } from "../activity.js";
 import { withErrorHandler } from "../middleware.js";
+import { isAuthEnabled } from "../auth.js";
 
 export function createCoreRouter() {
   const router = Router();
+
+  router.get("/auth/status", (_req, res) => {
+    res.json({ authRequired: isAuthEnabled() });
+  });
 
   router.get("/health", async (_req, res) => {
     try {

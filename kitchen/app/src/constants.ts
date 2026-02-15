@@ -24,6 +24,7 @@ export const ROUTE_TITLES: Record<string, string> = {
   "/board": "Board",
   "/recipes": "Recipes",
   "/bindings": "Bindings",
+  "/login": "Sign in",
 };
 
 /** Kanban column config for Board: colKey maps to props, accent for styling. */

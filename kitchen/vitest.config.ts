@@ -20,7 +20,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     environmentMatchGlobs: [['**/*.test.tsx', 'jsdom']],
-    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'app/src/**/*.test.tsx'],
+    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx', 'app/src/**/*.test.ts', 'app/src/**/*.test.tsx'],
     setupFiles: ['tests/setup.ts'],
   },
   coverage: {
@@ -29,9 +29,18 @@ export default defineConfig({
     exclude: [
       '**/*.test.*',
       'app/dist/**',
-      'server/openclaw.js',
+      '**/app/scripts/**',
       '**/scripts/**',
+      'server/openclaw.js',
+      '**/openclaw.js',
     ],
     excludeAfterRemap: true,
+    reporter: ['text', 'json', 'html'],
+    thresholds: {
+      statements: 86,
+      branches: 89,
+      functions: 82,
+      lines: 86,
+    },
   },
 });

@@ -19,8 +19,10 @@ const coveragePath = join(kitchenRoot, 'coverage', 'coverage-final.json');
 
 // Only report on these paths (matches vitest coverage.include)
 const INCLUDE_PATTERNS = [/^server\//, /^app\/src\//];
+const EXCLUDE_PATTERNS = [/server\/openclaw\.js$/];
 
 function shouldInclude(relPath) {
+  if (EXCLUDE_PATTERNS.some((p) => p.test(relPath))) return false;
   return INCLUDE_PATTERNS.some((p) => p.test(relPath));
 }
 
@@ -81,6 +83,60 @@ function main() {
   const raw = readFileSync(coveragePath, 'utf8');
   const coverage = JSON.parse(raw);
 
+  let totalStmts = 0;
+  let coveredStmts = 0;
+  let totalBranches = 0;
+  let coveredBranches = 0;
+  let totalFuncs = 0;
+  let coveredFuncs = 0;
+  const allLines = new Map();
+  const coveredLines = new Map();
+
+  for (const [absPath, entry] of Object.entries(coverage)) {
+    const relPath = relative(kitchenRoot, absPath).replace(/\\/g, '/');
+    if (!shouldInclude(relPath)) continue;
+
+    const { statementMap = {}, s = {}, branchMap = {}, b = {}, fnMap = {}, f = {} } = entry;
+    let fileLines = allLines.get(relPath) || new Set();
+    let fileCovered = coveredLines.get(relPath) || new Set();
+    for (const [id, map] of Object.entries(statementMap)) {
+      totalStmts++;
+      if (s[id] > 0) coveredStmts++;
+      const endLine = map.end?.line ?? map.start.line;
+      for (let l = map.start.line; l <= endLine; l++) {
+        fileLines.add(l);
+        if (s[id] > 0) fileCovered.add(l);
+      }
+    }
+    allLines.set(relPath, fileLines);
+    coveredLines.set(relPath, fileCovered);
+    for (const [id, map] of Object.entries(branchMap)) {
+      const hits = b[id];
+      const locs = map.locations || [];
+      for (let i = 0; i < locs.length; i++) {
+        totalBranches++;
+        if (hits?.[i] > 0) coveredBranches++;
+      }
+    }
+    for (const id of Object.keys(fnMap)) {
+      totalFuncs++;
+      if (f[id] > 0) coveredFuncs++;
+    }
+  }
+
+  let totalLineCount = 0;
+  let coveredLineCount = 0;
+  for (const [path, lines] of allLines) {
+    const cov = coveredLines.get(path) || new Set();
+    totalLineCount += lines.size;
+    coveredLineCount += [...lines].filter((l) => cov.has(l)).length;
+  }
+
+  const stmtPct = totalStmts ? (100 * coveredStmts / totalStmts) : 100;
+  const branchPct = totalBranches ? (100 * coveredBranches / totalBranches) : 100;
+  const funcPct = totalFuncs ? (100 * coveredFuncs / totalFuncs) : 100;
+  const linePct = totalLineCount ? (100 * coveredLineCount / totalLineCount) : 100;
+
   const gaps = {};
 
   for (const [absPath, entry] of Object.entries(coverage)) {
@@ -104,18 +160,30 @@ function main() {
     return;
   }
 
-  if (files.length === 0) {
-    console.log('No uncovered lines in server/** or app/src/**');
-    return;
+  const THRESHOLD = 95;
+  const fail = stmtPct < THRESHOLD || branchPct < THRESHOLD || funcPct < THRESHOLD || linePct < THRESHOLD;
+  if (fail) {
+    console.error(`\nCoverage for viable files (server/**, app/src/**, excl. openclaw):`);
+    console.error(`  statements: ${stmtPct.toFixed(2)}% (need ${THRESHOLD}%)`);
+    console.error(`  branches:   ${branchPct.toFixed(2)}% (need ${THRESHOLD}%)`);
+    console.error(`  functions:  ${funcPct.toFixed(2)}% (need ${THRESHOLD}%)`);
+    console.error(`  lines:      ${linePct.toFixed(2)}% (need ${THRESHOLD}%)`);
   }
 
-  console.log('Uncovered lines (run `npm run test:coverage` first)\n');
-  for (const f of files) {
+  if (files.length > 0) {
+    console.log('\nUncovered lines (run `npm run test:coverage` first)\n');
+    for (const f of files) {
     const { ranges, count } = gaps[f];
     console.log(`${f}`);
     console.log(`  Lines: ${ranges.join(', ')} (${count} uncovered)`);
     console.log();
+    }
   }
+
+  if (files.length === 0 && !fail) {
+    console.log('No uncovered lines in server/** or app/src/**');
+  }
+  if (fail) process.exit(1);
 }
 
 main();

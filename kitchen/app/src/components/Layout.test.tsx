@@ -1,16 +1,20 @@
 import React from 'react';
-import { describe, expect, test, afterEach } from 'vitest';
+import { describe, expect, test, afterEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from '../ThemeContext';
+import { AuthProvider } from '../AuthContext';
 import { DemoProvider } from '../DemoContext';
 import { Layout } from './Layout';
+import * as authStore from '../authStore';
 
 function renderLayout(initialEntries: string[]) {
   return render(
     <ThemeProvider>
-      <DemoProvider>
-        <MemoryRouter initialEntries={initialEntries}>
+      <AuthProvider>
+        <DemoProvider>
+          <MemoryRouter initialEntries={initialEntries}>
           <Routes>
             <Route path="/" element={<Layout />}>
               <Route path="board" element={<div>Board</div>} />
@@ -19,8 +23,9 @@ function renderLayout(initialEntries: string[]) {
               <Route path="*" element={<div>Other</div>} />
             </Route>
           </Routes>
-        </MemoryRouter>
-      </DemoProvider>
+          </MemoryRouter>
+        </DemoProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }
@@ -50,5 +55,46 @@ describe('Layout', () => {
   test('sets document.title to base when at other path', () => {
     renderLayout(['/other']);
     expect(document.title).toBe('ClawRecipes Kitchen');
+  });
+
+  test('does not show Logout button when not authenticated', () => {
+    vi.spyOn(authStore, 'getAuthHeader').mockReturnValue(undefined);
+    renderLayout(['/board']);
+    expect(screen.queryByText('Logout')).not.toBeInTheDocument();
+  });
+
+  test('shows Logout button when authenticated and triggers logout on click', async () => {
+    const user = userEvent.setup();
+    vi.spyOn(authStore, 'getAuthHeader').mockReturnValue(btoa('u:p'));
+    vi.spyOn(authStore, 'clear').mockImplementation(() => {});
+    renderLayout(['/board']);
+    const logoutBtn = screen.getByText('Logout');
+    expect(logoutBtn).toBeInTheDocument();
+    await user.click(logoutBtn);
+    expect(authStore.clear).toHaveBeenCalled();
+  });
+
+  test('shows demo badge and Exit demo button when demo mode', async () => {
+    const user = userEvent.setup();
+    render(
+      <ThemeProvider>
+        <AuthProvider>
+          <DemoProvider initialDemoMode>
+            <MemoryRouter initialEntries={['/board']}>
+              <Routes>
+                <Route path="/" element={<Layout />}>
+                  <Route path="board" element={<div>Board</div>} />
+                  <Route path="*" element={<div>Other</div>} />
+                </Route>
+              </Routes>
+            </MemoryRouter>
+          </DemoProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    );
+    expect(screen.getByText('demo')).toBeInTheDocument();
+    const exitBtn = screen.getByText('Exit demo');
+    await user.click(exitBtn);
+    expect(screen.queryByText('Exit demo')).not.toBeInTheDocument();
   });
 });

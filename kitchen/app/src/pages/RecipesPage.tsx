@@ -134,6 +134,7 @@ export function RecipesPage() {
       <PageLoadingState
         loading={recipesData.loading}
         error={recipesData.error}
+        onRetry={recipesData.retry}
         loadingMessage="Loading recipes..."
       >
     <Container fluid="lg" className="py-4">

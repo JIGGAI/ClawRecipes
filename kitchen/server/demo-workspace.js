@@ -2,6 +2,7 @@ import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEMO_TEAM_ID } from "./validation.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -88,7 +89,7 @@ export async function getDemoTickets() {
 
   const tickets = [...backlog, ...inProgress, ...testing, ...done];
   return {
-    teamId: "demo-team",
+    teamId: DEMO_TEAM_ID,
     tickets,
     backlog,
     inProgress,

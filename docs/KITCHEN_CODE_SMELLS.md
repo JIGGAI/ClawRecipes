@@ -6,13 +6,11 @@ A code smell review of the Kitchen codebase. These are refactoring candidates, n
 
 ## 1. Server: God Object / Long Method
 
-**File:** [kitchen/server/index.js](kitchen/server/index.js) (~690 lines)
+**File:** [kitchen/server/index.js](kitchen/server/index.js)
 
-**Smell:** `createApp()` contains 25+ route handlers in one function. All routing, validation, error handling, and middleware setup live in a single place.
+**Smell:** ~~`createApp()` contains 25+ route handlers~~ — Routes have been extracted to `routes/teams.js`, `routes/recipes.js`, etc. index.js is now slimmer (~120 lines).
 
-**Impact:** Hard to navigate, test individual routes, or reuse route logic.
-
-**Recommendation:** Extract route handlers into modules (e.g. `routes/teams.js`, `routes/recipes.js`, `routes/bindings.js`) and mount them. Keep guards and shared middleware in index.
+**Status:** ✅ Done (route extraction)
 
 ---
 
@@ -230,27 +228,23 @@ t.stage === "backlog" ? "work/backlog" : t.stage === "in-progress" ? ...
 
 ---
 
-## 15. BoardPage: Same complexity as pre-refactor RecipesPage (unchanged)
+## 15. BoardPage: Same complexity as pre-refactor RecipesPage
 
-**File:** [kitchen/app/src/pages/BoardPage.tsx](kitchen/app/src/pages/BoardPage.tsx) (~372 lines)
+**File:** [kitchen/app/src/pages/BoardPage.tsx](kitchen/app/src/pages/BoardPage.tsx)
 
-**Smell:** 16+ `useState` calls, manual `useEffect` with `cancelled` flag for teams and tickets fetch. Same patterns we refactored in RecipesPage.
+**Smell:** ~~Manual useEffect, 16+ useState~~ — BoardPage now uses useAsync for teams and tickets. RemoveTeamModal, CleanupModal, DispatchModal are extracted.
 
-**Impact:** Harder to maintain, duplicate fetch/cancellation logic.
-
-**Recommendation:** Apply useAsync for teams and tickets. Extract RemoveTeamModal as a sub-component. Consider grouping related state.
+**Status:** ✅ Done
 
 ---
 
 ## 16. Frontend: demo-team string still hardcoded
 
-**Files:** BoardPage.tsx (3 places), TicketDetail.tsx, TeamPicker.tsx
+**Files:** BoardPage.tsx, TicketDetail.tsx, TeamPicker.tsx
 
-**Smell:** `selectedTeamId === "demo-team"` and `teamId === "demo-team"` instead of using `DEMO_TEAM_ID` from api.ts.
+**Smell:** ~~Hardcoded "demo-team"~~ — Components now use `DEMO_TEAM_ID` from api.ts.
 
-**Impact:** Changing demo ID requires edits in multiple frontend files.
-
-**Recommendation:** Import `DEMO_TEAM_ID` from api and use `selectedTeamId === DEMO_TEAM_ID` everywhere.
+**Status:** ✅ Done
 
 ---
 
@@ -258,11 +252,9 @@ t.stage === "backlog" ? "work/backlog" : t.stage === "in-progress" ? ...
 
 **File:** [kitchen/app/src/pages/BindingsPage.tsx](kitchen/app/src/pages/BindingsPage.tsx)
 
-**Smell:** Same health-check-then-fetch pattern as RecipesPage had. Uses `load()` in useEffect with no cancellation. No retry for health.
+**Smell:** ~~Manual load(), no cancellation~~ — BindingsPage uses useAsync for health and bindings with built-in cancellation. Uses HealthGuard and PageLoadingState.
 
-**Impact:** SetState on unmount risk if user navigates away during fetch. Duplicate loading/error UI.
-
-**Recommendation:** Use useAsync for health and bindings. Add cancellation in load() or use the hook.
+**Status:** ✅ Done
 
 ---
 
@@ -270,11 +262,9 @@ t.stage === "backlog" ? "work/backlog" : t.stage === "in-progress" ? ...
 
 **Files:** InboxList.tsx, TicketDetail.tsx
 
-**Smell:** Same `cancelled` + fetch + retry-trigger pattern. Could use useAsync.
+**Smell:** ~~Manual cancelled + fetch~~ — InboxList and TicketDetail use useAsync for inbox items, content, and ticket content.
 
-**Impact:** Verbose, easy to forget cancellation.
-
-**Recommendation:** Use useAsync for inbox items and inbox content; for TicketDetail content.
+**Status:** ✅ Done
 
 ---
 
@@ -282,35 +272,29 @@ t.stage === "backlog" ? "work/backlog" : t.stage === "in-progress" ? ...
 
 **File:** [kitchen/app/src/components/CleanupModal.tsx](kitchen/app/src/components/CleanupModal.tsx)
 
-**Smell:** useEffect fetches plan when `show` is true, but has no cancellation. If user closes modal before fetch completes, setState on unmounted component.
+**Smell:** ~~Manual fetch, no cancellation~~ — CleanupModal uses useAsync for plan fetch with `enabled: show`; useAsync handles cancellation.
 
-**Impact:** React warning, potential memory leak.
-
-**Recommendation:** Add `let cancelled = false` and check before setState; `return () => { cancelled = true; }`.
+**Status:** ✅ Done
 
 ---
 
 ## 20. Duplicate loading/health UI across pages
 
-**Files:** RecipesPage, BindingsPage, (BoardPage via TeamPicker)
+**Files:** RecipesPage, BindingsPage
 
-**Smell:** Nearly identical "Checking...", "Loading...", "Connect OpenClaw" screens with same structure (Container, Spinner, alert).
+**Smell:** ~~Duplicate loading/health UI~~ — HealthGuard and PageLoadingState are extracted. RecipesPage and BindingsPage use them. BoardPage uses TeamPicker (different flow).
 
-**Impact:** UI changes require edits in multiple files. Inconsistent copy possible.
-
-**Recommendation:** Extract `<HealthGuard>` or `<PageLoadingState>` component that handles health check + loading + OpenClaw-unavailable states.
+**Status:** ✅ Done
 
 ---
 
 ## 21. BindingsPage: Unstable list key
 
-**File:** [kitchen/app/src/pages/BindingsPage.tsx](kitchen/app/src/pages/BindingsPage.tsx) line 145
+**File:** [kitchen/app/src/pages/BindingsPage.tsx](kitchen/app/src/pages/BindingsPage.tsx)
 
-**Smell:** `key={i}` for bindings list. Index as key can cause stale UI if list reorders.
+**Smell:** ~~`key={i}`~~ — Now uses `key={\`${b.agentId}-${b.match.channel}\`}` composite key.
 
-**Impact:** Minor — bindings list rarely reorders, but keys should be stable.
-
-**Recommendation:** Use `key={\`${b.agentId}-${b.match.channel}\`}` or similar composite key.
+**Status:** ✅ Done
 
 ---
 
@@ -318,26 +302,24 @@ t.stage === "backlog" ? "work/backlog" : t.stage === "in-progress" ? ...
 
 **File:** [kitchen/app/src/components/TicketDetail.tsx](kitchen/app/src/components/TicketDetail.tsx)
 
-**Smell:** API and constants imports appear after the TicketContent component definition. Unusual grouping.
+**Smell:** ~~Imports after TicketContent~~ — All imports are at top of file.
 
-**Impact:** Minor — readability. Imports typically grouped at top.
-
-**Recommendation:** Move all imports to top of file.
+**Status:** ✅ Done
 
 ---
 
 ## Summary: Additional findings (post-refactor)
 
-| # | Smell | Effort | Impact |
-|---|-------|--------|--------|
-| 15 | BoardPage: useAsync, extract modals | High | Same as RecipesPage refactor |
-| 16 | Frontend: use DEMO_TEAM_ID constant | Low | Single source for demo ID |
-| 17 | BindingsPage: useAsync, add cancellation | Medium | Consistency, no unmount leak |
-| 18 | InboxList, TicketDetail: use useAsync | Low | Less boilerplate |
-| 19 | CleanupModal: add fetch cancellation | Low | Avoid setState-on-unmount |
-| 20 | Extract HealthGuard / PageLoadingState | Medium | DRY loading UI |
-| 21 | BindingsPage: stable list keys | Low | Correct React keys |
-| 22 | TicketDetail: fix import order | Low | Readability |
+| # | Smell | Effort | Impact | Status |
+|---|-------|--------|--------|--------|
+| 15 | BoardPage: useAsync, extract modals | High | Same as RecipesPage refactor | ✅ Done |
+| 16 | Frontend: use DEMO_TEAM_ID constant | Low | Single source for demo ID | ✅ Done |
+| 17 | BindingsPage: useAsync, add cancellation | Medium | Consistency, no unmount leak | ✅ Done |
+| 18 | InboxList, TicketDetail: use useAsync | Low | Less boilerplate | ✅ Done |
+| 19 | CleanupModal: add fetch cancellation | Low | Avoid setState-on-unmount | ✅ Done |
+| 20 | Extract HealthGuard / PageLoadingState | Medium | DRY loading UI | ✅ Done |
+| 21 | BindingsPage: stable list keys | Low | Correct React keys | ✅ Done |
+| 22 | TicketDetail: fix import order | Low | Readability | ✅ Done |
 
 ---
 
@@ -497,3 +479,82 @@ t.stage === "backlog" ? "work/backlog" : t.stage === "in-progress" ? ...
 | 31 | Extract icon components | Medium | DRY, bundle | ✅ Done |
 | 32 | useFormSubmit / FormModal pattern | Medium | Less boilerplate | ✅ Done |
 | 33 | EOF newlines | Trivial | Lint hygiene | ✅ Done |
+
+---
+
+## Third pass: Auth feature (post–security review)
+
+### 34. auth.js: Bcrypt cost factor magic number
+
+**File:** [kitchen/server/auth.js](kitchen/server/auth.js)
+
+**Smell:** `hashSync(password, 10)` — `10` is the bcrypt cost factor. Not named.
+
+**Impact:** Minor. Changing cost requires finding the literal. Cost 10 is standard; documenting it clarifies intent.
+
+**Recommendation:** `const BCRYPT_COST = 10;` and use `hashSync(password, BCRYPT_COST)`.
+
+**Status:** ✅ Done
+
+---
+
+### 35. auth.js: Test-only export in production module
+
+**File:** [kitchen/server/auth.js](kitchen/server/auth.js)
+
+**Smell:** ~~Test hook in production~~ — Tests import via `auth-test-utils.ts` (resetAuthCacheForTests). auth.js still exports the internal function for the util; JSDoc clarifies test-only use.
+
+**Status:** ✅ Done
+
+---
+
+### 36. demo-workspace: Hardcoded demo-team
+
+**File:** [kitchen/server/demo-workspace.js](kitchen/server/demo-workspace.js)
+
+**Smell:** ~~`teamId: "demo-team"`~~ — Uses `DEMO_TEAM_ID` from validation.js.
+
+**Status:** ✅ Done
+
+---
+
+### 37. ROUTE_TITLES missing /login
+
+**File:** [kitchen/app/src/constants.ts](kitchen/app/src/constants.ts)
+
+**Smell:** ~~No title for /login~~ — Added `"/login": "Sign in"`.
+
+**Status:** ✅ Done
+
+---
+
+### 38. ActivityFeed: Inline chevron SVGs
+
+**File:** [kitchen/app/src/components/ActivityFeed.tsx](kitchen/app/src/components/ActivityFeed.tsx)
+
+**Smell:** ~~Duplicate chevron SVGs~~ — Extracted to `IconChevron` component.
+
+**Status:** ✅ Done
+
+---
+
+### 39. PageLoadingState: No retry on error
+
+**File:** [kitchen/app/src/components/PageLoadingState.tsx](kitchen/app/src/components/PageLoadingState.tsx)
+
+**Smell:** ~~Error state without retry~~ — Added optional `onRetry` prop; RecipesPage passes it.
+
+**Status:** ✅ Done
+
+---
+
+## Summary: Third pass
+
+| #  | Smell | Effort | Impact | Status |
+|----|-------|--------|--------|--------|
+| 34 | auth.js: BCRYPT_COST constant | Trivial | Clarity | ✅ Done |
+| 35 | auth.js: _testOnlyResetPasswordHashCache | Low | Optional refactor | ✅ Done |
+| 36 | demo-workspace: use DEMO_TEAM_ID | Trivial | Consistency | ✅ Done |
+| 37 | ROUTE_TITLES: add /login | Trivial | UX | ✅ Done |
+| 38 | ActivityFeed: extract IconChevron | Low | DRY | ✅ Done |
+| 39 | PageLoadingState: add onRetry | Low | UX | ✅ Done |

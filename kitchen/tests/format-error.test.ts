@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { formatError } from '../server/index.js';
+import { getErrorStatus } from '../server/validation.js';
 
 describe('formatError', () => {
   test('maps ETIMEDOUT code to "Operation timed out"', () => {
@@ -29,9 +30,20 @@ describe('formatError', () => {
     try {
       expect(formatError(new Error("ENOENT: no such file or directory, open '/tmp/secret'"))).toBe('File not found');
       expect(formatError(new Error('ENOENT: something failed'))).toBe('File not found');
+      expect(formatError(new Error("Error: open '/home/user/secret.dat'"))).toBe('File not found');
     } finally {
       process.env.NODE_ENV = original;
     }
+  });
+
+  test('getErrorStatus returns 400 for Invalid/Missing/required', () => {
+    expect(getErrorStatus(new Error('Invalid format'))).toBe(400);
+    expect(getErrorStatus(new Error('Missing field'))).toBe(400);
+    expect(getErrorStatus(new Error('Field required'))).toBe(400);
+  });
+
+  test('getErrorStatus returns 502 for other errors', () => {
+    expect(getErrorStatus(new Error('CLI failed'))).toBe(502);
   });
 
   test('returns raw message for ENOENT when not in production', () => {

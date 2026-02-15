@@ -205,6 +205,15 @@ describe('Kitchen API (openclaw-dependent routes)', () => {
     expect(res.body).toHaveProperty('error', 'Recipe not found');
   });
 
+  test('GET /api/recipes/:id/status returns 200 when recipeStatus returns array', async () => {
+    vi.mocked(openclaw.recipeStatus).mockReturnValue([
+      { id: 'dev-team', requiredSkills: [], missingSkills: [], installCommands: [] },
+    ]);
+
+    const res = await request(app).get('/api/recipes/dev-team/status').expect(200);
+    expect(res.body).toHaveProperty('id', 'dev-team');
+  });
+
   test('GET /api/recipes/:id/status returns 200 when recipeStatus returns single object', async () => {
     vi.mocked(openclaw.recipeStatus).mockReturnValue({
       id: 'dev-team',
@@ -318,6 +327,22 @@ describe('scaffold-agent API', () => {
     expect(res.body.error).toMatch(/Invalid agentId format/);
     expect(openclaw.scaffoldAgent).not.toHaveBeenCalled();
   });
+
+  test('POST /api/recipes/:id/scaffold-agent returns 400 when name exceeds 256 chars', async () => {
+    const res = await request(app)
+      .post('/api/recipes/pm/scaffold-agent')
+      .send({ agentId: 'pm', name: 'x'.repeat(257) })
+      .expect(400);
+    expect(res.body.error).toMatch(/256|maximum length/);
+  });
+
+  test('POST /api/recipes/:id/scaffold-agent returns 400 when name has invalid chars', async () => {
+    const res = await request(app)
+      .post('/api/recipes/pm/scaffold-agent')
+      .send({ agentId: 'pm', name: 'Agent<script>' })
+      .expect(400);
+    expect(res.body.error).toMatch(/invalid|character/);
+  });
 });
 
 describe('recipes install API', () => {
@@ -405,6 +430,31 @@ describe('recipes install API', () => {
       .expect(400);
     expect(res.body.error).toBe('Invalid agentId format');
     expect(openclaw.installRecipeSkills).not.toHaveBeenCalled();
+  });
+
+  test('POST /api/recipes/:id/install returns 200 with agent scope', async () => {
+    await request(app)
+      .post('/api/recipes/dev/install')
+      .send({ scope: 'agent', agentId: 'pm-agent' })
+      .expect(200);
+    expect(openclaw.installRecipeSkills).toHaveBeenCalledWith('dev', { scope: 'agent', teamId: undefined, agentId: 'pm-agent' });
+  });
+
+  test('POST /api/recipes/:id/install does not append event when installed is empty', async () => {
+    vi.mocked(openclaw.installRecipeSkills).mockResolvedValueOnce({ ok: true, installed: [] });
+    const res = await request(app)
+      .post('/api/recipes/dev/install')
+      .send({ scope: 'global' })
+      .expect(200);
+    expect(res.body.installed).toEqual([]);
+    expect(activityEvents.filter((e) => e.type === 'install')).toHaveLength(0);
+  });
+
+  test('GET /api/recipes/:id returns 400 for invalid recipeId format', async () => {
+    vi.mocked(openclaw.showRecipe).mockClear();
+    const res = await request(app).get('/api/recipes/bad.id').expect(400);
+    expect(res.body.error).toBe('Invalid recipeId format');
+    expect(openclaw.showRecipe).not.toHaveBeenCalled();
   });
 });
 
@@ -527,6 +577,14 @@ describe('Bindings API', () => {
     expect(res.body).toHaveProperty('error');
   });
 
+  test('POST /api/bindings returns 400 when match is null', async () => {
+    const res = await request(app)
+      .post('/api/bindings')
+      .send({ agentId: 'my-agent', match: null })
+      .expect(400);
+    expect(res.body.error).toMatch(/Missing agentId or match.channel/);
+  });
+
   test('POST /api/bindings returns 400 when agentId has invalid format', async () => {
     vi.mocked(openclaw.addBinding).mockClear();
     const res = await request(app)
@@ -561,6 +619,16 @@ describe('Bindings API', () => {
       .send({ match: {} })
       .expect(400);
     expect(res.body.error).toMatch(/match.channel/);
+  });
+
+  test('DELETE /api/bindings returns 200 when agentId and match provided', async () => {
+    vi.mocked(openclaw.removeBinding).mockImplementation(() => {});
+    const res = await request(app)
+      .delete('/api/bindings')
+      .send({ agentId: 'my-agent', match: { channel: 'telegram' } })
+      .expect(200);
+    expect(res.body).toEqual({ ok: true });
+    expect(openclaw.removeBinding).toHaveBeenCalledWith({ agentId: 'my-agent', match: { channel: 'telegram' } });
   });
 
   test('DELETE /api/bindings returns 400 when agentId provided but invalid format', async () => {

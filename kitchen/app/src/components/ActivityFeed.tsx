@@ -9,6 +9,7 @@ import {
   ACTIVITY_FEED_WIDTH_EXPANDED,
   ACTIVITY_FEED_WIDTH_COLLAPSED,
 } from "../constants";
+import { IconChevron } from "./icons/IconChevron";
 
 export function ActivityFeed() {
   const [expanded, setExpanded] = useState(true);
@@ -48,15 +49,7 @@ export function ActivityFeed() {
         aria-label={expanded ? "Collapse activity feed" : "Expand activity feed"}
       >
         <span className="activity-feed-chevron" aria-hidden>
-          {expanded ? (
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
-            </svg>
-          ) : (
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
-            </svg>
-          )}
+          <IconChevron direction={expanded ? "left" : "right"} />
         </span>
         {expanded && <span className="activity-feed-title">Activity</span>}
       </button>

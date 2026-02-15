@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { Nav, Navbar, Container } from "react-bootstrap";
-import { Outlet, NavLink, useLocation } from "react-router-dom";
+import { Outlet, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { ThemeToggle } from "./ThemeToggle";
+import { useAuth } from "../AuthContext";
 import { useDemo } from "../DemoContext";
 import { ROUTE_TITLES } from "../constants";
 
@@ -9,7 +10,14 @@ const DOCUMENT_TITLE_BASE = "ClawRecipes Kitchen";
 
 export function Layout() {
   const { demoMode, setDemoMode } = useDemo();
+  const { isAuthenticated, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
 
   useEffect(() => {
     const title = ROUTE_TITLES[location.pathname];
@@ -41,6 +49,15 @@ export function Layout() {
               </Nav.Link>
             </Nav>
             <div className="d-flex align-items-center gap-2">
+              {isAuthenticated && (
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="btn btn-outline-secondary btn-sm"
+                >
+                  Logout
+                </button>
+              )}
               {demoMode && (
                 <>
                   <span className="badge bg-success">demo</span>

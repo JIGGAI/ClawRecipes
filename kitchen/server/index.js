@@ -1,3 +1,5 @@
+import dotenv from "dotenv";
+if (!process.env.VITEST) dotenv.config();
 import express from "express";
 import cors from "cors";
 import rateLimit from "express-rate-limit";
@@ -10,6 +12,7 @@ import { createBindingsRouter } from "./routes/bindings.js";
 import { createCleanupRouter } from "./routes/cleanup.js";
 import { createCoreRouter } from "./routes/core.js";
 import { formatError } from "./validation.js";
+import { authMiddleware } from "./auth.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3456;
@@ -25,7 +28,13 @@ export { formatError };
 export function createApp(opts = {}) {
   const prod = opts.production === true || isProd;
   const app = express();
-  app.use(cors(prod ? { origin: process.env.ACCESS_CONTROL_ALLOW_ORIGIN || false } : {}));
+  const corsOpts = prod
+    ? {
+        origin: process.env.ACCESS_CONTROL_ALLOW_ORIGIN || false,
+        allowedHeaders: ["Content-Type", "Authorization", "X-Confirm-Destructive"],
+      }
+    : {};
+  app.use(cors(corsOpts));
   app.use(express.json({ limit: "256kb" }));
 
   app.use((_req, res, next) => {
@@ -48,6 +57,10 @@ export function createApp(opts = {}) {
         skip: (req) => req.path === "/api/health",
       })
     );
+  }
+
+  if (process.env.KITCHEN_AUTH_ENABLED === "true") {
+    app.use("/api", authMiddleware());
   }
 
   // API routes

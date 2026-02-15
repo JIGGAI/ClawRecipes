@@ -7,8 +7,8 @@ type DemoContextValue = {
 
 const DemoContext = createContext<DemoContextValue | null>(null);
 
-export function DemoProvider({ children }: { children: React.ReactNode }) {
-  const [demoMode, setDemoMode] = useState(false);
+export function DemoProvider({ children, initialDemoMode = false }: { children: React.ReactNode; initialDemoMode?: boolean }) {
+  const [demoMode, setDemoMode] = useState(initialDemoMode);
   return (
     <DemoContext.Provider value={{ demoMode, setDemoMode }}>
       {children}

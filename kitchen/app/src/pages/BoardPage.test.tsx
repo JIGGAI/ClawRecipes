@@ -4,6 +4,7 @@ import { render, screen, cleanup, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { ThemeProvider } from '../ThemeContext';
+import { AuthProvider } from '../AuthContext';
 import { DemoProvider } from '../DemoContext';
 import { Layout } from '../components/Layout';
 import { BoardPage } from './BoardPage';
@@ -41,11 +42,13 @@ function renderBoardPage(initialEntries = ['/board'], withLayout = false) {
   );
   return render(
     <ThemeProvider>
-      <DemoProvider>
-        <MemoryRouter initialEntries={initialEntries}>
-          {content}
-        </MemoryRouter>
-      </DemoProvider>
+      <AuthProvider>
+        <DemoProvider>
+          <MemoryRouter initialEntries={initialEntries}>
+            {content}
+          </MemoryRouter>
+        </DemoProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }

@@ -6,6 +6,12 @@ import JSON5 from "json5";
 import YAML from "yaml";
 import { buildRemoveTeamPlan, executeRemoveTeamPlan, loadCronStore, saveCronStore } from "./src/lib/remove-team";
 import { planWorkspaceCleanup, executeWorkspaceCleanup } from "./src/lib/cleanup-workspaces";
+import {
+  readKitchenAuthEnv,
+  writeKitchenAuthEnv,
+  getKitchenEnvPath,
+  type KitchenAuthEnv,
+} from "./src/lib/kitchen-auth-env";
 
 type RecipesConfig = {
   workspaceRecipesDir?: string;
@@ -2124,13 +2130,90 @@ const recipesPlugin = {
             }
           });
 
-        cmd
+        const kitchen = cmd
           .command("kitchen")
-          .description("Launch ClawRecipes Kitchen (prints command to run)")
+          .description("ClawRecipes Kitchen (launch UI, manage auth)")
           .action(() => {
             console.error("To launch ClawRecipes Kitchen, run:\n");
             console.error("  npx -p @jiggai/recipes clawrecipes-kitchen\n");
             console.error("Or from this repo: npm run kitchen:prod");
+          });
+
+        kitchen
+          .command("status")
+          .description("Show auth configuration")
+          .action(async () => {
+            const env = await readKitchenAuthEnv(__dirname);
+            const enabled = env.KITCHEN_AUTH_ENABLED === "true";
+            console.log(
+              JSON.stringify(
+                {
+                  enabled,
+                  user: enabled && env.KITCHEN_AUTH_USER ? env.KITCHEN_AUTH_USER : undefined,
+                  envFile: getKitchenEnvPath(__dirname),
+                },
+                null,
+                2
+              )
+            );
+          });
+
+        kitchen
+          .command("set-user")
+          .description("Set username and password for Basic Auth")
+          .requiredOption("-u, --username <user>", "Username")
+          .option("-p, --password <password>", "Password (provide this or --password-file)")
+          .option("--password-file <path>", "Read password from file (e.g. Docker secrets)")
+          .action(async (options: { username: string; password?: string; passwordFile?: string }) => {
+            const user = options.username.trim();
+            if (!user) throw new Error("Username cannot be empty");
+            if (!options.password && !options.passwordFile) {
+              throw new Error("Provide --password or --password-file");
+            }
+            const updates: KitchenAuthEnv = {
+              KITCHEN_AUTH_ENABLED: "true",
+              KITCHEN_AUTH_USER: user,
+            };
+            if (options.passwordFile) {
+              updates.KITCHEN_AUTH_PASSWORD_FILE = options.passwordFile.trim();
+              updates.KITCHEN_AUTH_PASSWORD = "";
+            } else {
+              updates.KITCHEN_AUTH_PASSWORD = options.password!;
+              updates.KITCHEN_AUTH_PASSWORD_FILE = "";
+            }
+            await writeKitchenAuthEnv(__dirname, updates);
+            console.log(
+              JSON.stringify({
+                ok: true,
+                user: updates.KITCHEN_AUTH_USER,
+                envFile: getKitchenEnvPath(__dirname),
+                message: "Restart Kitchen for changes to take effect.",
+              })
+            );
+          });
+
+        kitchen
+          .command("enable")
+          .description("Enable Basic Auth (keeps existing user/password if set)")
+          .action(async () => {
+            const env = await readKitchenAuthEnv(__dirname);
+            await writeKitchenAuthEnv(__dirname, { ...env, KITCHEN_AUTH_ENABLED: "true" });
+            console.log(
+              JSON.stringify({
+                ok: true,
+                enabled: true,
+                user: env.KITCHEN_AUTH_USER ?? "(not set — run kitchen set-user)",
+                message: "Restart Kitchen for changes to take effect.",
+              })
+            );
+          });
+
+        kitchen
+          .command("disable")
+          .description("Disable Basic Auth")
+          .action(async () => {
+            await writeKitchenAuthEnv(__dirname, { KITCHEN_AUTH_ENABLED: "false" });
+            console.log(JSON.stringify({ ok: true, enabled: false }));
           });
 
         cmd

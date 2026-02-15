@@ -1,3 +1,17 @@
+import * as authStore from "./authStore";
+
+/** Callback when API returns 401; used to redirect to login */
+let onUnauthorized: (() => void) | null = null;
+export function setOnUnauthorized(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
+function getAuthHeaders(): Record<string, string> {
+  const value = authStore.getAuthHeader();
+  if (!value) return {};
+  return { Authorization: `Basic ${value}` };
+}
+
 export type Team = {
   teamId: string;
   recipeId: string;
@@ -36,9 +50,16 @@ async function parseApiError(res: Response): Promise<string> {
 
 /**
  * Fetch JSON from API; throws on !res.ok with parsed error message.
+ * Adds auth headers when available. On 401, clears auth store and calls onUnauthorized.
  */
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
+  const headers = { ...getAuthHeaders(), ...((init?.headers as Record<string, string>) ?? {}) };
+  const res = await fetch(url, { ...init, headers });
+  if (res.status === 401) {
+    authStore.clear();
+    onUnauthorized?.();
+    throw new Error(await parseApiError(res));
+  }
   if (!res.ok) throw new Error(await parseApiError(res));
   return res.json();
 }
@@ -299,6 +320,10 @@ export async function executeCleanup(): Promise<{
 
 export async function fetchHealth(): Promise<{ ok: boolean; openclaw: boolean }> {
   return fetchJson("/api/health");
+}
+
+export async function fetchAuthStatus(): Promise<{ authRequired: boolean }> {
+  return fetchJson("/api/auth/status");
 }
 
 /** Demo data for when running Kitchen without OpenClaw (e.g. standalone or plugin demo). */
