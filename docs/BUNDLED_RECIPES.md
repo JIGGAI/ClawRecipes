@@ -193,6 +193,102 @@ Default tool policy:
 - allows `group:runtime`
 - does not deny `exec`
 
+---
+
+# Teams
+
+## 11) `marketing-team` (team)
+**Use when:** you want a full marketing execution loop: SEO + copy + ads + social + design + analytics.
+
+Scaffold:
+```bash
+openclaw recipes scaffold-team marketing-team --team-id marketing-team-team --apply-config
+```
+
+Roles:
+- lead, seo, copywriter, ads, social, designer, analyst
+
+---
+
+# Vertical packs (bundled team recipes)
+
+## 12) `business-team` (team)
+**Use when:** you want a general-purpose business execution team.
+
+Scaffold:
+```bash
+openclaw recipes scaffold-team business-team --team-id business-team-team --apply-config
+```
+
+Roles:
+- lead, ops, sales, marketing, finance, analyst
+
+## 13) `law-firm-team` (team)
+**Use when:** you want a legal practice workflow: intake → research → drafting → compliance.
+
+Scaffold:
+```bash
+openclaw recipes scaffold-team law-firm-team --team-id law-firm-team-team --apply-config
+```
+
+Roles:
+- lead, intake, researcher, drafter, compliance, ops
+
+## 14) `clinic-team` (team)
+**Use when:** you want a clinic ops workflow: intake/scheduling/billing/compliance/patient education.
+
+Scaffold:
+```bash
+openclaw recipes scaffold-team clinic-team --team-id clinic-team-team --apply-config
+```
+
+Roles:
+- lead, intake, scheduler, billing, compliance, educator
+
+## 15) `construction-team` (team)
+**Use when:** you want a construction delivery workflow: PM/estimation/scheduling/safety/procurement.
+
+Scaffold:
+```bash
+openclaw recipes scaffold-team construction-team --team-id construction-team-team --apply-config
+```
+
+Roles:
+- lead, pm, estimator, scheduler, safety, procurement
+
+## 16) `financial-planner-team` (team)
+**Use when:** you want a financial planning practice workflow.
+
+Scaffold:
+```bash
+openclaw recipes scaffold-team financial-planner-team --team-id financial-planner-team-team --apply-config
+```
+
+Roles:
+- lead, advisor, analyst, tax, insurance, ops
+
+## 17) `stock-trader-team` (team)
+**Use when:** you want a trading workflow: research/signals/risk/journaling.
+
+Scaffold:
+```bash
+openclaw recipes scaffold-team stock-trader-team --team-id stock-trader-team-team --apply-config
+```
+
+Roles:
+- lead, researcher, signals, risk, journal, ops
+
+## 18) `crypto-trader-team` (team)
+**Use when:** you want a crypto trading workflow with onchain research.
+
+Scaffold:
+```bash
+openclaw recipes scaffold-team crypto-trader-team --team-id crypto-trader-team-team --apply-config
+```
+
+Roles:
+- lead, onchain, news, risk, ops, journal
+
 ## Copying and modifying bundled recipes
 A good workflow is:
 1) Inspect:
