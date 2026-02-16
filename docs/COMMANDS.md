@@ -41,8 +41,14 @@ openclaw recipes scaffold project-manager --agent-id pm --name "Project Manager"
 Options:
 - `--agent-id <id>` (required)
 - `--name <name>`
+- `--recipe-id <recipeId>` (workspace recipe id to write; default: `<agentId>`)
+- `--auto-increment` (if the workspace recipe id is taken, pick `<agentId>-2/-3/...`)
+- `--overwrite-recipe` (overwrite the generated workspace recipe file if it already exists)
 - `--overwrite` (overwrite recipe-managed files)
 - `--apply-config` (write/update `agents.list[]` in OpenClaw config)
+
+Also writes a workspace recipe file:
+- `~/.openclaw/workspace/recipes/<recipeId>.md`
 
 ## `scaffold-team <recipeId>`
 
@@ -64,8 +70,14 @@ openclaw recipes scaffold-team development-team \
 Options:
 - `--team-id <teamId>` (required)
   - **Must end with `-team`** (enforced)
+- `--recipe-id <recipeId>` (workspace recipe id to write; default: `<teamId>`)
+- `--auto-increment` (if the workspace recipe id is taken, pick `<teamId>-2/-3/...`)
+- `--overwrite-recipe` (overwrite the generated workspace recipe file if it already exists)
 - `--overwrite`
 - `--apply-config`
+
+Also writes a workspace recipe file:
+- `~/.openclaw/workspace/recipes/<recipeId>.md`
 
 Creates a shared team workspace root:
 

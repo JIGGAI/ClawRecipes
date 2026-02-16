@@ -1,6 +1,6 @@
 {
   "name": "@jiggai/recipes",
-  "version": "0.2.17",
+  "version": "0.2.22",
   "description": "ClawRecipes plugin for OpenClaw (markdown recipes -> scaffold agents/teams)",
   "main": "index.ts",
   "type": "commonjs",
@@ -31,6 +31,8 @@
     "test:all": "npm run test && npm run test:kitchen",
     "test:kitchen": "cd kitchen && npm run test",
     "test:smoke": "node scripts/scaffold-smoke.mjs",
+    "test:provenance-smoke": "node scripts/scaffold-team-provenance-smoke.mjs",
+    "test:agent-recipefile-smoke": "node scripts/scaffold-agent-recipefile-smoke.mjs",
     "smoke": "node scripts/scaffold-smoke.mjs",
     "scaffold:smoke": "node scripts/scaffold-smoke.mjs",
     "kitchen": "cd kitchen && npm run dev",

@@ -9,8 +9,8 @@ cronJobs:
     name: "Lead triage loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md."
-    enabledByDefault: false
+    message: "Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md. Anti-stuck: if lowest in-progress is HARD BLOCKED, advance the next unblocked ticket (or pull from backlog). If in-progress is stale (>12h no dated update), comment or move it back."
+    enabledByDefault: true
   - id: execution-loop
     name: "Execution loop"
     schedule: "*/30 7-23 * * 1-5"

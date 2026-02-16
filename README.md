@@ -67,8 +67,8 @@ See `docs/CLAWCIPES_KITCHEN.md` for full details.
 
 ## Commands (high level)
 - `openclaw recipes list|show|status`
-- `openclaw recipes scaffold` (agent → `workspace-<agentId>`)
-- `openclaw recipes scaffold-team` (team → `workspace-<teamId>` + `roles/<role>/`)
+- `openclaw recipes scaffold` (agent → `workspace-<agentId>` + writes workspace recipe `~/.openclaw/workspace/recipes/<agentId>.md` by default)
+- `openclaw recipes scaffold-team` (team → `workspace-<teamId>` + `roles/<role>/` + writes workspace recipe `~/.openclaw/workspace/recipes/<teamId>.md` by default)
 - `openclaw recipes install <idOrSlug> [--yes] [--global|--agent-id <id>|--team-id <id>]` (skills: global or scoped)
 - `openclaw recipes bind|unbind|bindings` (multi-agent routing)
 - `openclaw recipes dispatch ...` (request → inbox + ticket + assignment)
