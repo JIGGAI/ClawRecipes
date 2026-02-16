@@ -195,9 +195,24 @@ Default tool policy:
 
 ---
 
+# Teams
+
+## 11) `marketing-team` (team)
+**Use when:** you want a full marketing execution loop: SEO + copy + ads + social + design + analytics.
+
+Scaffold:
+```bash
+openclaw recipes scaffold-team marketing-team --team-id marketing-team-team --apply-config
+```
+
+Roles:
+- lead, seo, copywriter, ads, social, designer, analyst
+
+---
+
 # Vertical packs (bundled team recipes)
 
-## 11) `business-team` (team)
+## 12) `business-team` (team)
 **Use when:** you want a general-purpose business execution team.
 
 Scaffold:
@@ -208,7 +223,7 @@ openclaw recipes scaffold-team business-team --team-id business-team-team --appl
 Roles:
 - lead, ops, sales, marketing, finance, analyst
 
-## 12) `law-firm-team` (team)
+## 13) `law-firm-team` (team)
 **Use when:** you want a legal practice workflow: intake → research → drafting → compliance.
 
 Scaffold:
@@ -219,7 +234,7 @@ openclaw recipes scaffold-team law-firm-team --team-id law-firm-team-team --appl
 Roles:
 - lead, intake, researcher, drafter, compliance, ops
 
-## 13) `clinic-team` (team)
+## 14) `clinic-team` (team)
 **Use when:** you want a clinic ops workflow: intake/scheduling/billing/compliance/patient education.
 
 Scaffold:
@@ -230,7 +245,7 @@ openclaw recipes scaffold-team clinic-team --team-id clinic-team-team --apply-co
 Roles:
 - lead, intake, scheduler, billing, compliance, educator
 
-## 14) `construction-team` (team)
+## 15) `construction-team` (team)
 **Use when:** you want a construction delivery workflow: PM/estimation/scheduling/safety/procurement.
 
 Scaffold:
@@ -241,7 +256,7 @@ openclaw recipes scaffold-team construction-team --team-id construction-team-tea
 Roles:
 - lead, pm, estimator, scheduler, safety, procurement
 
-## 15) `financial-planner-team` (team)
+## 16) `financial-planner-team` (team)
 **Use when:** you want a financial planning practice workflow.
 
 Scaffold:
@@ -252,7 +267,7 @@ openclaw recipes scaffold-team financial-planner-team --team-id financial-planne
 Roles:
 - lead, advisor, analyst, tax, insurance, ops
 
-## 16) `stock-trader-team` (team)
+## 17) `stock-trader-team` (team)
 **Use when:** you want a trading workflow: research/signals/risk/journaling.
 
 Scaffold:
@@ -263,7 +278,7 @@ openclaw recipes scaffold-team stock-trader-team --team-id stock-trader-team-tea
 Roles:
 - lead, researcher, signals, risk, journal, ops
 
-## 17) `crypto-trader-team` (team)
+## 18) `crypto-trader-team` (team)
 **Use when:** you want a crypto trading workflow with onchain research.
 
 Scaffold:
