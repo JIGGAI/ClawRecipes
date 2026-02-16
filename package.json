@@ -23,6 +23,7 @@
   ],
   "scripts": {
     "test": "vitest run",
+    "check:bundled-team-recipes": "node scripts/check-bundled-team-recipes.mjs",
     "test:smoke": "node scripts/scaffold-smoke.mjs",
     "test:provenance-smoke": "node scripts/scaffold-team-provenance-smoke.mjs",
     "test:agent-recipefile-smoke": "node scripts/scaffold-agent-recipefile-smoke.mjs",

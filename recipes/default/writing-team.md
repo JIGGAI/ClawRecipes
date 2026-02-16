@@ -226,3 +226,17 @@ tools:
 # Writing Team Recipe
 
 A lightweight writing pipeline that pairs briefs/outlines/drafts/edits with a file-first ticket workflow.
+
+## Files
+- Creates a shared team workspace under `~/.openclaw/workspace-<teamId>/` (example: `~/.openclaw/workspace-writing-team-team/`).
+- Creates per-role directories under `roles/<role>/` for: `SOUL.md`, `AGENTS.md`, `TOOLS.md`, `STATUS.md`, `NOTES.md`.
+- Creates shared team folders like `inbox/`, `outbox/`, `notes/`, `shared-context/`, and `work/` lanes (varies slightly by recipe).
+
+## Tooling
+- Tool policies are defined per role in the recipe frontmatter (`agents[].tools`).
+- Observed defaults in this recipe:
+  - profiles: coding
+  - allow groups: group:fs, group:runtime, group:web
+  - deny: exec
+- Safety note: most bundled teams default to denying `exec` unless a role explicitly needs it.
+

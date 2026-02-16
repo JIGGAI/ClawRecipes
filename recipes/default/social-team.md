@@ -612,3 +612,17 @@ tools:
 # Social Team Recipe
 
 Scaffolds a shared team workspace and platform-specialist agents. This team executes social distribution and reporting, and hands off learnings back to marketing-team.
+
+## Files
+- Creates a shared team workspace under `~/.openclaw/workspace-<teamId>/` (example: `~/.openclaw/workspace-social-team-team/`).
+- Creates per-role directories under `roles/<role>/` for: `SOUL.md`, `AGENTS.md`, `TOOLS.md`, `STATUS.md`, `NOTES.md`.
+- Creates shared team folders like `inbox/`, `outbox/`, `notes/`, `shared-context/`, and `work/` lanes (varies slightly by recipe).
+
+## Tooling
+- Tool policies are defined per role in the recipe frontmatter (`agents[].tools`).
+- Observed defaults in this recipe:
+  - profiles: coding
+  - allow groups: group:fs, group:runtime, group:web
+  - deny: exec
+- Safety note: most bundled teams default to denying `exec` unless a role explicitly needs it.
+

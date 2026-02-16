@@ -387,3 +387,17 @@ Scaffolds a shared team workspace and four namespaced agents (lead/dev/devops/te
 - Shared workspace at `~/.openclaw/workspace-<teamId>/` (e.g. `~/.openclaw/workspace-development-team-team/`)
 - File-first tickets: backlog → in-progress → testing → done
 - Team lead acts as dispatcher; tester verifies before done
+
+## Files
+- Creates a shared team workspace under `~/.openclaw/workspace-<teamId>/` (example: `~/.openclaw/workspace-development-team-team/`).
+- Creates per-role directories under `roles/<role>/` for: `SOUL.md`, `AGENTS.md`, `TOOLS.md`, `STATUS.md`, `NOTES.md`.
+- Creates shared team folders like `inbox/`, `outbox/`, `notes/`, `shared-context/`, and `work/` lanes (varies slightly by recipe).
+
+## Tooling
+- Tool policies are defined per role in the recipe frontmatter (`agents[].tools`).
+- Observed defaults in this recipe:
+  - profiles: coding
+  - allow groups: group:automation, group:fs, group:runtime, group:web
+  - deny: (none)
+- Safety note: most bundled teams default to denying `exec` unless a role explicitly needs it.
+

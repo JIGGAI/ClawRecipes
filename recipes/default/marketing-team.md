@@ -274,3 +274,17 @@ Scaffolds a shared marketing workspace plus roles for SEO, copy, ads, social, de
 - Paid campaign plans + creative test matrices
 - Social calendar + post drafts
 - Weekly reporting + experiment readouts
+
+## Files
+- Creates a shared team workspace under `~/.openclaw/workspace-<teamId>/` (example: `~/.openclaw/workspace-marketing-team-team/`).
+- Creates per-role directories under `roles/<role>/` for: `SOUL.md`, `AGENTS.md`, `TOOLS.md`, `STATUS.md`, `NOTES.md`.
+- Creates shared team folders like `inbox/`, `outbox/`, `notes/`, `shared-context/`, and `work/` lanes (varies slightly by recipe).
+
+## Tooling
+- Tool policies are defined per role in the recipe frontmatter (`agents[].tools`).
+- Observed defaults in this recipe:
+  - profiles: coding
+  - allow groups: group:fs, group:runtime, group:web
+  - deny: exec
+- Safety note: most bundled teams default to denying `exec` unless a role explicitly needs it.
+
