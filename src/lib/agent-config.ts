@@ -16,6 +16,18 @@ export function upsertAgentInConfig(cfgObj: AgentsConfigMutable, snippet: AgentC
   const list = cfgObj.agents.list;
   const idx = list.findIndex((a) => a?.id === snippet.id);
   const prev = idx >= 0 ? list[idx] : {};
+  const prevTools = (prev as any)?.tools as undefined | { profile?: string; allow?: string[]; deny?: string[] };
+  const nextTools =
+    snippet.tools === undefined
+      ? prevTools
+      : {
+          ...(prevTools ?? {}),
+          ...(snippet.tools ?? {}),
+          ...(Object.prototype.hasOwnProperty.call(snippet.tools, "profile") ? { profile: snippet.tools.profile } : {}),
+          ...(Object.prototype.hasOwnProperty.call(snippet.tools, "allow") ? { allow: snippet.tools.allow } : {}),
+          ...(Object.prototype.hasOwnProperty.call(snippet.tools, "deny") ? { deny: snippet.tools.deny } : {}),
+        };
+
   const nextAgent = {
     ...prev,
     id: snippet.id,
@@ -24,7 +36,7 @@ export function upsertAgentInConfig(cfgObj: AgentsConfigMutable, snippet: AgentC
       ...(prev?.identity ?? {}),
       ...(snippet.identity ?? {}),
     },
-    tools: snippet.tools ? { ...snippet.tools } : prev?.tools,
+    tools: nextTools,
   };
 
   if (idx >= 0) {
