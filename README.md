@@ -1,7 +1,7 @@
 # ClawRecipes (OpenClaw Recipes Plugin)
 
 <p align="center">
-  <img src="./clawrecipes_cook.jpg" alt="ClawRecipes logo" width="240" />
+  <img src="clawrecipes_cook.jpg" alt="ClawRecipes logo" width="240" />
 </p>
 
 ClawRecipes is an OpenClaw plugin that provides **CLI-first recipes** for scaffolding specialist agents and teams from Markdown.
@@ -134,12 +134,15 @@ Notes:
 ## Links
 - GitHub: https://github.com/JIGGAI/ClawRecipes
 - Docs:
-  - Installation: `docs/INSTALLATION.md`
-  - Commands: `docs/COMMANDS.md`
-  - Recipe format: `docs/RECIPE_FORMAT.md`
-  - Team workflow: `docs/TEAM_WORKFLOW.md`
+  - [Installation](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/INSTALLATION.md): `docs/INSTALLATION.md`
+  - [Commands](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/COMMANDS.md): `docs/COMMANDS.md`
+  - [Recipe format](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/RECIPE_FORMAT.md): `docs/RECIPE_FORMAT.md`
+  - [Team workflow](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/TEAM_WORKFLOW.md): `docs/TEAM_WORKFLOW.md`
+  - [Agents & Skills](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/AGENTS_AND_SKILLS.md): `docs/AGENTS_AND_SKILLS.md`
+  - [Bundled](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/BUNDLED_RECIPES.md): `docs/BUNDLED_RECIPES.md`
+  - [Create Recipe Tutorial](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/TUTORIAL_CREATE_RECIPE.md): `docs/TUTORIAL_CREATE_RECIPE.md`
 
-## What you should be developing (not this plugin)
+## Note
 ClawRecipes is meant to be *installed* and then used to build **agents + teams**.
 
 Most users should focus on:
