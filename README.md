@@ -1,7 +1,7 @@
 # ClawRecipes (OpenClaw Recipes Plugin)
 
 <p align="center">
-  <img src="clawrecipes_cook.jpg" alt="ClawRecipes logo" width="240" />
+  <img src="https://github.com/JIGGAI/ClawRecipes/blob/main/clawcipes_cook.jpg" alt="ClawRecipes logo" width="240" />
 </p>
 
 ClawRecipes is an OpenClaw plugin that provides **CLI-first recipes** for scaffolding specialist agents and teams from Markdown.
