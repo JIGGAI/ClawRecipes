@@ -134,48 +134,26 @@ templates:
   dev.agents: |
     # AGENTS.md
 
-    Shared workspace: {{teamDir}}
+    Team: {teamId}
+    Shared workspace: {teamDir}
+    Role: dev
 
     ## Guardrails (read → act → write)
-
-    Before you change anything:
+    Before you act:
     1) Read:
        - `notes/plan.md`
        - `notes/status.md`
-       - `shared-context/priorities.md`
-       - the current ticket you’re working on
+       - relevant ticket(s) in `work/in-progress/`
+       - any relevant shared context under `shared-context/`
 
-    While working:
-    - Keep changes small and safe.
-    - Prefer file-first coordination over chat.
-
-    After you finish a work session (even if not done):
+    After you act:
     1) Write back:
-       - Update the ticket with what you did and what’s next.
-       - Add **3–5 bullets** to `notes/status.md` (what changed / what’s blocked).
-       - Append detailed output to `shared-context/agent-outputs/` (append-only).
+       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
+       - Update the ticket with what you did and where the artifact is.
 
-    Curator model:
-    - Lead curates `notes/plan.md` and `shared-context/priorities.md`.
-    - You should NOT edit curated files; propose changes via `agent-outputs/`.
-
-    ## How you work (pull system)
-
-    1) Look in `work/in-progress/` for any ticket already assigned to you.
-       - If present: continue it.
-
-    2) Otherwise, pick the next ticket from `work/backlog/`:
-       - Choose the lowest-numbered `0001-...md` ticket assigned to `dev`.
-
-    3) Move the ticket file from `work/backlog/` → `work/in-progress/`.
-
-    4) Do the work.
-
-    5) Write a completion report into `work/done/` with:
-       - What changed
-       - How to test
-       - Any follow-ups
-
+    ## Workflow
+    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
+    - Keep work small and reversible.
   devops.soul: |
     # SOUL.md
 
@@ -185,44 +163,26 @@ templates:
   devops.agents: |
     # AGENTS.md
 
-    Shared workspace: {{teamDir}}
+    Team: {teamId}
+    Shared workspace: {teamDir}
+    Role: devops
 
     ## Guardrails (read → act → write)
-
-    Before you change anything:
+    Before you act:
     1) Read:
        - `notes/plan.md`
        - `notes/status.md`
-       - `shared-context/priorities.md`
-       - the current ticket you’re working on
+       - relevant ticket(s) in `work/in-progress/`
+       - any relevant shared context under `shared-context/`
 
-    After you finish a work session:
+    After you act:
     1) Write back:
-       - Update the ticket with what you did + verification steps.
-       - Add **3–5 bullets** to `notes/status.md`.
-       - Append detailed output/logs to `shared-context/agent-outputs/` (append-only).
+       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
+       - Update the ticket with what you did and where the artifact is.
 
-    Curator model:
-    - Lead curates `notes/plan.md` and `shared-context/priorities.md`.
-    - You should NOT edit curated files; propose changes via `agent-outputs/`.
-
-    ## How you work (pull system)
-
-    1) Look in `work/in-progress/` for any ticket already assigned to you.
-       - If present: continue it.
-
-    2) Otherwise, pick the next ticket from `work/backlog/`:
-       - Choose the lowest-numbered `0001-...md` ticket assigned to `devops`.
-
-    3) Move the ticket file from `work/backlog/` → `work/in-progress/`.
-
-    4) Do the work.
-
-    5) Write a completion report into `work/done/` with:
-       - What changed
-       - How to verify
-       - Rollback notes (if applicable)
-
+    ## Workflow
+    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
+    - Keep work small and reversible.
   lead.tools: |
     # TOOLS.md
 
@@ -281,68 +241,26 @@ templates:
   test.agents: |
     # AGENTS.md
 
-    Shared workspace: {{teamDir}}
+    Team: {teamId}
+    Shared workspace: {teamDir}
+    Role: test
 
     ## Guardrails (read → act → write)
-
-    Before verifying:
+    Before you act:
     1) Read:
        - `notes/plan.md`
        - `notes/status.md`
-       - `shared-context/priorities.md`
-       - the ticket under test
+       - relevant ticket(s) in `work/in-progress/`
+       - any relevant shared context under `shared-context/`
 
-    After each verification pass:
+    After you act:
     1) Write back:
-       - Add a short verification note to the ticket (pass/fail + evidence).
-       - Add **3–5 bullets** to `notes/status.md` (what’s verified / what’s blocked).
-       - Append detailed findings to `shared-context/feedback/` or `shared-context/agent-outputs/`.
+       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
+       - Update the ticket with what you did and where the artifact is.
 
-    Curator model:
-    - Lead curates `notes/plan.md` and `shared-context/priorities.md`.
-    - You should NOT edit curated files; propose changes via feedback/outputs.
-
-    ## How you work
-
-    1) Look in `work/testing/` for tickets assigned to you.
-
-    2) For each ticket:
-       - Follow the ticket's "How to test" steps (if present)
-       - Validate acceptance criteria
-       - Write a short verification note (or failures) into the ticket itself or a sibling note.
-
-    3) If it passes:
-       - Move the ticket to `work/done/` (or ask the lead to do it).
-
-    4) If it fails:
-       - Move the ticket back to `work/in-progress/` and assign to the right owner.
-
-    ## Cleanup after testing
-
-    If your test involved creating temporary resources (e.g., scaffolding test teams, creating test workspaces), **clean them up** after verification:
-
-    1) Remove test workspaces:
-       ```bash
-       rm -rf ~/.openclaw/workspace-<test-team-id>
-       ```
-
-    2) Remove test agents from config (agents whose id starts with the test team id):
-       - Edit `~/.openclaw/openclaw.json` and remove entries from `agents.list[]`
-       - Or wait for `openclaw recipes remove-team` (once available)
-
-    3) Remove any cron jobs created for the test team:
-       ```bash
-       openclaw cron list --all --json | grep "<test-team-id>"
-       openclaw cron remove <jobId>
-       ```
-
-    4) Restart the gateway if you modified config:
-       ```bash
-       openclaw gateway restart
-       ```
-
-    **Naming convention:** When scaffolding test teams, use a prefix like `qa-<ticketNum>-` (e.g., `qa-0017-social-team`) so cleanup is easier.
-
+    ## Workflow
+    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
+    - Keep work small and reversible.
   test.tools: |
     # TOOLS.md
 
@@ -387,3 +305,17 @@ Scaffolds a shared team workspace and four namespaced agents (lead/dev/devops/te
 - Shared workspace at `~/.openclaw/workspace-<teamId>/` (e.g. `~/.openclaw/workspace-development-team-team/`)
 - File-first tickets: backlog → in-progress → testing → done
 - Team lead acts as dispatcher; tester verifies before done
+
+## Files
+- Creates a shared team workspace under `~/.openclaw/workspace-<teamId>/` (example: `~/.openclaw/workspace-development-team-team/`).
+- Creates per-role directories under `roles/<role>/` for: `SOUL.md`, `AGENTS.md`, `TOOLS.md`, `STATUS.md`, `NOTES.md`.
+- Creates shared team folders like `inbox/`, `outbox/`, `notes/`, `shared-context/`, and `work/` lanes (varies slightly by recipe).
+
+## Tooling
+- Tool policies are defined per role in the recipe frontmatter (`agents[].tools`).
+- Observed defaults in this recipe:
+  - profiles: coding
+  - allow groups: group:automation, group:fs, group:runtime, group:web
+  - deny: (none)
+- Safety note: most bundled teams default to denying `exec` unless a role explicitly needs it.
+

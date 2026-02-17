@@ -61,7 +61,9 @@ Two concepts people often mix up:
 Even if `openclaw recipes dispatch` created an inbox entry + backlog ticket, the lead won’t act unless:
 - a human opens the lead agent/chat, **or**
 - an automation loop runs (cron triage), **or**
-- `main` is allowed to message/spawn the lead agent.
+- a best-effort nudge reaches the lead session.
+
+By default, `openclaw recipes dispatch` will try to **enqueue a system event** to `agent:<teamId>-lead:main` (best-effort). If it can’t, the CLI prints explicit next steps (enable cron / run lead once / allowlist direct pings).
 
 ### Allowlisting other agents (subagents.allowAgents)
 To allow `main` to target team role agents (like `development-team-lead`), add this to your OpenClaw config:

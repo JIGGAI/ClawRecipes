@@ -29,7 +29,7 @@ Default tool policy (recipe-defined):
 ## 2) `social-team` (team)
 **Kind:** team
 
-**Use when:** you want a multi-role social pipeline: lead + research + writer + editor.
+**Use when:** you want platform-specialist social execution (not copywriting): distribution + listening + platform SEO + community + reporting back to marketing.
 
 Scaffold:
 ```bash
@@ -37,14 +37,19 @@ openclaw recipes scaffold-team social-team --team-id social-team-team --apply-co
 ```
 
 What it creates:
-- `teams/social-team-team/` shared workspace
+- shared team workspace
 - agents:
-  - `agents/social-team-team-lead/`
-  - `agents/social-team-team-research/`
-  - `agents/social-team-team-writer/`
-  - `agents/social-team-team-editor/`
+  - `lead`
+  - `research`
+  - `listening`
+  - `social-seo`
+  - `editorial`
+  - `community`
+  - `distributor`
+  - platform roles: `tiktok`, `instagram`, `youtube`, `facebook`, plus defaults `x`, `linkedin`
 
 Notes:
+- Copy + creative live in `marketing-team` (not here).
 - Default `tools` in the recipe deny `exec` (safer by default).
 
 ## 3) `development-team` (team)
@@ -206,7 +211,7 @@ openclaw recipes scaffold-team marketing-team --team-id marketing-team-team --ap
 ```
 
 Roles:
-- lead, seo, copywriter, ads, social, designer, analyst
+- lead, seo, copywriter, ads, social, designer, analyst, video, compliance
 
 ---
 

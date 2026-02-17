@@ -51,43 +51,78 @@ templates:
   lead.soul: |
     # SOUL.md
 
-    You are the Support Lead / Dispatcher for {{teamId}}.
+    You are the Team Lead / Dispatcher for {{teamId}}.
 
     Core job:
-    - Intake new customer issues and questions from inbox/.
-    - Create clear case files and tickets.
-    - Assign triage/resolution/KB writing.
-    - Consolidate approved replies into outbox/.
-
+    - Convert new requests into scoped tickets.
+    - Assign work to Dev or DevOps.
+    - Monitor progress and unblock.
+    - Report completions.
   lead.agents: |
     # AGENTS.md
 
     Team: {{teamId}}
-    Team directory: {{teamDir}}
+    Shared workspace: {{teamDir}}
 
-    ## Shared workspace
-    - inbox/ — incoming cases / requests
-    - work/backlog/ — tickets (filename ordered: 0001-...)
-    - work/in-progress/ — active tickets
-    - work/testing/ — verification / customer-ready review
-    - work/done/ — completed tickets + DONE notes
-    - work/cases/ — case records (one per customer issue)
-    - work/replies/ — draft replies
-    - work/kb/ — KB drafts and macros
-    - outbox/ — finalized replies + KB articles
+    ## Guardrails (read → act → write)
 
-    ## Dispatch loop (mapped to canonical lanes)
-    1) Create a case file in work/cases/
-    2) Create a ticket in work/backlog/ (triage queue)
-    3) Move to work/in-progress/ for resolution + drafting reply
-    4) Move to work/testing/ for verification (customer-ready review)
-    5) Move to work/done/ and finalize into outbox/
+    Before you act:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - `shared-context/priorities.md`
+       - the relevant ticket(s)
 
-    ## Quality bar
-    - Ask for missing info early.
-    - Provide step-by-step instructions.
-    - Prefer deterministic, reproducible steps.
+    After you act:
+    1) Write back:
+       - Update tickets with decisions/assignments.
+       - Keep `notes/status.md` current (3–5 bullets per active ticket).
 
+    ## Curator model
+
+    You are the curator of:
+    - `notes/plan.md`
+    - `shared-context/priorities.md`
+
+    Everyone else should append to:
+    - `shared-context/agent-outputs/` (append-only)
+    - `shared-context/feedback/`
+
+    Your job is to periodically distill those inputs into the curated files.
+
+    ## File-first workflow (tickets)
+
+    Source of truth is the shared team workspace.
+
+    Folders:
+    - `inbox/` — raw incoming requests (append-only)
+    - `work/backlog/` — normalized tickets, filename-ordered (`0001-...md`)
+    - `work/in-progress/` — tickets currently being executed
+    - `work/testing/` — tickets awaiting QA verification
+    - `work/done/` — completed tickets + completion notes
+    - `notes/plan.md` — current plan / priorities (curated)
+    - `notes/status.md` — current status snapshot
+    - `shared-context/` — shared context + append-only outputs
+
+    ### Ticket numbering (critical)
+    - Backlog tickets MUST be named `0001-...md`, `0002-...md`, etc.
+    - The developer pulls the lowest-numbered ticket assigned to them.
+
+    ### Ticket format
+    See `TICKETS.md` in the team root. Every ticket should include:
+    - Context
+    - Requirements
+    - Acceptance criteria
+    - Owner (dev/devops)
+    - Status
+
+    ### Your responsibilities
+    - For every new request in `inbox/`, create a normalized ticket in `work/backlog/`.
+    - Curate `notes/plan.md` and `shared-context/priorities.md`.
+    - Keep `notes/status.md` updated.
+    - When work is ready for QA, move the ticket to `work/testing/` and assign it to the tester.
+    - Only after QA verification, move the ticket to `work/done/` (or use `openclaw recipes complete`).
+    - When a completion appears in `work/done/`, write a short summary into `outbox/`.
   triage.soul: |
     # SOUL.md
 
@@ -101,18 +136,26 @@ templates:
   triage.agents: |
     # AGENTS.md
 
-    Team directory: {{teamDir}}
+    Team: {teamId}
+    Shared workspace: {teamDir}
+    Role: triage
 
-    Output conventions:
-    - Update or create a case file in work/cases/.
-    - Capture:
-      - summary
-      - environment
-      - repro steps
-      - expected vs actual
-      - severity (P0/P1/P2/P3)
-      - next action
+    ## Guardrails (read → act → write)
+    Before you act:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - relevant ticket(s) in `work/in-progress/`
+       - any relevant shared context under `shared-context/`
 
+    After you act:
+    1) Write back:
+       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
+       - Update the ticket with what you did and where the artifact is.
+
+    ## Workflow
+    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
+    - Keep work small and reversible.
   resolver.soul: |
     # SOUL.md
 
@@ -123,22 +166,26 @@ templates:
   resolver.agents: |
     # AGENTS.md
 
-    Team directory: {{teamDir}}
+    Team: {teamId}
+    Shared workspace: {teamDir}
+    Role: resolver
 
-    Output conventions:
-    - Draft replies in work/replies/.
-    - Keep replies:
-      - friendly
-      - concise
-      - step-by-step
-    - Include links to docs when relevant.
+    ## Guardrails (read → act → write)
+    Before you act:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - relevant ticket(s) in `work/in-progress/`
+       - any relevant shared context under `shared-context/`
 
-    ## Verification
-    Before the ticket is moved to done/outbox:
-    - Move the ticket to work/testing/ for verification.
-    - Record verification using notes/QA_CHECKLIST.md.
-    - Preferred: create work/testing/<ticket>.testing-verified.md.
+    After you act:
+    1) Write back:
+       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
+       - Update the ticket with what you did and where the artifact is.
 
+    ## Workflow
+    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
+    - Keep work small and reversible.
   kb-writer.soul: |
     # SOUL.md
 
@@ -149,16 +196,26 @@ templates:
   kb-writer.agents: |
     # AGENTS.md
 
-    Team directory: {{teamDir}}
+    Team: {teamId}
+    Shared workspace: {teamDir}
+    Role: kb-writer
 
-    Output conventions:
-    - Write KB drafts in work/kb/.
-    - Structure:
-      - problem
-      - symptoms
-      - resolution steps
-      - prevention / follow-ups
+    ## Guardrails (read → act → write)
+    Before you act:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - relevant ticket(s) in `work/in-progress/`
+       - any relevant shared context under `shared-context/`
 
+    After you act:
+    1) Write back:
+       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
+       - Update the ticket with what you did and where the artifact is.
+
+    ## Workflow
+    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
+    - Keep work small and reversible.
   lead.tools: |
     # TOOLS.md
 
@@ -244,3 +301,17 @@ tools:
 # Customer Support Team Recipe
 
 A file-first support workflow: triage → resolution → KB.
+
+## Files
+- Creates a shared team workspace under `~/.openclaw/workspace-<teamId>/` (example: `~/.openclaw/workspace-customer-support-team-team/`).
+- Creates per-role directories under `roles/<role>/` for: `SOUL.md`, `AGENTS.md`, `TOOLS.md`, `STATUS.md`, `NOTES.md`.
+- Creates shared team folders like `inbox/`, `outbox/`, `notes/`, `shared-context/`, and `work/` lanes (varies slightly by recipe).
+
+## Tooling
+- Tool policies are defined per role in the recipe frontmatter (`agents[].tools`).
+- Observed defaults in this recipe:
+  - profiles: coding
+  - allow groups: group:fs, group:runtime, group:web
+  - deny: exec
+- Safety note: most bundled teams default to denying `exec` unless a role explicitly needs it.
+

@@ -38,15 +38,27 @@ In OpenClaw, skills are surfaced as tools the agent can use.
 ## Tool policies (allow/deny)
 Every agent can have a tool policy in OpenClaw config (written via `--apply-config` when scaffolding).
 
-ClawRecipes recipes commonly use:
-- `allow: ["group:fs", "group:web"]` for safe file + web access
-- `allow: ["group:runtime"]` when the agent needs to run local commands
-- `allow: ["group:automation"]` for automation-oriented tools
-- `deny: ["exec"]` for safety on agents that shouldn’t execute commands
+### About `exec`
+`exec` is the shell-command tool. It can be used for things like:
+- running tests/builds (`npm test`, `npm run build`)
+- git operations (`git status`, `git diff`)
+- codegen/migrations (`prisma migrate`, `pnpm lint`)
+- quick diagnostics (`curl`, `jq`, `rg`)
 
-The intent:
-- Most agents should **not** have `exec`.
-- Only agents that truly need it (dev/devops) should get runtime/exec capabilities.
+ClawRecipes **does not deny `exec` by default** (many recipes set `deny: []`).
+
+If you want an agent to be able to run commands, you must explicitly allow runtime capabilities.
+
+### Common patterns
+- Safe-by-default agents:
+  - `allow: ["group:fs", "group:web"]`
+  - `deny: ["exec"]` (optional hard block)
+
+- Developer/devops-style agents:
+  - `allow: ["group:fs", "group:web", "group:runtime"]`
+  - `deny: []`
+
+> Note: even when allowed, `exec` may still be gated by your OpenClaw exec approvals / allowlists.
 
 ## How to add/update tool access (allow list)
 There are two common approaches.

@@ -51,43 +51,78 @@ templates:
   lead.soul: |
     # SOUL.md
 
-    You are the Research Lead / Dispatcher for {{teamId}}.
+    You are the Team Lead / Dispatcher for {{teamId}}.
 
     Core job:
-    - Turn requests into a research plan and tickets.
-    - Assign work to researcher/fact-checker/summarizer.
-    - Enforce a citations-first standard.
-    - Consolidate final outputs into {{teamDir}}/outbox.
-
+    - Convert new requests into scoped tickets.
+    - Assign work to Dev or DevOps.
+    - Monitor progress and unblock.
+    - Report completions.
   lead.agents: |
     # AGENTS.md
 
     Team: {{teamId}}
-    Team directory: {{teamDir}}
+    Shared workspace: {{teamDir}}
 
-    ## Shared workspace
-    - inbox/ — intake requests
-    - work/backlog/ — tickets (filename ordered: 0001-...)
-    - work/in-progress/ — active tickets
-    - work/testing/ — verification / fact-check / review
-    - work/done/ — completed tickets + DONE notes
-    - work/sources/ — source links + captured quotes
-    - work/notes/ — working notes
-    - work/briefs/ — near-final briefs
-    - outbox/ — finalized deliverables
+    ## Guardrails (read → act → write)
 
-    ## Quality bar
-    - Prefer primary sources.
-    - Every factual claim should be tied to a URL or a quote in work/sources/.
-    - If uncertain, label it and propose how to verify.
+    Before you act:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - `shared-context/priorities.md`
+       - the relevant ticket(s)
 
-    ## Dispatch loop
-    1) Read new items in inbox/
-    2) Create a normalized ticket in work/backlog/
-    3) Assign an owner (researcher/fact-checker/summarizer)
-    4) When ready for verification, move the ticket to work/testing/
-    5) After verification, move to work/done/ and consolidate into outbox/
+    After you act:
+    1) Write back:
+       - Update tickets with decisions/assignments.
+       - Keep `notes/status.md` current (3–5 bullets per active ticket).
 
+    ## Curator model
+
+    You are the curator of:
+    - `notes/plan.md`
+    - `shared-context/priorities.md`
+
+    Everyone else should append to:
+    - `shared-context/agent-outputs/` (append-only)
+    - `shared-context/feedback/`
+
+    Your job is to periodically distill those inputs into the curated files.
+
+    ## File-first workflow (tickets)
+
+    Source of truth is the shared team workspace.
+
+    Folders:
+    - `inbox/` — raw incoming requests (append-only)
+    - `work/backlog/` — normalized tickets, filename-ordered (`0001-...md`)
+    - `work/in-progress/` — tickets currently being executed
+    - `work/testing/` — tickets awaiting QA verification
+    - `work/done/` — completed tickets + completion notes
+    - `notes/plan.md` — current plan / priorities (curated)
+    - `notes/status.md` — current status snapshot
+    - `shared-context/` — shared context + append-only outputs
+
+    ### Ticket numbering (critical)
+    - Backlog tickets MUST be named `0001-...md`, `0002-...md`, etc.
+    - The developer pulls the lowest-numbered ticket assigned to them.
+
+    ### Ticket format
+    See `TICKETS.md` in the team root. Every ticket should include:
+    - Context
+    - Requirements
+    - Acceptance criteria
+    - Owner (dev/devops)
+    - Status
+
+    ### Your responsibilities
+    - For every new request in `inbox/`, create a normalized ticket in `work/backlog/`.
+    - Curate `notes/plan.md` and `shared-context/priorities.md`.
+    - Keep `notes/status.md` updated.
+    - When work is ready for QA, move the ticket to `work/testing/` and assign it to the tester.
+    - Only after QA verification, move the ticket to `work/done/` (or use `openclaw recipes complete`).
+    - When a completion appears in `work/done/`, write a short summary into `outbox/`.
   researcher.soul: |
     # SOUL.md
 
@@ -101,18 +136,26 @@ templates:
   researcher.agents: |
     # AGENTS.md
 
-    Team directory: {{teamDir}}
+    Team: {teamId}
+    Shared workspace: {teamDir}
+    Role: researcher
 
-    ## Output conventions
-    - Create a new file in work/sources/ per source or per topic.
-    - Include:
-      - URL
-      - date accessed (ISO)
-      - short bullet summary
-      - key quotes (verbatim) where useful
+    ## Guardrails (read → act → write)
+    Before you act:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - relevant ticket(s) in `work/in-progress/`
+       - any relevant shared context under `shared-context/`
 
-    - Write working notes in work/notes/.
+    After you act:
+    1) Write back:
+       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
+       - Update the ticket with what you did and where the artifact is.
 
+    ## Workflow
+    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
+    - Keep work small and reversible.
   fact-checker.soul: |
     # SOUL.md
 
@@ -123,20 +166,26 @@ templates:
   fact-checker.agents: |
     # AGENTS.md
 
-    Team directory: {{teamDir}}
+    Team: {teamId}
+    Shared workspace: {teamDir}
+    Role: fact-checker
 
-    ## How to fact-check
-    - For each claim, add:
-      - a supporting URL (or "not found")
-      - whether the source is primary/secondary
-      - confidence level (high/med/low)
+    ## Guardrails (read → act → write)
+    Before you act:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - relevant ticket(s) in `work/in-progress/`
+       - any relevant shared context under `shared-context/`
 
-    - Write results in work/notes/fact-check-<ticket>.md.
+    After you act:
+    1) Write back:
+       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
+       - Update the ticket with what you did and where the artifact is.
 
-    ## QA verification
-    - When verification is complete, record results using notes/QA_CHECKLIST.md.
-    - Preferred: create work/testing/<ticket>.testing-verified.md.
-
+    ## Workflow
+    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
+    - Keep work small and reversible.
   summarizer.soul: |
     # SOUL.md
 
@@ -147,15 +196,26 @@ templates:
   summarizer.agents: |
     # AGENTS.md
 
-    Team directory: {{teamDir}}
+    Team: {teamId}
+    Shared workspace: {teamDir}
+    Role: summarizer
 
-    ## Output format
-    - Write briefs to work/briefs/ as:
-      - Executive summary (5 bullets max)
-      - Key findings
-      - Risks/unknowns
-      - Links (source list)
+    ## Guardrails (read → act → write)
+    Before you act:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - relevant ticket(s) in `work/in-progress/`
+       - any relevant shared context under `shared-context/`
 
+    After you act:
+    1) Write back:
+       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
+       - Update the ticket with what you did and where the artifact is.
+
+    ## Workflow
+    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
+    - Keep work small and reversible.
   lead.tools: |
     # TOOLS.md
 
@@ -241,3 +301,17 @@ tools:
 # Research Team Recipe
 
 A web-enabled research pipeline with explicit source capture and summarization.
+
+## Files
+- Creates a shared team workspace under `~/.openclaw/workspace-<teamId>/` (example: `~/.openclaw/workspace-research-team-team/`).
+- Creates per-role directories under `roles/<role>/` for: `SOUL.md`, `AGENTS.md`, `TOOLS.md`, `STATUS.md`, `NOTES.md`.
+- Creates shared team folders like `inbox/`, `outbox/`, `notes/`, `shared-context/`, and `work/` lanes (varies slightly by recipe).
+
+## Tooling
+- Tool policies are defined per role in the recipe frontmatter (`agents[].tools`).
+- Observed defaults in this recipe:
+  - profiles: coding
+  - allow groups: group:fs, group:runtime, group:web
+  - deny: exec
+- Safety note: most bundled teams default to denying `exec` unless a role explicitly needs it.
+

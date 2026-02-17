@@ -68,8 +68,8 @@ files:
 tools:
   profile: "coding"
   allow: ["group:fs", "group:web"]
-  deny: ["exec"]
 ---
 # Researcher Recipe
 
 A single research agent with strong source discipline.
+urce discipline.

@@ -1366,6 +1366,7 @@ const recipesPlugin = {
               // Best-effort nudge: enqueue a system event for the team lead session.
               // This does not spawn the lead; it ensures that when the lead session runs next,
               // it sees the dispatch immediately.
+              let nudgeQueued = false;
               try {
                 const leadAgentId = `${teamId}-lead`;
                 api.runtime.system.enqueueSystemEvent(
@@ -1378,8 +1379,20 @@ const recipesPlugin = {
                   ].join("\n"),
                   { sessionKey: `agent:${leadAgentId}:main` },
                 );
+                nudgeQueued = true;
               } catch {
-                // ignore: dispatch should still succeed even if system event enqueue fails
+                nudgeQueued = false;
+              }
+
+              if (nudgeQueued) {
+                console.error(`[dispatch] Nudge queued: system event → agent:${teamId}-lead:main`);
+              } else {
+                console.error(`[dispatch] NOTE: Could not auto-nudge ${teamId}-lead (best-effort). Next steps:`);
+                console.error(`- Option A (recommended): ensure the lead triage cron job is installed/enabled (lead-triage-loop).`);
+                console.error(`  - If you declined cron installation during scaffold, re-run scaffold with cron installation enabled, or enable it in settings.`);
+                console.error(`- Option B: manually run/open the lead once so it sees inbox/backlog updates.`);
+                console.error(`- Option C (advanced): allow subagent messaging (if you want direct pings). Add allowAgents in config and restart gateway.`);
+                console.error(`  { agents: { list: [ { id: "main", subagents: { allowAgents: ["${teamId}-lead"] } } ] } }`);
               }
             };
 

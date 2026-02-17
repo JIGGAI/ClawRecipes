@@ -51,38 +51,78 @@ templates:
   lead.soul: |
     # SOUL.md
 
-    You are the Writing Lead / Editor-in-Chief for {{teamId}}.
+    You are the Team Lead / Dispatcher for {{teamId}}.
 
     Core job:
-    - Turn requests into briefs + tickets.
-    - Ensure tone + audience are specified.
-    - Keep the pipeline moving and enforce quality.
-
+    - Convert new requests into scoped tickets.
+    - Assign work to Dev or DevOps.
+    - Monitor progress and unblock.
+    - Report completions.
   lead.agents: |
     # AGENTS.md
 
     Team: {{teamId}}
-    Team directory: {{teamDir}}
+    Shared workspace: {{teamDir}}
 
-    ## Shared workspace
-    - inbox/ — requests
-    - work/backlog/ — tickets (0001-...)
-    - work/in-progress/ — active tickets
-    - work/testing/ — review/edit/QA (verification before publishing)
-    - work/done/ — completed tickets + DONE notes
-    - work/briefs/ — writing briefs
-    - work/outlines/ — outlines
-    - work/drafts/ — drafts
-    - work/edited/ — edited drafts
-    - outbox/ — finalized deliverables
+    ## Guardrails (read → act → write)
 
-    ## Dispatch loop
-    1) Intake in inbox/
-    2) Brief in work/briefs/
-    3) Assign outline → draft
-    4) Move to work/testing/ for edit/review
-    5) After verification (see notes/QA_CHECKLIST.md), move to work/done/ and finalize to outbox/
+    Before you act:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - `shared-context/priorities.md`
+       - the relevant ticket(s)
 
+    After you act:
+    1) Write back:
+       - Update tickets with decisions/assignments.
+       - Keep `notes/status.md` current (3–5 bullets per active ticket).
+
+    ## Curator model
+
+    You are the curator of:
+    - `notes/plan.md`
+    - `shared-context/priorities.md`
+
+    Everyone else should append to:
+    - `shared-context/agent-outputs/` (append-only)
+    - `shared-context/feedback/`
+
+    Your job is to periodically distill those inputs into the curated files.
+
+    ## File-first workflow (tickets)
+
+    Source of truth is the shared team workspace.
+
+    Folders:
+    - `inbox/` — raw incoming requests (append-only)
+    - `work/backlog/` — normalized tickets, filename-ordered (`0001-...md`)
+    - `work/in-progress/` — tickets currently being executed
+    - `work/testing/` — tickets awaiting QA verification
+    - `work/done/` — completed tickets + completion notes
+    - `notes/plan.md` — current plan / priorities (curated)
+    - `notes/status.md` — current status snapshot
+    - `shared-context/` — shared context + append-only outputs
+
+    ### Ticket numbering (critical)
+    - Backlog tickets MUST be named `0001-...md`, `0002-...md`, etc.
+    - The developer pulls the lowest-numbered ticket assigned to them.
+
+    ### Ticket format
+    See `TICKETS.md` in the team root. Every ticket should include:
+    - Context
+    - Requirements
+    - Acceptance criteria
+    - Owner (dev/devops)
+    - Status
+
+    ### Your responsibilities
+    - For every new request in `inbox/`, create a normalized ticket in `work/backlog/`.
+    - Curate `notes/plan.md` and `shared-context/priorities.md`.
+    - Keep `notes/status.md` updated.
+    - When work is ready for QA, move the ticket to `work/testing/` and assign it to the tester.
+    - Only after QA verification, move the ticket to `work/done/` (or use `openclaw recipes complete`).
+    - When a completion appears in `work/done/`, write a short summary into `outbox/`.
   outliner.soul: |
     # SOUL.md
 
@@ -93,16 +133,26 @@ templates:
   outliner.agents: |
     # AGENTS.md
 
-    Team directory: {{teamDir}}
+    Team: {teamId}
+    Shared workspace: {teamDir}
+    Role: outliner
 
-    Output conventions:
-    - Write outlines in work/outlines/
-    - Include:
-      - target audience
-      - thesis
-      - sections (H2/H3)
-      - key points per section
+    ## Guardrails (read → act → write)
+    Before you act:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - relevant ticket(s) in `work/in-progress/`
+       - any relevant shared context under `shared-context/`
 
+    After you act:
+    1) Write back:
+       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
+       - Update the ticket with what you did and where the artifact is.
+
+    ## Workflow
+    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
+    - Keep work small and reversible.
   writer.soul: |
     # SOUL.md
 
@@ -113,12 +163,26 @@ templates:
   writer.agents: |
     # AGENTS.md
 
-    Team directory: {{teamDir}}
+    Team: {teamId}
+    Shared workspace: {teamDir}
+    Role: writer
 
-    Output conventions:
-    - Drafts go in work/drafts/
-    - Put assumptions and open questions at the top.
+    ## Guardrails (read → act → write)
+    Before you act:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - relevant ticket(s) in `work/in-progress/`
+       - any relevant shared context under `shared-context/`
 
+    After you act:
+    1) Write back:
+       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
+       - Update the ticket with what you did and where the artifact is.
+
+    ## Workflow
+    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
+    - Keep work small and reversible.
   editor.soul: |
     # SOUL.md
 
@@ -129,18 +193,26 @@ templates:
   editor.agents: |
     # AGENTS.md
 
-    Team directory: {{teamDir}}
+    Team: {teamId}
+    Shared workspace: {teamDir}
+    Role: editor
 
-    Output conventions:
-    - Edited drafts go in work/edited/
-    - Provide a short changelog at the top.
-    - Flag any factual claims that need citations.
+    ## Guardrails (read → act → write)
+    Before you act:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - relevant ticket(s) in `work/in-progress/`
+       - any relevant shared context under `shared-context/`
 
-    ## QA verification
-    Before a deliverable is marked done/published:
-    - Record verification using notes/QA_CHECKLIST.md.
-    - Preferred: create work/testing/<ticket>.testing-verified.md.
+    After you act:
+    1) Write back:
+       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
+       - Update the ticket with what you did and where the artifact is.
 
+    ## Workflow
+    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
+    - Keep work small and reversible.
   lead.tools: |
     # TOOLS.md
 
@@ -221,8 +293,24 @@ files:
 tools:
   profile: "coding"
   allow: ["group:fs", "group:web"]
-  deny: ["exec"]
 ---
 # Writing Team Recipe
 
 A lightweight writing pipeline that pairs briefs/outlines/drafts/edits with a file-first ticket workflow.
+
+## Files
+- Creates a shared team workspace under `~/.openclaw/workspace-<teamId>/` (example: `~/.openclaw/workspace-writing-team-team/`).
+- Creates per-role directories under `roles/<role>/` for: `SOUL.md`, `AGENTS.md`, `TOOLS.md`, `STATUS.md`, `NOTES.md`.
+- Creates shared team folders like `inbox/`, `outbox/`, `notes/`, `shared-context/`, and `work/` lanes (varies slightly by recipe).
+
+## Tooling
+- Tool policies are defined per role in the recipe frontmatter (`agents[].tools`).
+- Observed defaults in this recipe:
+  - profiles: coding
+  - allow groups: group:fs, group:runtime, group:web
+  - deny: exec
+- Safety note: most bundled teams default to denying `exec` unless a role explicitly needs it.
+
+
+itly needs it.
+

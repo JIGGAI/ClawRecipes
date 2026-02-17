@@ -6,3 +6,6 @@ kitchen/app/dist/
 .DS_Store
 npm-debug.log*
 .env
+
+# Cursor rules and local tooling (not committed)
+.cursor/
