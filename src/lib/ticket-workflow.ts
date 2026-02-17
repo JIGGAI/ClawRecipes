@@ -1,39 +1,36 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
+import fs from "node:fs/promises";
+import path from "node:path";
 
-import { ensureLaneDir } from './lanes';
-
-async function fileExists(p: string) {
-  try {
-    await fs.stat(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { fileExists } from "./fs-utils";
+import { ensureLaneDir } from "./lanes";
+import { DEFAULT_TICKET_NUMBER } from "./constants";
+import { findTicketFile as findTicketFileFromFinder } from "./ticket-finder";
+import { parseTicketFilename } from "./ticket-finder";
 
 async function ensureDir(p: string) {
   await fs.mkdir(p, { recursive: true });
 }
 
+function patchTicketFields(
+  md: string,
+  opts: { ownerSafe: string; status: string; assignmentRel: string }
+): string {
+  let out = md;
+  if (out.match(/^Owner:\s.*$/m)) out = out.replace(/^Owner:\s.*$/m, `Owner: ${opts.ownerSafe}`);
+  else out = out.replace(/^(# .+\n)/, `$1\nOwner: ${opts.ownerSafe}\n`);
+
+  if (out.match(/^Status:\s.*$/m)) out = out.replace(/^Status:\s.*$/m, `Status: ${opts.status}`);
+  else out = out.replace(/^(# .+\n)/, `$1\nStatus: ${opts.status}\n`);
+
+  if (out.match(/^Assignment:\s.*$/m)) out = out.replace(/^Assignment:\s.*$/m, `Assignment: ${opts.assignmentRel}`);
+  else out = out.replace(/^Owner:.*$/m, (line) => `${line}\nAssignment: ${opts.assignmentRel}`);
+
+  return out;
+}
+
+/** Re-export for callers expecting (teamDir, ticketArg) signature. Delegates to ticket-finder. */
 export async function findTicketFile(teamDir: string, ticketArgRaw: string) {
-  const stageDir = (stage: string) => path.join(teamDir, 'work', stage);
-  const searchDirs = [stageDir('backlog'), stageDir('in-progress'), stageDir('testing'), stageDir('done')];
-
-  const ticketArg = String(ticketArgRaw ?? '').trim();
-  const padded = ticketArg.match(/^\d+$/) && ticketArg.length < 4 ? ticketArg.padStart(4, '0') : ticketArg;
-  const ticketNum = padded.match(/^\d{4}$/) ? padded : (padded.match(/^(\d{4})-/)?.[1] ?? null);
-
-  for (const dir of searchDirs) {
-    if (!(await fileExists(dir))) continue;
-    const files = await fs.readdir(dir);
-    for (const f of files) {
-      if (!f.endsWith('.md')) continue;
-      if (ticketNum && f.startsWith(`${ticketNum}-`)) return path.join(dir, f);
-      if (!ticketNum && f.replace(/\.md$/, '') === padded) return path.join(dir, f);
-    }
-  }
-  return null;
+  return findTicketFileFromFinder({ teamDir, ticket: ticketArgRaw });
 }
 
 export async function takeTicket(opts: { teamDir: string; ticket: string; owner?: string; overwriteAssignment: boolean }) {
@@ -50,33 +47,18 @@ export async function takeTicket(opts: { teamDir: string; ticket: string; owner?
   const filename = path.basename(srcPath);
   const destPath = path.join(inProgressDir, filename);
 
-  const m = filename.match(/^(\d{4})-(.+)\.md$/);
-  const ticketNumStr = m?.[1] ?? (opts.ticket.match(/^\d{4}$/) ? opts.ticket : '0000');
-  const slug = m?.[2] ?? 'ticket';
+  const parsed = parseTicketFilename(filename) ?? { ticketNumStr: opts.ticket.match(/^\d{4}$/) ? opts.ticket : DEFAULT_TICKET_NUMBER, slug: "ticket" };
+  const { ticketNumStr, slug } = parsed;
 
   const assignmentsDir = path.join(teamDir, 'work', 'assignments');
   await ensureDir(assignmentsDir);
   const assignmentPath = path.join(assignmentsDir, `${ticketNumStr}-assigned-${ownerSafe}.md`);
   const assignmentRel = path.relative(teamDir, assignmentPath);
 
-  const patch = (md: string) => {
-    let out = md;
-    if (out.match(/^Owner:\s.*$/m)) out = out.replace(/^Owner:\s.*$/m, `Owner: ${ownerSafe}`);
-    else out = out.replace(/^(# .+\n)/, `$1\nOwner: ${ownerSafe}\n`);
-
-    if (out.match(/^Status:\s.*$/m)) out = out.replace(/^Status:\s.*$/m, 'Status: in-progress');
-    else out = out.replace(/^(# .+\n)/, `$1\nStatus: in-progress\n`);
-
-    if (out.match(/^Assignment:\s.*$/m)) out = out.replace(/^Assignment:\s.*$/m, `Assignment: ${assignmentRel}`);
-    else out = out.replace(/^Owner:.*$/m, (line) => `${line}\nAssignment: ${assignmentRel}`);
-
-    return out;
-  };
-
   const alreadyInProgress = srcPath === destPath;
 
   const md = await fs.readFile(srcPath, 'utf8');
-  const nextMd = patch(md);
+  const nextMd = patchTicketFields(md, { ownerSafe, status: 'in-progress', assignmentRel });
   await fs.writeFile(srcPath, nextMd, 'utf8');
 
   if (!alreadyInProgress) {
@@ -109,33 +91,18 @@ export async function handoffTicket(opts: { teamDir: string; ticket: string; tes
   const filename = path.basename(srcPath);
   const destPath = path.join(testingDir, filename);
 
-  const m = filename.match(/^(\d{4})-(.+)\.md$/);
-  const ticketNumStr = m?.[1] ?? (opts.ticket.match(/^\d{4}$/) ? opts.ticket : '0000');
-  const slug = m?.[2] ?? 'ticket';
+  const parsed = parseTicketFilename(filename) ?? { ticketNumStr: opts.ticket.match(/^\d{4}$/) ? opts.ticket : DEFAULT_TICKET_NUMBER, slug: "ticket" };
+  const { ticketNumStr, slug } = parsed;
 
   const assignmentsDir = path.join(teamDir, 'work', 'assignments');
   await ensureDir(assignmentsDir);
   const assignmentPath = path.join(assignmentsDir, `${ticketNumStr}-assigned-${testerSafe}.md`);
   const assignmentRel = path.relative(teamDir, assignmentPath);
 
-  const patch = (md: string) => {
-    let out = md;
-    if (out.match(/^Owner:\s.*$/m)) out = out.replace(/^Owner:\s.*$/m, `Owner: ${testerSafe}`);
-    else out = out.replace(/^(# .+\n)/, `$1\nOwner: ${testerSafe}\n`);
-
-    if (out.match(/^Status:\s.*$/m)) out = out.replace(/^Status:\s.*$/m, 'Status: testing');
-    else out = out.replace(/^(# .+\n)/, `$1\nStatus: testing\n`);
-
-    if (out.match(/^Assignment:\s.*$/m)) out = out.replace(/^Assignment:\s.*$/m, `Assignment: ${assignmentRel}`);
-    else out = out.replace(/^Owner:.*$/m, (line) => `${line}\nAssignment: ${assignmentRel}`);
-
-    return out;
-  };
-
   const alreadyInTesting = srcPath === destPath;
 
   const md = await fs.readFile(srcPath, 'utf8');
-  const nextMd = patch(md);
+  const nextMd = patchTicketFields(md, { ownerSafe: testerSafe, status: 'testing', assignmentRel });
   await fs.writeFile(srcPath, nextMd, 'utf8');
 
   if (!alreadyInTesting) {

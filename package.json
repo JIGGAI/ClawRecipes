@@ -28,7 +28,13 @@
     "test:provenance-smoke": "node scripts/scaffold-team-provenance-smoke.mjs",
     "test:agent-recipefile-smoke": "node scripts/scaffold-agent-recipefile-smoke.mjs",
     "smoke": "node scripts/scaffold-smoke.mjs",
-    "scaffold:smoke": "node scripts/scaffold-smoke.mjs"
+    "scaffold:smoke": "node scripts/scaffold-smoke.mjs",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src/ index.ts",
+    "lint:fix": "eslint src/ index.ts --fix",
+    "smell-check": "node scripts/smell-check.mjs",
+    "jscpd": "jscpd src/ index.ts --min-lines 8 --min-tokens 50",
+    "prepare": "husky"
   },
   "keywords": [
     "openclaw",
@@ -44,6 +50,18 @@
     "yaml": "^2.8.2"
   },
   "devDependencies": {
+    "@eslint/js": "^9.16.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "eslint": "^9.16.0",
+    "husky": "^9.1.7",
+    "jscpd": "^4.0.5",
+    "lint-staged": "^16.2.7",
+    "typescript-eslint": "^8.18.0",
     "vitest": "^3.2.4"
+  },
+  "lint-staged": {
+    "*.ts": [
+      "eslint --fix"
+    ]
   }
 }

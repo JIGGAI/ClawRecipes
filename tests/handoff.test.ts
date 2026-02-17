@@ -50,4 +50,15 @@ describe('ticket workflow: handoff', () => {
       await fs.rm(teamDir, { recursive: true, force: true });
     }
   });
+
+  test('throws when ticket not found', async () => {
+    const teamDir = await mkTeamDir();
+    try {
+      await expect(
+        handoffTicket({ teamDir, ticket: '9999', tester: 'test', overwriteAssignment: false })
+      ).rejects.toThrow(/Ticket not found/);
+    } finally {
+      await fs.rm(teamDir, { recursive: true, force: true });
+    }
+  });
 });

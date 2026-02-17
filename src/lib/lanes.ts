@@ -1,7 +1,7 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
+import fs from "node:fs/promises";
+import path from "node:path";
 
-export type TicketLane = 'backlog' | 'in-progress' | 'testing' | 'done' | 'assignments';
+import { fileExists } from "./fs-utils";
 
 export class RecipesCliError extends Error {
   code: string;
@@ -19,13 +19,15 @@ export class RecipesCliError extends Error {
   }
 }
 
-async function fileExists(p: string) {
-  try {
-    await fs.stat(p);
-    return true;
-  } catch {
-    return false;
-  }
+export type TicketStage = "backlog" | "in-progress" | "testing" | "done" | "assignments";
+
+/** Subset of TicketStage excluding assignments (used for lane search order). */
+export type TicketLane = Exclude<TicketStage, "assignments">;
+
+export function ticketStageDir(teamDir: string, stage: TicketStage): string {
+  return stage === "assignments"
+    ? path.join(teamDir, "work", "assignments")
+    : path.join(teamDir, "work", stage);
 }
 
 /**
@@ -40,7 +42,7 @@ export async function ensureLaneDir(opts: { teamDir: string; lane: TicketLane; c
   if (!existed) {
     try {
       await fs.mkdir(laneDir, { recursive: true });
-    } catch (e: any) {
+    } catch (e: unknown) {
       throw new RecipesCliError({
         code: 'LANE_DIR_CREATE_FAILED',
         command: opts.command,
@@ -49,7 +51,7 @@ export async function ensureLaneDir(opts: { teamDir: string; lane: TicketLane; c
         message:
           `Failed to create required lane directory: ${laneDir}` +
           (opts.command ? ` (command: ${opts.command})` : '') +
-          (e?.message ? `\nUnderlying error: ${String(e.message)}` : ''),
+          (e instanceof Error ? `\nUnderlying error: ${e.message}` : ''),
       });
     }
 

@@ -81,7 +81,7 @@ export async function planWorkspaceCleanup(opts: {
   let entries: string[] = [];
   try {
     entries = await fs.readdir(rootDir);
-  } catch (e: any) {
+  } catch (e: unknown) {
     return {
       rootDir,
       prefixes,
@@ -91,7 +91,7 @@ export async function planWorkspaceCleanup(opts: {
           kind: 'skip',
           dirName: rootDir,
           absPath: rootDir,
-          reason: `failed to read rootDir: ${e?.message ? String(e.message) : String(e)}`,
+          reason: `failed to read rootDir: ${e instanceof Error ? e.message : String(e)}`,
         },
       ],
     } satisfies CleanupPlan;
@@ -156,8 +156,8 @@ export async function executeWorkspaceCleanup(plan: CleanupPlan, opts: { yes: bo
     try {
       await fs.rm(c.absPath, { recursive: true, force: true });
       deleted.push(c.absPath);
-    } catch (e: any) {
-      deleteErrors.push({ path: c.absPath, error: e?.message ? String(e.message) : String(e) });
+    } catch (e: unknown) {
+      deleteErrors.push({ path: c.absPath, error: e instanceof Error ? e.message : String(e) });
     }
   }
 

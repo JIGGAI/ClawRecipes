@@ -17,7 +17,7 @@ export async function fetchMarketplaceRecipeMarkdown(params: {
     throw new Error(`Registry lookup failed (${metaRes.status}): ${metaUrl}\n\n${hint}`);
   }
 
-  const metaData = (await metaRes.json()) as any;
+  const metaData = (await metaRes.json()) as { sourceUrl?: string };
   const recipe = metaData?.recipe;
   const sourceUrl = String(recipe?.sourceUrl ?? "").trim();
   if (!metaData?.ok || !sourceUrl) {

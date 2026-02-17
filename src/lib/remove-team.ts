@@ -1,13 +1,15 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { fileExists } from "./fs-utils";
+
 export type CronJob = {
   id: string;
   name?: string;
   enabled?: boolean;
-  schedule?: any;
+  schedule?: Record<string, unknown>;
   payload?: { kind?: string; message?: string };
-  delivery?: any;
+  delivery?: Record<string, unknown>;
   agentId?: string;
 };
 
@@ -46,19 +48,10 @@ export function isProtectedTeamId(teamId: string) {
   return t === "development-team" || t === "main";
 }
 
-export async function fileExists(p: string) {
-  try {
-    await fs.stat(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export async function loadCronStore(cronJobsPath: string): Promise<CronStore> {
   const raw = await fs.readFile(cronJobsPath, "utf8");
   const data = JSON.parse(raw) as CronStore;
-  if (!data || typeof data !== "object" || !Array.isArray((data as any).jobs)) {
+  if (!data || typeof data !== "object" || !Array.isArray(data.jobs)) {
     throw new Error(`Invalid cron store: ${cronJobsPath}`);
   }
   return data;
@@ -68,23 +61,23 @@ export async function saveCronStore(cronJobsPath: string, store: CronStore) {
   await fs.writeFile(cronJobsPath, JSON.stringify(store, null, 2) + "\n", "utf8");
 }
 
-export async function loadOpenClawConfig(openclawConfigPath: string): Promise<any> {
+export async function loadOpenClawConfig(openclawConfigPath: string): Promise<Record<string, unknown>> {
   const raw = await fs.readFile(openclawConfigPath, "utf8");
   // NOTE: openclaw.json is JSON5 in some deployments; but we avoid adding dependency here.
   // The main plugin already depends on json5; callers may parse using that. For remove-team, keep strict JSON.
-  return JSON.parse(raw);
+  return JSON.parse(raw) as Record<string, unknown>;
 }
 
-export async function saveOpenClawConfig(openclawConfigPath: string, cfg: any) {
+export async function saveOpenClawConfig(openclawConfigPath: string, cfg: Record<string, unknown>) {
   await fs.writeFile(openclawConfigPath, JSON.stringify(cfg, null, 2) + "\n", "utf8");
 }
 
-export function findAgentsToRemove(cfgObj: any, teamId: string) {
-  const list = cfgObj?.agents?.list;
+export function findAgentsToRemove(cfgObj: Record<string, unknown>, teamId: string) {
+  const list = (cfgObj?.agents as { list?: Array<{ id?: string }> })?.list;
   if (!Array.isArray(list)) return [] as string[];
   const prefix = `${teamId}-`;
   return list
-    .map((a: any) => String(a?.id ?? ""))
+    .map((a) => String(a?.id ?? ""))
     .filter((id: string) => id && id.startsWith(prefix));
 }
 
@@ -117,7 +110,7 @@ export async function buildRemoveTeamPlan(opts: {
   workspaceRoot: string; // e.g. ~/.openclaw/workspace
   openclawConfigPath: string; // e.g. ~/.openclaw/openclaw.json
   cronJobsPath: string; // e.g. ~/.openclaw/cron/jobs.json
-  cfgObj: any;
+  cfgObj: Record<string, unknown>;
   cronStore?: CronStore | null;
 }) {
   const teamId = opts.teamId.trim();
@@ -148,7 +141,7 @@ export async function buildRemoveTeamPlan(opts: {
 export async function executeRemoveTeamPlan(opts: {
   plan: RemoveTeamPlan;
   includeAmbiguous?: boolean;
-  cfgObj: any;
+  cfgObj: Record<string, unknown>;
   cronStore: CronStore;
 }) {
   const { plan } = opts;
@@ -165,11 +158,12 @@ export async function executeRemoveTeamPlan(opts: {
   }
 
   // 2) Remove agents from config
-  const list = opts.cfgObj?.agents?.list;
+  const agents = opts.cfgObj?.agents as { list?: Array<{ id?: string }> } | undefined;
+  const list = agents?.list;
   const before = Array.isArray(list) ? list.length : 0;
-  if (Array.isArray(list)) {
+  if (Array.isArray(list) && opts.cfgObj.agents) {
     const remove = new Set(plan.agentsToRemove);
-    opts.cfgObj.agents.list = list.filter((a: any) => !remove.has(String(a?.id ?? "")));
+    (opts.cfgObj.agents as { list: Array<{ id?: string }> }).list = list.filter((a) => !remove.has(String(a?.id ?? "")));
   }
   const after = Array.isArray(opts.cfgObj?.agents?.list) ? opts.cfgObj.agents.list.length : 0;
 

@@ -26,5 +26,23 @@ describe('recipe frontmatter parsing/validation', () => {
     const out = normalizeCronJobs({ cronJobs: [{ id: 'job', schedule: '* * * * *', message: 'ping' }] });
     expect(out).toHaveLength(1);
     expect(out[0].id).toBe('job');
+    expect(out[0].message).toBe('ping');
+  });
+
+  test('normalizeCronJobs accepts task and prompt as message fallback', () => {
+    const withTask = normalizeCronJobs({
+      cronJobs: [{ id: 't', schedule: '* * * * *', task: 'run task' }],
+    });
+    expect(withTask[0].message).toBe('run task');
+
+    const withPrompt = normalizeCronJobs({
+      cronJobs: [{ id: 'p', schedule: '* * * * *', prompt: 'run prompt' }],
+    });
+    expect(withPrompt[0].message).toBe('run prompt');
+
+    const messageWins = normalizeCronJobs({
+      cronJobs: [{ id: 'm', schedule: '* * * * *', message: 'msg', task: 'task' }],
+    });
+    expect(messageWins[0].message).toBe('msg');
   });
 });

@@ -48,4 +48,55 @@ describe("recipes plugin core behaviors", () => {
     expect(once).toContain("Owner: test");
     expect(once).toContain("Status: testing");
   });
+
+  test("ensureMainFirstInAgentsList creates agents/list when missing", () => {
+    const cfgObj: any = {};
+    __internal.ensureMainFirstInAgentsList(cfgObj, { config: { agents: { defaults: { workspace: "/ws" } } } } as any);
+    expect(cfgObj.agents).toBeDefined();
+    expect(Array.isArray(cfgObj.agents.list)).toBe(true);
+    expect(cfgObj.agents.list[0].id).toBe("main");
+  });
+
+  test("ensureMainFirstInAgentsList initializes list when not array", () => {
+    const cfgObj: any = { agents: { list: null } };
+    __internal.ensureMainFirstInAgentsList(cfgObj, { config: { agents: { defaults: { workspace: "/ws" } } } } as any);
+    expect(Array.isArray(cfgObj.agents.list)).toBe(true);
+    expect(cfgObj.agents.list[0].id).toBe("main");
+  });
+
+  test("removeBindingsInConfig removes matching binding by agentId and match", () => {
+    const cfgObj: any = {
+      bindings: [
+        { agentId: "x", match: { channel: "telegram" } },
+        { agentId: "y", match: { channel: "telegram", peer: { kind: "dm", id: "123" } } },
+      ],
+    };
+    const res = __internal.removeBindingsInConfig(cfgObj, {
+      agentId: "y",
+      match: { channel: "telegram", peer: { kind: "dm", id: "123" } },
+    });
+    expect(res.removedCount).toBe(1);
+    expect(res.removed[0].agentId).toBe("y");
+    expect(cfgObj.bindings).toHaveLength(1);
+    expect(cfgObj.bindings[0].agentId).toBe("x");
+  });
+
+  test("removeBindingsInConfig removes by match only when agentId omitted", () => {
+    const cfgObj: any = {
+      bindings: [
+        { agentId: "a", match: { channel: "slack" } },
+        { agentId: "b", match: { channel: "slack" } },
+      ],
+    };
+    const res = __internal.removeBindingsInConfig(cfgObj, { match: { channel: "slack" } });
+    expect(res.removedCount).toBe(2);
+    expect(cfgObj.bindings).toHaveLength(0);
+  });
+
+  test("removeBindingsInConfig initializes bindings when missing", () => {
+    const cfgObj: any = {};
+    const res = __internal.removeBindingsInConfig(cfgObj, { match: { channel: "x" } });
+    expect(res.removedCount).toBe(0);
+    expect(cfgObj.bindings).toEqual([]);
+  });
 });

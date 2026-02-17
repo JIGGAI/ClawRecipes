@@ -40,4 +40,47 @@ describe('ticket workflow: take', () => {
       await fs.rm(teamDir, { recursive: true, force: true });
     }
   });
+
+  test('throws when ticket not found', async () => {
+    const teamDir = await mkTeamDir();
+    try {
+      await expect(takeTicket({ teamDir, ticket: '9999', owner: 'dev', overwriteAssignment: false })).rejects.toThrow(
+        /Ticket not found/
+      );
+    } finally {
+      await fs.rm(teamDir, { recursive: true, force: true });
+    }
+  });
+
+  test('throws when ticket is in done', async () => {
+    const teamDir = await mkTeamDir();
+    const donePath = path.join(teamDir, 'work', 'done', '0001-complete.md');
+    await fs.writeFile(donePath, '# 0001-complete\n\nStatus: done\n', 'utf8');
+    try {
+      await expect(takeTicket({ teamDir, ticket: '0001', owner: 'dev', overwriteAssignment: false })).rejects.toThrow(
+        /Cannot take a done ticket/
+      );
+    } finally {
+      await fs.rm(teamDir, { recursive: true, force: true });
+    }
+  });
+
+  test('skips overwriting assignment when overwriteAssignment false and assignment exists', async () => {
+    const teamDir = await mkTeamDir();
+    await fs.mkdir(path.join(teamDir, 'work', 'in-progress'), { recursive: true });
+    await fs.mkdir(path.join(teamDir, 'work', 'assignments'), { recursive: true });
+    const ticketPath = path.join(teamDir, 'work', 'in-progress', '0002-sample.md');
+    await fs.writeFile(ticketPath, '# 0002-sample\n\n## Context\n', 'utf8');
+    const assignmentPath = path.join(teamDir, 'work', 'assignments', '0002-assigned-dev.md');
+    await fs.writeFile(assignmentPath, 'ORIGINAL', 'utf8');
+    try {
+      const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const res = await takeTicket({ teamDir, ticket: '0002', owner: 'dev', overwriteAssignment: false });
+      errSpy.mockRestore();
+      expect(res.moved).toBe(false);
+      expect(await fs.readFile(assignmentPath, 'utf8')).toBe('ORIGINAL');
+    } finally {
+      await fs.rm(teamDir, { recursive: true, force: true });
+    }
+  });
 });
