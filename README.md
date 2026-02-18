@@ -149,3 +149,11 @@ Most users should focus on:
 - authoring recipes in their OpenClaw workspace (`<workspace>/recipes/*.md`)
 - scaffolding teams (`openclaw recipes scaffold-team ...`)
 - running the file-first workflow (dispatch → backlog → in-progress → testing → done)
+
+## Goals
+- Release Clawmarket, https://github.com/JIGGAI/ClawMarket, public url https://clawkitchen.ai
+- Release ClawKitchen, https://github.com/JIGGAI/ClawKitchen
+- Merge at least 1 community pull request
+- Daily shipping/pull requests of ClawRecipes features
+- Improve recipes with more detailed agent files
+- Add ability to install skills for agents through ClawKitchen

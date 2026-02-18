@@ -268,6 +268,26 @@ templates:
     - Research briefs → outbox/research/
     - Metrics definitions/dashboards notes → shared-context/metrics/
 
+files:
+  - path: SOUL.md
+    template: soul
+    mode: createOnly
+  - path: AGENTS.md
+    template: agents
+    mode: createOnly
+  - path: TOOLS.md
+    template: tools
+    mode: createOnly
+  - path: STATUS.md
+    template: status
+    mode: createOnly
+  - path: NOTES.md
+    template: notes
+    mode: createOnly
+tools:
+  profile: "business"
+  allow: ["group:fs", "group:web"]
+  deny: ["exec"]
 ---
 
 # Business Team Recipe
