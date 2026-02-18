@@ -24,6 +24,9 @@ jobs:
       - name: Install kitchen dependencies
         run: cd kitchen && npm ci
 
+      - name: Install Kitchen app dependencies
+        run: cd kitchen/app && npm ci
+
       - name: Audit root dependencies
         run: npm audit --audit-level=high
         continue-on-error: true
