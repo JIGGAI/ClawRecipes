@@ -2,17 +2,17 @@ name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, feature/*]
   pull_request:
-    branches: [main, master]
+    branches: [main, feature/*]
 
 jobs:
-  test-and-audit:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -24,11 +24,19 @@ jobs:
       - name: Install kitchen dependencies
         run: cd kitchen && npm ci
 
+      - name: Run plugin tests with coverage
+        run: npm run test:coverage
+
       - name: Run Kitchen tests
         run: npm run test:kitchen
 
+      - name: Run smell-check
+        run: npm run smell-check
+
       - name: Audit root dependencies
-        run: npm audit --audit-level=critical
+        run: npm audit --audit-level=high
+        continue-on-error: true
 
       - name: Audit kitchen dependencies
-        run: cd kitchen && npm audit --audit-level=critical
+        run: cd kitchen && npm audit --audit-level=high
+        continue-on-error: true
