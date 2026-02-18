@@ -179,10 +179,19 @@ async function resolveCronUserOptIn(
   if (mode === "off") return { return: { ok: true, changed: false, note: "cron-installation-off" as const, desiredCount } };
   if (mode === "on") return { userOptIn: true };
 
+  // mode === "prompt"
+  // In non-interactive runs we still reconcile (create/update) cron jobs, but always DISABLED.
+  // This keeps scaffold idempotent and avoids silently skipping cron job stamping.
+  if (!process.stdin.isTTY) {
+    console.error(
+      `Non-interactive mode: cronInstallation=prompt; reconciling ${desiredCount} cron job(s) as disabled (no prompt).`
+    );
+    return { userOptIn: false };
+  }
+
   const header = `Recipe ${recipeId} defines ${desiredCount} cron job(s).\nThese run automatically on a schedule. Install them?`;
   const userOptIn = await promptYesNo(header);
   if (!userOptIn) return { return: { ok: true, changed: false, note: "cron-installation-declined" as const, desiredCount } };
-  if (!process.stdin.isTTY) console.error("Non-interactive mode: defaulting cron install to disabled.");
   return { userOptIn };
 }
 

@@ -15,7 +15,8 @@ function mockApi(workspaceRoot: string) {
   return {
     config: {
       agents: { defaults: { workspace: workspaceRoot } },
-      plugins: { entries: { recipes: { config: {} } } },
+      // Keep scaffold integration tests hermetic: don't attempt to hit gateway cron tools.
+      plugins: { entries: { recipes: { config: { cronInstallation: "off" } } } },
     },
   } as any;
 }
