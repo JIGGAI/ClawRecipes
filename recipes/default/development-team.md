@@ -7,17 +7,25 @@ kind: team
 cronJobs:
   - id: lead-triage-loop
     name: "Lead triage loop"
-    schedule: "*/30 7-23 * * 1-5"
-    timezone: "America/New_York"
-    message: "Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md. Anti-stuck: if lowest in-progress is HARD BLOCKED, advance the next unblocked ticket (or pull from backlog). If in-progress is stale (>12h no dated update), comment or move it back."
-    enabledByDefault: true
+    schedule: "*/30 8-23 * * 1-5"
+    agentId: "{{teamId}}-lead"
+    channel: "last"
+    message: "Lead triage loop (automated). Goal: keep tickets moving. Steps: run ticket hygiene; inspect board; pull next actionable work into in-progress; assign owners; write updates to tickets (## Comments) and notes/status.md. If lowest-numbered in-progress is hard-blocked, advance the next unblocked ticket (or pull from backlog)."
+    enabledByDefault: false
   - id: execution-loop
     name: "Execution loop"
-    schedule: "*/30 7-23 * * 1-5"
-    timezone: "America/New_York"
-    message: "Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md."
+    schedule: "*/30 8-23 * * 1-5"
+    agentId: "{{teamId}}-lead"
+    channel: "last"
+    message: "Execution loop (automated). Goal: make concrete progress on the lowest-numbered in-progress ticket. Run ticket hygiene; perform repo lint/build checks (avoid noisy tests unless defined); update ticket + notes/status.md. Send a message only when there is a material change."
     enabledByDefault: false
-  # pr-watcher omitted (enable only when a real PR integration exists)
+  - id: pr-watcher
+    name: "PR watcher"
+    schedule: "*/30 8-23 * * 1-5"
+    agentId: "{{teamId}}-lead"
+    channel: "last"
+    message: "PR watcher (automated). Goal: watch ticket-linked PR URLs; summarize failing checks; if merged, move tickets to done with a short completion report. Requires GitHub access/auth on the controller."
+    enabledByDefault: false
 requiredSkills: []
 team:
   teamId: development-team

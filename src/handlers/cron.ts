@@ -9,6 +9,36 @@ import { toolsInvoke, type ToolTextResult } from "../toolsInvoke";
 
 export type CronInstallMode = "off" | "prompt" | "on";
 
+function interpolateTemplate(input: string | undefined, vars: Record<string, string>): string | undefined {
+  if (input == null) return undefined;
+  let out = String(input);
+  for (const [k, v] of Object.entries(vars)) {
+    out = out.replaceAll(`{{${k}}}`, v);
+  }
+  return out;
+}
+
+function applyCronJobVars(
+  scope: CronReconcileScope,
+  j: { id: string; name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; enabledByDefault?: boolean },
+): typeof j {
+  const vars: Record<string, string> = {
+    recipeId: scope.recipeId,
+    ...(scope.kind === "team" ? { teamId: scope.teamId } : { agentId: scope.agentId }),
+  };
+  return {
+    ...j,
+    name: interpolateTemplate(j.name, vars),
+    schedule: interpolateTemplate(j.schedule, vars),
+    timezone: interpolateTemplate(j.timezone, vars),
+    channel: interpolateTemplate(j.channel, vars),
+    to: interpolateTemplate(j.to, vars),
+    agentId: interpolateTemplate(j.agentId, vars),
+    description: interpolateTemplate(j.description, vars),
+    message: interpolateTemplate(j.message, vars),
+  };
+}
+
 type OpenClawCronJob = {
   id: string;
   name?: string;
@@ -215,28 +245,42 @@ async function reconcileOneCronJob(
   userOptIn: boolean
 ) {
   const { api, scope, state, byId, now, results } = ctx;
-  const key = cronKey(scope, j.id);
-  const name = j.name ?? `${scope.kind === "team" ? scope.teamId : scope.agentId} • ${scope.recipeId} • ${j.id}`;
+  const jj = applyCronJobVars(scope, j);
+  const key = cronKey(scope, jj.id);
+  const name =
+    jj.name ?? `${scope.kind === "team" ? scope.teamId : scope.agentId} • ${scope.recipeId} • ${jj.id}`;
   const specHash = hashSpec({
-    schedule: j.schedule,
-    message: j.message,
-    timezone: j.timezone ?? "",
-    channel: j.channel ?? "last",
-    to: j.to ?? "",
-    agentId: j.agentId ?? "",
+    schedule: jj.schedule,
+    message: jj.message,
+    timezone: jj.timezone ?? "",
+    channel: jj.channel ?? "last",
+    to: jj.to ?? "",
+    agentId: jj.agentId ?? "",
     name,
-    description: j.description ?? "",
+    description: jj.description ?? "",
   });
 
   const prev = state.entries[key];
   const existing = prev?.installedCronId ? byId.get(prev.installedCronId) : undefined;
-  const wantEnabled = userOptIn ? Boolean(j.enabledByDefault) : false;
+  const wantEnabled = userOptIn ? Boolean(jj.enabledByDefault) : false;
 
   if (!existing) {
-    await createNewCronJob({ api, scope, j, wantEnabled, key, specHash, now, state, results });
+    await createNewCronJob({ api, scope, j: jj, wantEnabled, key, specHash, now, state, results });
     return;
   }
-  await updateExistingCronJob({ api, j, name, existing, prevSpecHash: prev?.specHash, specHash, userOptIn, key, now, state, results });
+  await updateExistingCronJob({
+    api,
+    j: jj,
+    name,
+    existing,
+    prevSpecHash: prev?.specHash,
+    specHash,
+    userOptIn,
+    key,
+    now,
+    state,
+    results,
+  });
 }
 
 async function reconcileDesiredCronJobs(opts: {
