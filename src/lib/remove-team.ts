@@ -81,22 +81,34 @@ export function findAgentsToRemove(cfgObj: Record<string, unknown>, teamId: stri
     .filter((id: string) => id && id.startsWith(prefix));
 }
 
-export function planCronJobRemovals(jobs: CronJob[], teamId: string) {
+export function planCronJobRemovals(
+  jobs: CronJob[],
+  teamId: string,
+  opts?: { installedCronIds?: string[] | null }
+) {
   const stamp = stampTeamId(teamId);
   const exact: Array<{ id: string; name?: string }> = [];
   const ambiguous: Array<{ id: string; name?: string; reason: string }> = [];
+
+  const installed = new Set((opts?.installedCronIds ?? []).map((s) => String(s).trim()).filter(Boolean));
 
   for (const j of jobs) {
     const msg = String(j?.payload?.message ?? "");
     const name = String(j?.name ?? "");
 
-    // Exact: message contains the stamp.
+    // Exact (preferred): installedCronIds from the team provenance file.
+    if (installed.has(String(j.id))) {
+      exact.push({ id: j.id, name: j.name });
+      continue;
+    }
+
+    // Fallback exact: message contains the stamp.
     if (msg.includes(stamp)) {
       exact.push({ id: j.id, name: j.name });
       continue;
     }
 
-    // Ambiguous: name mentions teamId (helpful for manual review).
+    // Ambiguous: name/message mentions teamId (helpful for manual review).
     if (name.includes(teamId) || msg.includes(teamId)) {
       ambiguous.push({ id: j.id, name: j.name, reason: "mentions-teamId" });
     }
@@ -112,6 +124,7 @@ export async function buildRemoveTeamPlan(opts: {
   cronJobsPath: string; // e.g. ~/.openclaw/cron/jobs.json
   cfgObj: Record<string, unknown>;
   cronStore?: CronStore | null;
+  installedCronIds?: string[] | null;
 }) {
   const teamId = opts.teamId.trim();
   const workspaceDir = path.resolve(path.join(opts.workspaceRoot, "..", `workspace-${teamId}`));
@@ -122,7 +135,7 @@ export async function buildRemoveTeamPlan(opts: {
   const agentsToRemove = findAgentsToRemove(opts.cfgObj, teamId);
 
   const jobs = (opts.cronStore?.jobs ?? []) as CronJob[];
-  const cron = planCronJobRemovals(jobs, teamId);
+  const cron = planCronJobRemovals(jobs, teamId, { installedCronIds: opts.installedCronIds });
 
   const plan: RemoveTeamPlan = {
     teamId,

@@ -377,6 +377,23 @@ export async function handleRemoveTeam(
   const cronJobsPath = path.resolve(workspaceRoot, "..", "cron", "jobs.json");
   const cfgObj = await loadOpenClawConfig(api);
   const cronStore = await loadCronStore(cronJobsPath);
+
+  // IMPORTANT: read cron provenance BEFORE deleting workspace.
+  // Teams/recipes track installed cron jobs via notes/cron-jobs.json.
+  const teamDir = path.resolve(workspaceRoot, "..", `workspace-${teamId}`);
+  const cronMappingPath = path.join(teamDir, "notes", "cron-jobs.json");
+  let installedCronIds: string[] = [];
+  try {
+    const raw = await fs.readFile(cronMappingPath, "utf8");
+    const json = JSON.parse(raw) as { entries?: Record<string, { installedCronId?: unknown; orphaned?: unknown }> };
+    installedCronIds = Object.values(json.entries ?? {})
+      .filter((e) => e && !e.orphaned)
+      .map((e) => String(e.installedCronId ?? "").trim())
+      .filter(Boolean);
+  } catch {
+    installedCronIds = [];
+  }
+
   const plan = await buildRemoveTeamPlan({
     teamId,
     workspaceRoot,
@@ -384,6 +401,7 @@ export async function handleRemoveTeam(
     cronJobsPath,
     cfgObj,
     cronStore,
+    installedCronIds,
   });
   if (options.plan) return { ok: true as const, plan };
   if (!options.yes && !process.stdin.isTTY) {
