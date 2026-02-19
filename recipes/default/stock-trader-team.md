@@ -286,7 +286,7 @@ files:
     mode: createOnly
 
 tools:
-  profile: "coding"
+  profile: "messaging"
   allow: ["group:fs", "group:web"]
   deny: []
 ---

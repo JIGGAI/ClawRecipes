@@ -285,7 +285,7 @@ files:
     template: notes
     mode: createOnly
 tools:
-  profile: "business"
+  profile: "messaging"
   allow: ["group:fs", "group:web"]
   deny: ["exec"]
 ---

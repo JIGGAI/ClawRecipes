@@ -66,7 +66,6 @@ files:
 tools:
   profile: "coding"
   allow: ["group:fs", "group:web", "group:runtime"]
-  deny: []
 ---
 # Developer Recipe
 

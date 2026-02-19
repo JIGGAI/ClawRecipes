@@ -268,6 +268,26 @@ templates:
     - Daily journal → work/journal/daily/
     - Post-mortems → work/journal/post-mortems/
 
+files:
+  - path: SOUL.md
+    template: soul
+    mode: createOnly
+  - path: AGENTS.md
+    template: agents
+    mode: createOnly
+  - path: TOOLS.md
+    template: tools
+    mode: createOnly
+  - path: STATUS.md
+    template: status
+    mode: createOnly
+  - path: NOTES.md
+    template: notes
+    mode: createOnly
+tools:
+  profile: "messaging"
+  allow: ["group:fs", "group:web"]
+  deny: ["exec"]
 ---
 
 # Crypto Trader Team Recipe
