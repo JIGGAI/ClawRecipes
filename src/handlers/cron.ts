@@ -175,9 +175,12 @@ async function resolveCronUserOptIn(
   mode: CronInstallMode,
   recipeId: string,
   desiredCount: number
-): Promise<{ userOptIn: boolean } | { return: { ok: true; changed: false; note: string; desiredCount: number } }> {
+): Promise<
+  | { userOptIn: boolean; enableInstalled: boolean }
+  | { return: { ok: true; changed: false; note: string; desiredCount: number } }
+> {
   if (mode === "off") return { return: { ok: true, changed: false, note: "cron-installation-off" as const, desiredCount } };
-  if (mode === "on") return { userOptIn: true };
+  if (mode === "on") return { userOptIn: true, enableInstalled: true };
 
   // mode === "prompt"
   // In non-interactive runs we still reconcile (create/update) cron jobs, but always DISABLED.
@@ -186,13 +189,15 @@ async function resolveCronUserOptIn(
     console.error(
       `Non-interactive mode: cronInstallation=prompt; reconciling ${desiredCount} cron job(s) as disabled (no prompt).`
     );
-    return { userOptIn: false };
+    return { userOptIn: false, enableInstalled: false };
   }
 
   const header = `Recipe ${recipeId} defines ${desiredCount} cron job(s).\nThese run automatically on a schedule. Install them?`;
   const userOptIn = await promptYesNo(header);
   if (!userOptIn) return { return: { ok: true, changed: false, note: "cron-installation-declined" as const, desiredCount } };
-  return { userOptIn };
+
+  const enableInstalled = await promptYesNo("Enable the installed cron jobs now? (You can always enable later)");
+  return { userOptIn, enableInstalled };
 }
 
 async function createNewCronJob(opts: {
@@ -222,12 +227,13 @@ async function updateExistingCronJob(opts: {
   prevSpecHash: string | undefined;
   specHash: string;
   userOptIn: boolean;
+  enableInstalled: boolean;
   key: string;
   now: number;
   state: Awaited<ReturnType<typeof loadCronMappingState>>;
   results: CronReconcileResult[];
 }) {
-  const { api, j, name, existing, prevSpecHash, specHash, userOptIn, key, now, state, results } = opts;
+  const { api, j, name, existing, prevSpecHash, specHash, userOptIn, enableInstalled, key, now, state, results } = opts;
   if (prevSpecHash !== specHash) {
     await cronUpdate(api, existing.id, buildCronJobPatch(j, name));
     results.push({ action: "updated", key, installedCronId: existing.id });
@@ -237,6 +243,11 @@ async function updateExistingCronJob(opts: {
   if (!userOptIn && existing.enabled) {
     await cronUpdate(api, existing.id, { enabled: false });
     results.push({ action: "disabled", key, installedCronId: existing.id });
+  }
+
+  if (userOptIn && enableInstalled && !existing.enabled) {
+    await cronUpdate(api, existing.id, { enabled: true });
+    results.push({ action: "updated", key, installedCronId: existing.id });
   }
   state.entries[key] = { installedCronId: existing.id, specHash, updatedAtMs: now, orphaned: false };
 }
@@ -251,7 +262,8 @@ async function reconcileOneCronJob(
     results: CronReconcileResult[];
   },
   j: (ReturnType<typeof normalizeCronJobs>)[number],
-  userOptIn: boolean
+  userOptIn: boolean,
+  enableInstalled: boolean
 ) {
   const { api, scope, state, byId, now, results } = ctx;
   const jj = applyCronJobVars(scope, j);
@@ -271,7 +283,7 @@ async function reconcileOneCronJob(
 
   const prev = state.entries[key];
   const existing = prev?.installedCronId ? byId.get(prev.installedCronId) : undefined;
-  const wantEnabled = userOptIn ? Boolean(jj.enabledByDefault) : false;
+  const wantEnabled = userOptIn ? (enableInstalled ? true : Boolean(jj.enabledByDefault)) : false;
 
   if (!existing) {
     await createNewCronJob({ api, scope, j: jj, wantEnabled, key, specHash, now, state, results });
@@ -285,6 +297,7 @@ async function reconcileOneCronJob(
     prevSpecHash: prev?.specHash,
     specHash,
     userOptIn,
+    enableInstalled,
     key,
     now,
     state,
@@ -297,6 +310,7 @@ async function reconcileDesiredCronJobs(opts: {
   scope: CronReconcileScope;
   desired: ReturnType<typeof normalizeCronJobs>;
   userOptIn: boolean;
+  enableInstalled: boolean;
   state: Awaited<ReturnType<typeof loadCronMappingState>>;
   byId: Map<string, OpenClawCronJob>;
   now: number;
@@ -311,7 +325,7 @@ async function reconcileDesiredCronJobs(opts: {
     results: opts.results,
   };
   for (const j of opts.desired) {
-    await reconcileOneCronJob(ctx, j, opts.userOptIn);
+    await reconcileOneCronJob(ctx, j, opts.userOptIn, opts.enableInstalled);
   }
 }
 
@@ -343,7 +357,16 @@ export async function reconcileRecipeCronJobs(opts: {
   const desiredIds = new Set(desired.map((j) => j.id));
   const results: CronReconcileResult[] = [];
 
-  await reconcileDesiredCronJobs({ ...opts, desired, userOptIn: optIn.userOptIn, state, byId, now, results });
+  await reconcileDesiredCronJobs({
+    ...opts,
+    desired,
+    userOptIn: optIn.userOptIn,
+    enableInstalled: optIn.enableInstalled,
+    state,
+    byId,
+    now,
+    results,
+  });
   await disableOrphanedCronJobs({
     api: opts.api,
     state,
