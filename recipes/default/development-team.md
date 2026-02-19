@@ -1,7 +1,7 @@
 ---
 id: development-team
 name: Development Team
-version: 0.2.0
+version: 0.2.1
 description: A small engineering team with a shared workspace (lead, dev, devops, test) using file-first tickets.
 kind: team
 cronJobs:
@@ -25,6 +25,15 @@ cronJobs:
     agentId: "{{teamId}}-lead"
     channel: "last"
     message: "PR watcher (automated). Goal: watch ticket-linked PR URLs; summarize failing checks; if merged, move tickets to done with a short completion report. Requires GitHub access/auth on the controller."
+    enabledByDefault: false
+
+  - id: testing-lane-loop
+    name: "Testing lane loop"
+    schedule: "*/30 0-1,7-23 * * *"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-test"
+    channel: "last"
+    message: "Testing lane loop (automated). Goal: drain work/testing reliably. For each ticket in work/testing: follow the ticket's '## Verification steps'; record results under ## Comments; if it passes, complete the ticket; if it fails, write a clear repro + fix request and hand back to dev; if blocked on an unmerged PR/deploy, note and skip. Also keep notes/status.md current (3–5 bullets)."
     enabledByDefault: false
 requiredSkills: []
 team:
