@@ -54,6 +54,16 @@ openclaw recipes dispatch \
   --owner lead
 ```
 
+## License
+
+ClawRecipes is licensed under **Apache-2.0**.
+
+Attribution requirement (practical): if you redistribute ClawRecipes (or a derivative work), you must retain the license and attribution notices (see `LICENSE` and `NOTICE`).
+
+Branding note: the license does not grant permission to use JIGGAI trademarks except as required for reasonable and customary attribution. See `TRADEMARK.md`.
+
+Contributions: we welcome PRs. By contributing, you agree that your contributions are licensed under the project’s Apache-2.0 license.
+
 ## Commands (high level)
 - `openclaw recipes list|show|status`
 - `openclaw recipes scaffold` (agent → `workspace-<agentId>` + writes workspace recipe `~/.openclaw/workspace/recipes/<agentId>.md` by default)
