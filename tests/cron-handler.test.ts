@@ -137,7 +137,7 @@ describe("cron handler", () => {
       );
     });
 
-    test("cron-installation-prompt logs non-interactive when !TTY and user accepted", async () => {
+    test("cron-installation-prompt logs non-interactive and reconciles as disabled when !TTY", async () => {
       const promptMod = await import("../src/lib/prompt");
       vi.spyOn(promptMod, "promptYesNo").mockResolvedValue(true);
       const origTTY = process.stdin.isTTY;
@@ -158,7 +158,13 @@ describe("cron handler", () => {
           cronInstallation: "prompt",
         });
         expect(result.ok).toBe(true);
-        expect(errSpy).toHaveBeenCalledWith("Non-interactive mode: defaulting cron install to disabled.");
+        expect(result.changed).toBe(true);
+        expect(result.results).toContainEqual(
+          expect.objectContaining({ action: "created", enabled: false, installedCronId: "cron-non-tty" })
+        );
+        expect(errSpy).toHaveBeenCalledWith(
+          "Non-interactive mode: cronInstallation=prompt; reconciling 1 cron job(s) as disabled (no prompt)."
+        );
       } finally {
         Object.defineProperty(process.stdin, "isTTY", { value: origTTY, configurable: true });
         errSpy.mockRestore();
