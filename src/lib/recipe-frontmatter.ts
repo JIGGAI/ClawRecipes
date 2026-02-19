@@ -34,6 +34,13 @@ export type RecipeFrontmatter = {
   kind?: string;
   name?: string;
   cronJobs?: CronJobSpec[];
+
+  /**
+   * If true, scaffold `notes/QA_CHECKLIST.md` even if the team has no `test` role.
+   * If false/omitted, QA checklist is scaffolded only when the team recipe includes a `test` role.
+   */
+  qaChecklist?: boolean;
+
   [k: string]: unknown;
 };
 

@@ -45,7 +45,8 @@ async function writeTeamBootstrapFiles(
   sharedContextDir: string,
   notesDir: string,
   goalsDir: string,
-  overwrite: boolean
+  overwrite: boolean,
+  opts?: { qaChecklist?: boolean }
 ) {
   const mode = overwrite ? "overwrite" : "createOnly";
   await ensureDir(goalsDir);
@@ -66,6 +67,14 @@ async function writeTeamBootstrapFiles(
     `# Goals folder — ${teamId}\n\nCreate one markdown file per goal in this directory.\n\nRecommended file naming:\n- short, kebab-case, no leading numbers (e.g. \`reduce-support-backlog.md\`)\n\nLink goals from:\n- notes/GOALS.md\n`,
     mode
   );
+
+  if (opts?.qaChecklist) {
+    await writeFileSafely(
+      path.join(notesDir, "QA_CHECKLIST.md"),
+      `# QA Checklist — ${teamId}\n\nUse this when verifying a ticket before moving it from work/testing/ → work/done/.\n\n## Checklist\n- [ ] Repro steps verified\n- [ ] Acceptance criteria met\n- [ ] No regressions in adjacent flows\n- [ ] Notes/screenshots attached (if relevant)\n\n## Verified by\n- QA: (name)\n- Date: (YYYY-MM-DD)\n\n## Links\n- Ticket: (path or URL)\n- PR/Commit: (optional)\n`,
+      mode,
+    );
+  }
   const ticketsMd = `# Tickets — ${teamId}\n\n## Naming\n- Backlog tickets live in work/backlog/\n- In-progress tickets live in work/in-progress/\n- Testing tickets live in work/testing/\n- Done tickets live in work/done/\n- Filename ordering is the queue: 0001-..., 0002-...\n\n## Stages\n- backlog → in-progress → testing → done\n\n## QA handoff\n- When work is ready for QA: move the ticket to \`work/testing/\` and assign to test.\n\n## Required fields\nEach ticket should include:\n- Title\n- Context\n- Requirements\n- Acceptance criteria\n- Owner (dev/devops/lead/test)\n- Status (queued/in-progress/testing/done)\n\n## Example\n\n\`\`\`md\n# 0001-example-ticket\n\nOwner: dev\nStatus: queued\n\n## Context\n...\n\n## Requirements\n- ...\n\n## Acceptance criteria\n- ...\n\`\`\`\n`;
   await writeFileSafely(path.join(teamDir, "TICKETS.md"), ticketsMd, mode);
 }
@@ -200,8 +209,11 @@ export async function handleScaffoldTeam(
   const sharedContextDir = path.join(teamDir, "shared-context");
   const goalsDir = path.join(notesDir, "goals");
 
+  const hasTestRole = (recipe.agents ?? []).some((a) => String(a.role ?? '').toLowerCase() === 'test');
+  const qaChecklist = Boolean(recipe.qaChecklist ?? false) || hasTestRole;
+
   await ensureTeamDirectoryStructure(teamDir, sharedContextDir, notesDir, workDir);
-  await writeTeamBootstrapFiles(teamId, teamDir, sharedContextDir, notesDir, goalsDir, overwrite);
+  await writeTeamBootstrapFiles(teamId, teamDir, sharedContextDir, notesDir, goalsDir, overwrite, { qaChecklist });
 
   const results = await scaffoldTeamAgents(api, recipe, teamId, teamDir, rolesDir, overwrite);
   await writeTeamMetadataAndConfig({ api, teamId, teamDir, recipe, results, applyConfig: !!options.applyConfig, overwrite });
