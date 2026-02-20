@@ -46,9 +46,22 @@ describe("ticket command handlers (integration)", () => {
         await fs.rm(base, { recursive: true, force: true });
       }
     });
-    test("throws when workspace not set", async () => {
-      const api = { config: { agents: { defaults: {} } } } as any;
-      await expect(__internal.handleTickets(api, { teamId: "x" })).rejects.toThrow(/workspace is not set/);
+    test("falls back to OPENCLAW_WORKSPACE when workspace not set in config", async () => {
+      const base = await fs.mkdtemp(path.join(os.tmpdir(), "ticket-cmd-env-"));
+      const workspaceRoot = path.join(base, "workspace");
+      await fs.mkdir(workspaceRoot, { recursive: true });
+
+      const prev = process.env.OPENCLAW_WORKSPACE;
+      process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+      try {
+        const api = { config: { agents: { defaults: {} } }, plugins: { entries: { recipes: { config: {} } } } } as any;
+        const out = await __internal.handleTickets(api, { teamId: "x" });
+        expect(out.teamId).toBe("x");
+        expect(out.tickets).toEqual([]);
+      } finally {
+        process.env.OPENCLAW_WORKSPACE = prev;
+        await fs.rm(base, { recursive: true, force: true });
+      }
     });
 
     test("returns empty lists when no tickets", async () => {

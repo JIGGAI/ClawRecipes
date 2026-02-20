@@ -15,9 +15,27 @@ describe("workspace", () => {
       const api = { config: { agents: { defaults: { workspace: "/home/me/ws" } } } } as any;
       expect(resolveWorkspaceRoot(api)).toBe("/home/me/ws");
     });
-    test("throws when workspace not set", () => {
-      const api = { config: { agents: {} } } as any;
-      expect(() => resolveWorkspaceRoot(api)).toThrow("agents.defaults.workspace is not set");
+
+    test("falls back to OPENCLAW_WORKSPACE env", () => {
+      const prev = process.env.OPENCLAW_WORKSPACE;
+      process.env.OPENCLAW_WORKSPACE = "/tmp/openclaw-workspace";
+      try {
+        const api = { config: { agents: {} } } as any;
+        expect(resolveWorkspaceRoot(api)).toBe("/tmp/openclaw-workspace");
+      } finally {
+        process.env.OPENCLAW_WORKSPACE = prev;
+      }
+    });
+
+    test("falls back to ~/.openclaw/workspace when config+env missing", () => {
+      const prev = process.env.OPENCLAW_WORKSPACE;
+      delete process.env.OPENCLAW_WORKSPACE;
+      try {
+        const api = { config: { agents: {} } } as any;
+        expect(resolveWorkspaceRoot(api)).toBe(path.join(os.homedir(), ".openclaw", "workspace"));
+      } finally {
+        if (prev !== undefined) process.env.OPENCLAW_WORKSPACE = prev;
+      }
     });
   });
 

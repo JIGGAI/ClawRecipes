@@ -235,11 +235,31 @@ describe("index.ts handlers (remove-team)", () => {
         await fs.rm(base, { recursive: true, force: true });
       }
     });
-    test("throws when workspace not set", async () => {
-      const api = { config: { agents: { defaults: {} } } } as any;
-      await expect(
-        __internal.handleInstallMarketplaceRecipe(api, { slug: "x" })
-      ).rejects.toThrow(/workspace is not set/);
+    test("falls back to OPENCLAW_WORKSPACE when workspace not set in config", async () => {
+      const base = await fs.mkdtemp(path.join(os.tmpdir(), "install-recipe-env-"));
+      const workspaceRoot = path.join(base, "workspace");
+      await fs.mkdir(workspaceRoot, { recursive: true });
+
+      const prev = process.env.OPENCLAW_WORKSPACE;
+      process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+      const api = {
+        config: {
+          agents: { defaults: {} },
+          plugins: { entries: { recipes: { config: { workspaceRecipesDir: "recipes" } } } },
+        },
+      } as any;
+
+      try {
+        const res = await __internal.handleInstallMarketplaceRecipe(api, {
+          slug: "install-test",
+          registryBase: "https://registry.example.com",
+        });
+        expect(res.ok).toBe(true);
+        expect(res.wrote).toContain(path.join(workspaceRoot, "recipes"));
+      } finally {
+        process.env.OPENCLAW_WORKSPACE = prev;
+        await fs.rm(base, { recursive: true, force: true });
+      }
     });
   });
 });

@@ -1,12 +1,25 @@
+import os from "node:os";
 import path from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { ensureDir } from "./fs-utils";
 import { ticketStageDir } from "./lanes";
 
+/**
+ * Resolve the OpenClaw workspace root.
+ *
+ * Priority:
+ *  1) config: agents.defaults.workspace
+ *  2) env: OPENCLAW_WORKSPACE
+ *  3) default: ~/.openclaw/workspace
+ */
 export function resolveWorkspaceRoot(api: OpenClawPluginApi): string {
   const root = api.config.agents?.defaults?.workspace;
-  if (!root) throw new Error("agents.defaults.workspace is not set in config");
-  return root;
+  if (root) return root;
+
+  const envRoot = process.env.OPENCLAW_WORKSPACE;
+  if (envRoot) return envRoot;
+
+  return path.join(os.homedir(), ".openclaw", "workspace");
 }
 
 export function resolveTeamDir(api: OpenClawPluginApi, teamId: string): string {
