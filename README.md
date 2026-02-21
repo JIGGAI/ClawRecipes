@@ -6,7 +6,9 @@
 
 ClawRecipes is an OpenClaw plugin that provides **CLI-first recipes** for scaffolding specialist agents and teams from Markdown.
 
-If you like durable workflows: ClawRecipes is built around a **file-first team workspace** (inbox/backlog/in-progress/testing/done) that plays nicely with git.
+If you like durable workflows, ClawRecipes is built around a **file-first team workspace** (inbox/backlog/in-progress/testing/done) that plays nicely with git.
+
+For those who prefer a beautiful user interface, install **[ClawKitchen](https://github.com/JIGGAI/ClawKitchen)** — our latest plugin where you can add, remove, update, and fully manage your teams in one place. It includes an agile workflow board, a goal tracker, and cron management for convenience.
 
 ## Quickstart
 ### 1) Install
@@ -53,16 +55,6 @@ openclaw recipes dispatch \
   --request "Add a new recipe for a customer-support team" \
   --owner lead
 ```
-
-## License
-
-ClawRecipes is licensed under **Apache-2.0**.
-
-Attribution requirement (practical): if you redistribute ClawRecipes (or a derivative work), you must retain the license and attribution notices (see `LICENSE` and `NOTICE`).
-
-Branding note: the license does not grant permission to use JIGGAI trademarks except as required for reasonable and customary attribution. See `TRADEMARK.md`.
-
-Contributions: we welcome PRs. By contributing, you agree that your contributions are licensed under the project’s Apache-2.0 license.
 
 ## Commands (high level)
 - `openclaw recipes list|show|status`
@@ -182,9 +174,20 @@ Most users should focus on:
 - running the file-first workflow (dispatch → backlog → in-progress → testing → done)
 
 ## Goals
-- Release Clawmarket, https://github.com/JIGGAI/ClawMarket, public url https://clawkitchen.ai
-- Release ClawKitchen, https://github.com/JIGGAI/ClawKitchen
-- Merge at least 1 community pull request
+- ~~Release Clawmarket, https://github.com/JIGGAI/ClawMarket, public url https://clawkitchen.ai~~
+- ~~Release ClawKitchen, https://github.com/JIGGAI/ClawKitchen~~
+- ~~Merge at least 1 community pull request~~
 - Daily shipping/pull requests of ClawRecipes features
 - Improve recipes with more detailed agent files
 - Add ability to install skills for agents through ClawKitchen
+- Integrate ClawKitchen with ClawMarket to pull new recipes
+
+## License
+
+ClawRecipes is licensed under **Apache-2.0**.
+
+Attribution requirement (practical): if you redistribute ClawRecipes (or a derivative work), you must retain the license and attribution notices (see `LICENSE` and `NOTICE`).
+
+Branding note: the license does not grant permission to use JIGGAI trademarks except as required for reasonable and customary attribution. See `TRADEMARK.md`.
+
+Contributions: we welcome PRs. By contributing, you agree that your contributions are licensed under the project’s Apache-2.0 license.
