@@ -39,15 +39,16 @@ async function ensureTeamDirectoryStructure(
   ]);
 }
 
-async function writeTeamBootstrapFiles(
-  teamId: string,
-  teamDir: string,
-  sharedContextDir: string,
-  notesDir: string,
-  goalsDir: string,
-  overwrite: boolean,
-  opts?: { qaChecklist?: boolean }
-) {
+async function writeTeamBootstrapFiles(opts: {
+  teamId: string;
+  teamDir: string;
+  sharedContextDir: string;
+  notesDir: string;
+  goalsDir: string;
+  overwrite: boolean;
+  qaChecklist?: boolean;
+}) {
+  const { teamId, teamDir, sharedContextDir, notesDir, goalsDir, overwrite, qaChecklist } = opts;
   const mode = overwrite ? "overwrite" : "createOnly";
   await ensureDir(goalsDir);
   await writeFileSafely(
@@ -68,7 +69,7 @@ async function writeTeamBootstrapFiles(
     mode
   );
 
-  if (opts?.qaChecklist) {
+  if (qaChecklist) {
     await writeFileSafely(
       path.join(notesDir, "QA_CHECKLIST.md"),
       `# QA Checklist — ${teamId}\n\nUse this when verifying a ticket before moving it from work/testing/ → work/done/.\n\n## Checklist\n- [ ] Repro steps verified\n- [ ] Acceptance criteria met\n- [ ] No regressions in adjacent flows\n- [ ] Notes/screenshots attached (if relevant)\n\n## Verified by\n- QA: (name)\n- Date: (YYYY-MM-DD)\n\n## Links\n- Ticket: (path or URL)\n- PR/Commit: (optional)\n`,
@@ -213,7 +214,15 @@ export async function handleScaffoldTeam(
   const qaChecklist = Boolean(recipe.qaChecklist ?? false) || hasTestRole;
 
   await ensureTeamDirectoryStructure(teamDir, sharedContextDir, notesDir, workDir);
-  await writeTeamBootstrapFiles(teamId, teamDir, sharedContextDir, notesDir, goalsDir, overwrite, { qaChecklist });
+  await writeTeamBootstrapFiles({
+    teamId,
+    teamDir,
+    sharedContextDir,
+    notesDir,
+    goalsDir,
+    overwrite,
+    qaChecklist,
+  });
 
   const results = await scaffoldTeamAgents(api, recipe, teamId, teamDir, rolesDir, overwrite);
   await writeTeamMetadataAndConfig({ api, teamId, teamDir, recipe, results, applyConfig: !!options.applyConfig, overwrite });

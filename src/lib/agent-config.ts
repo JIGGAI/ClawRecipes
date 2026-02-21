@@ -16,7 +16,17 @@ export function upsertAgentInConfig(cfgObj: AgentsConfigMutable, snippet: AgentC
   const list = cfgObj.agents.list;
   const idx = list.findIndex((a) => a?.id === snippet.id);
   const prev = idx >= 0 ? list[idx] : {};
-  const prevTools = (prev as any)?.tools as undefined | { profile?: string; allow?: string[]; deny?: string[] };
+
+  const prevTools = (() => {
+    const v = (prev as { tools?: unknown } | null | undefined)?.tools;
+    if (!v || typeof v !== "object") return undefined;
+    const t = v as { profile?: unknown; allow?: unknown; deny?: unknown };
+    return {
+      profile: typeof t.profile === "string" ? t.profile : undefined,
+      allow: Array.isArray(t.allow) ? (t.allow as string[]) : undefined,
+      deny: Array.isArray(t.deny) ? (t.deny as string[]) : undefined,
+    } as { profile?: string; allow?: string[]; deny?: string[] };
+  })();
   const nextTools =
     snippet.tools === undefined
       ? prevTools
