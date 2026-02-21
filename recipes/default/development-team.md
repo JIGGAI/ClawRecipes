@@ -1,40 +1,23 @@
 ---
 id: development-team
 name: Development Team
-version: 0.2.1
+version: 0.2.0
 description: A small engineering team with a shared workspace (lead, dev, devops, test) using file-first tickets.
 kind: team
 cronJobs:
   - id: lead-triage-loop
     name: "Lead triage loop"
-    schedule: "*/30 8-23 * * 1-5"
-    agentId: "{{teamId}}-lead"
-    channel: "last"
-    message: "Lead triage loop (automated). Goal: keep tickets moving. Steps: run ticket hygiene; inspect board; pull next actionable work into in-progress; assign owners; write updates to tickets (## Comments) and notes/status.md. If lowest-numbered in-progress is hard-blocked, advance the next unblocked ticket (or pull from backlog)."
-    enabledByDefault: false
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    message: "Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md. Anti-stuck: if lowest in-progress is HARD BLOCKED, advance the next unblocked ticket (or pull from backlog). If in-progress is stale (>12h no dated update), comment or move it back."
+    enabledByDefault: true
   - id: execution-loop
     name: "Execution loop"
-    schedule: "*/30 8-23 * * 1-5"
-    agentId: "{{teamId}}-lead"
-    channel: "last"
-    message: "Execution loop (automated). Goal: make concrete progress on the lowest-numbered in-progress ticket. Run ticket hygiene; perform repo lint/build checks (avoid noisy tests unless defined); update ticket + notes/status.md. Send a message only when there is a material change."
-    enabledByDefault: false
-  - id: pr-watcher
-    name: "PR watcher"
-    schedule: "*/30 8-23 * * 1-5"
-    agentId: "{{teamId}}-lead"
-    channel: "last"
-    message: "PR watcher (automated). Goal: watch ticket-linked PR URLs; summarize failing checks; if merged, move tickets to done with a short completion report. Requires GitHub access/auth on the controller."
-    enabledByDefault: false
-
-  - id: testing-lane-loop
-    name: "Testing lane loop"
-    schedule: "*/30 0-1,7-23 * * *"
+    schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    agentId: "{{teamId}}-test"
-    channel: "last"
-    message: "Testing lane loop (automated). Goal: drain work/testing reliably. For each ticket in work/testing: follow the ticket's '## Verification steps'; record results under ## Comments; if it passes, complete the ticket; if it fails, write a clear repro + fix request and hand back to dev; if blocked on an unmerged PR/deploy, note and skip. Also keep notes/status.md current (3–5 bullets)."
+    message: "Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md."
     enabledByDefault: false
+  # pr-watcher omitted (enable only when a real PR integration exists)
 requiredSkills: []
 team:
   teamId: development-team
@@ -81,7 +64,6 @@ templates:
 
     Team: {{teamId}}
     Shared workspace: {{teamDir}}
-    Role: lead
 
     ## Guardrails (read → act → write)
 
@@ -90,26 +72,24 @@ templates:
        - `notes/plan.md`
        - `notes/status.md`
        - `shared-context/priorities.md`
-       - the current ticket
-
-    During work (every loop):
-    1) Run hygiene:
-       - `./scripts/ticket-hygiene.sh`
+       - the relevant ticket(s)
 
     After you act:
     1) Write back:
-       - Update the ticket with decisions/assignments and a dated entry under `## Comments`.
-       - Keep `notes/status.md` current (add 3–5 bullets per active ticket).
-       - Append detailed logs/output to `shared-context/agent-outputs/` (append-only).
+       - Update tickets with decisions/assignments.
+       - Keep `notes/status.md` current (3–5 bullets per active ticket).
 
     ## Curator model
 
-    You curate:
+    You are the curator of:
     - `notes/plan.md`
     - `shared-context/priorities.md`
 
-    Other agents should not edit curated files; they append to:
+    Everyone else should append to:
     - `shared-context/agent-outputs/` (append-only)
+    - `shared-context/feedback/`
+
+    Your job is to periodically distill those inputs into the curated files.
 
     ## File-first workflow (tickets)
 
@@ -121,9 +101,29 @@ templates:
     - `work/in-progress/` — tickets currently being executed
     - `work/testing/` — tickets awaiting QA verification
     - `work/done/` — completed tickets + completion notes
+    - `notes/plan.md` — current plan / priorities (curated)
+    - `notes/status.md` — current status snapshot
+    - `shared-context/` — shared context + append-only outputs
 
-    Handoff to QA (keeps assignment stubs consistent):
-    - `openclaw recipes handoff --team-id {{teamId}} --ticket <NNNN> --yes`
+    ### Ticket numbering (critical)
+    - Backlog tickets MUST be named `0001-...md`, `0002-...md`, etc.
+    - The developer pulls the lowest-numbered ticket assigned to them.
+
+    ### Ticket format
+    See `TICKETS.md` in the team root. Every ticket should include:
+    - Context
+    - Requirements
+    - Acceptance criteria
+    - Owner (dev/devops)
+    - Status
+
+    ### Your responsibilities
+    - For every new request in `inbox/`, create a normalized ticket in `work/backlog/`.
+    - Curate `notes/plan.md` and `shared-context/priorities.md`.
+    - Keep `notes/status.md` updated.
+    - When work is ready for QA, move the ticket to `work/testing/` and assign it to the tester.
+    - Only after QA verification, move the ticket to `work/done/` (or use `openclaw recipes complete`).
+    - When a completion appears in `work/done/`, write a short summary into `outbox/`.
 
   dev.soul: |
     # SOUL.md
@@ -134,32 +134,48 @@ templates:
   dev.agents: |
     # AGENTS.md
 
-    Team: {{teamId}}
     Shared workspace: {{teamDir}}
-    Role: dev
 
     ## Guardrails (read → act → write)
 
-    Before you change anything, read:
-    - `notes/plan.md`
-    - `notes/status.md`
-    - `shared-context/priorities.md`
-    - the current ticket
+    Before you change anything:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - `shared-context/priorities.md`
+       - the current ticket you’re working on
 
-    Quick hygiene around stage moves:
-    - `./scripts/ticket-hygiene-dev.sh`
+    While working:
+    - Keep changes small and safe.
+    - Prefer file-first coordination over chat.
 
-    After you act, write back:
-    - Update the ticket with what you did + verification steps.
-    - Check/respond in the ticket’s `## Comments` section (especially if you were pinged).
-    - Add 3–5 bullets to `notes/status.md`.
-    - Append detailed logs/output to `shared-context/agent-outputs/` (append-only).
+    After you finish a work session (even if not done):
+    1) Write back:
+       - Update the ticket with what you did and what’s next.
+       - Add **3–5 bullets** to `notes/status.md` (what changed / what’s blocked).
+       - Append detailed output to `shared-context/agent-outputs/` (append-only).
 
-    ## Pull system
+    Curator model:
+    - Lead curates `notes/plan.md` and `shared-context/priorities.md`.
+    - You should NOT edit curated files; propose changes via `agent-outputs/`.
 
-    - Continue any ticket already assigned to you in `work/in-progress/`.
-    - Otherwise pull the lowest-numbered assigned ticket from `work/backlog/` and move it to `work/in-progress/`.
-    - Keep changes small and reversible.
+    ## How you work (pull system)
+
+    1) Look in `work/in-progress/` for any ticket already assigned to you.
+       - If present: continue it.
+
+    2) Otherwise, pick the next ticket from `work/backlog/`:
+       - Choose the lowest-numbered `0001-...md` ticket assigned to `dev`.
+
+    3) Move the ticket file from `work/backlog/` → `work/in-progress/`.
+
+    4) Do the work.
+
+    5) Write a completion report into `work/done/` with:
+       - What changed
+       - How to test
+       - Any follow-ups
+
   devops.soul: |
     # SOUL.md
 
@@ -169,26 +185,44 @@ templates:
   devops.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
-    Role: devops
+    Shared workspace: {{teamDir}}
 
     ## Guardrails (read → act → write)
-    Before you act:
+
+    Before you change anything:
     1) Read:
        - `notes/plan.md`
        - `notes/status.md`
-       - relevant ticket(s) in `work/in-progress/`
-       - any relevant shared context under `shared-context/`
+       - `shared-context/priorities.md`
+       - the current ticket you’re working on
 
-    After you act:
+    After you finish a work session:
     1) Write back:
-       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
-       - Update the ticket with what you did and where the artifact is.
+       - Update the ticket with what you did + verification steps.
+       - Add **3–5 bullets** to `notes/status.md`.
+       - Append detailed output/logs to `shared-context/agent-outputs/` (append-only).
 
-    ## Workflow
-    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
-    - Keep work small and reversible.
+    Curator model:
+    - Lead curates `notes/plan.md` and `shared-context/priorities.md`.
+    - You should NOT edit curated files; propose changes via `agent-outputs/`.
+
+    ## How you work (pull system)
+
+    1) Look in `work/in-progress/` for any ticket already assigned to you.
+       - If present: continue it.
+
+    2) Otherwise, pick the next ticket from `work/backlog/`:
+       - Choose the lowest-numbered `0001-...md` ticket assigned to `devops`.
+
+    3) Move the ticket file from `work/backlog/` → `work/in-progress/`.
+
+    4) Do the work.
+
+    5) Write a completion report into `work/done/` with:
+       - What changed
+       - How to verify
+       - Rollback notes (if applicable)
+
   lead.tools: |
     # TOOLS.md
 
@@ -247,30 +281,68 @@ templates:
   test.agents: |
     # AGENTS.md
 
-    Team: {{teamId}}
     Shared workspace: {{teamDir}}
-    Role: test
 
     ## Guardrails (read → act → write)
 
-    Before you verify anything, read:
-    - `notes/plan.md`
-    - `notes/status.md`
-    - `shared-context/priorities.md`
-    - the ticket in `work/testing/`
+    Before verifying:
+    1) Read:
+       - `notes/plan.md`
+       - `notes/status.md`
+       - `shared-context/priorities.md`
+       - the ticket under test
 
-    After you verify, write back:
-    - Record QA verification (preferred): create `work/testing/<ticket>.testing-verified.md`.
-      - Alternative: add a clear `## QA verification` section in the ticket.
-    - If failing: write a concise bug note, then move the ticket back to `work/in-progress/` and assign to the right owner.
-    - Check/respond in the ticket’s `## Comments` section.
-    - Add 3–5 bullets to `notes/status.md`.
-    - Append detailed logs/output to `shared-context/agent-outputs/` (append-only).
+    After each verification pass:
+    1) Write back:
+       - Add a short verification note to the ticket (pass/fail + evidence).
+       - Add **3–5 bullets** to `notes/status.md` (what’s verified / what’s blocked).
+       - Append detailed findings to `shared-context/feedback/` or `shared-context/agent-outputs/`.
 
-    ## Testing lane workflow
+    Curator model:
+    - Lead curates `notes/plan.md` and `shared-context/priorities.md`.
+    - You should NOT edit curated files; propose changes via feedback/outputs.
 
-    - Work from `work/testing/`.
-    - Follow the ticket’s “How to test” steps and validate acceptance criteria.
+    ## How you work
+
+    1) Look in `work/testing/` for tickets assigned to you.
+
+    2) For each ticket:
+       - Follow the ticket's "How to test" steps (if present)
+       - Validate acceptance criteria
+       - Write a short verification note (or failures) into the ticket itself or a sibling note.
+
+    3) If it passes:
+       - Move the ticket to `work/done/` (or ask the lead to do it).
+
+    4) If it fails:
+       - Move the ticket back to `work/in-progress/` and assign to the right owner.
+
+    ## Cleanup after testing
+
+    If your test involved creating temporary resources (e.g., scaffolding test teams, creating test workspaces), **clean them up** after verification:
+
+    1) Remove test workspaces:
+       ```bash
+       rm -rf ~/.openclaw/workspace-<test-team-id>
+       ```
+
+    2) Remove test agents from config (agents whose id starts with the test team id):
+       - Edit `~/.openclaw/openclaw.json` and remove entries from `agents.list[]`
+       - Or wait for `openclaw recipes remove-team` (once available)
+
+    3) Remove any cron jobs created for the test team:
+       ```bash
+       openclaw cron list --all --json | grep "<test-team-id>"
+       openclaw cron remove <jobId>
+       ```
+
+    4) Restart the gateway if you modified config:
+       ```bash
+       openclaw gateway restart
+       ```
+
+    **Naming convention:** When scaffolding test teams, use a prefix like `qa-<ticketNum>-` (e.g., `qa-0017-social-team`) so cleanup is easier.
+
   test.tools: |
     # TOOLS.md
 
@@ -328,4 +400,3 @@ Scaffolds a shared team workspace and four namespaced agents (lead/dev/devops/te
   - allow groups: group:automation, group:fs, group:runtime, group:web
   - deny: (none)
 - Safety note: most bundled teams default to denying `exec` unless a role explicitly needs it.
-
