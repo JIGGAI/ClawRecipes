@@ -325,3 +325,59 @@ export async function handleDispatch(
   }
   return { ok: true as const, wrote: plan.files.map((f) => f.path), nudgeQueued };
 }
+
+/**
+ * Cleanup assignment stubs for tickets that are already closed (in work/done).
+ *
+ * Why: some automation/board views treat assignment stubs as active work signals.
+ * If a ticket is manually moved to done (outside `openclaw recipes move-ticket`),
+ * its `work/assignments/<num>-assigned-*.md` stubs may linger and resurface the ticket.
+ *
+ * This command archives any matching assignment stubs into `work/assignments/archive/`.
+ */
+export async function handleCleanupClosedAssignments(
+  api: OpenClawPluginApi,
+  options: { teamId: string; ticketNums?: string[] }
+): Promise<{ ok: true; teamId: string; archived: Array<{ from: string; to: string }> }> {
+  const teamId = String(options.teamId);
+  const { teamDir } = await resolveTeamContext(api, teamId);
+
+  const assignmentsDir = ticketStageDir(teamDir, "assignments");
+  const archiveDir = path.join(assignmentsDir, "archive");
+  const doneDir = ticketStageDir(teamDir, "done");
+
+  const archived: Array<{ from: string; to: string }> = [];
+  if (!(await fileExists(assignmentsDir))) return { ok: true, teamId, archived };
+  await ensureDir(archiveDir);
+
+  const ticketNumsFilter = Array.isArray(options.ticketNums) && options.ticketNums.length
+    ? new Set(options.ticketNums.map((n) => String(n).padStart(4, "0")))
+    : null;
+
+  const doneFiles = (await fileExists(doneDir)) ? await fs.readdir(doneDir) : [];
+  const doneNums = new Set(
+    doneFiles
+      .map((f) => f.match(/^([0-9]{4})-/)?.[1])
+      .filter((x): x is string => !!x)
+  );
+
+  const files = (await fs.readdir(assignmentsDir)).filter((f) => f.endsWith(".md"));
+  for (const f of files) {
+    if (f === "archive") continue;
+    if (f.startsWith("archive" + path.sep)) continue;
+    const m = f.match(/^([0-9]{4})-assigned-.*\.md$/);
+    if (!m) continue;
+    const num = m[1];
+    if (ticketNumsFilter && !ticketNumsFilter.has(num)) continue;
+
+    // If the ticket number is present in done/, this assignment is considered closed.
+    if (!doneNums.has(num)) continue;
+
+    const from = path.join(assignmentsDir, f);
+    const to = path.join(archiveDir, f);
+    await fs.rename(from, to);
+    archived.push({ from, to });
+  }
+
+  return { ok: true, teamId, archived };
+}
