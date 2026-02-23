@@ -107,6 +107,29 @@ export async function handleMoveTicket(
   const patched = patchStatus(md);
   await fs.writeFile(srcPath, patched, "utf8");
   if (srcPath !== destPath) await fs.rename(srcPath, destPath);
+
+  // When a ticket is moved to done, archive any assignment stubs into work/assignments/archive/.
+  if (dest === "done") {
+    const filename = path.basename(destPath);
+    const m = filename.match(TICKET_FILENAME_REGEX);
+    const ticketNumStr = m?.[1] ?? null;
+    if (ticketNumStr) {
+      const assignmentsDir = ticketStageDir(teamDir, "assignments");
+      if (await fileExists(assignmentsDir)) {
+        const files = (await fs.readdir(assignmentsDir)).filter((f) => f.startsWith(`${ticketNumStr}-assigned-`) && f.endsWith(".md"));
+        if (files.length) {
+          const archiveDir = path.join(assignmentsDir, "archive");
+          await ensureDir(archiveDir);
+          for (const f of files) {
+            const from = path.join(assignmentsDir, f);
+            const to = path.join(archiveDir, f);
+            await fs.rename(from, to);
+          }
+        }
+      }
+    }
+  }
+
   return { ok: true, from: srcPath, to: destPath };
 }
 
