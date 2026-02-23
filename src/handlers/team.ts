@@ -12,6 +12,7 @@ import { resolveWorkspaceRoot } from "../lib/workspace";
 import { pickRecipeId } from "../lib/recipe-id";
 import { recipeIdTakenForTeam, validateRecipeAndSkills, writeWorkspaceRecipeFile } from "../lib/scaffold-utils";
 import { scaffoldAgentFromRecipe } from "./scaffold";
+import { renderTemplate } from "../lib/template";
 import { reconcileRecipeCronJobs } from "./cron";
 import { lintRecipe } from "../lib/recipe-lint";
 
@@ -46,10 +47,11 @@ async function writeTeamBootstrapFiles(opts: {
   sharedContextDir: string;
   notesDir: string;
   goalsDir: string;
+  recipe?: RecipeFrontmatter;
   overwrite: boolean;
   qaChecklist?: boolean;
 }) {
-  const { teamId, teamDir, sharedContextDir, notesDir, goalsDir, overwrite, qaChecklist } = opts;
+  const { teamId, teamDir, sharedContextDir, notesDir, goalsDir, recipe, overwrite, qaChecklist } = opts;
   const mode = overwrite ? "overwrite" : "createOnly";
   await ensureDir(goalsDir);
   await writeFileSafely(
@@ -77,7 +79,14 @@ async function writeTeamBootstrapFiles(opts: {
       mode,
     );
   }
-  const ticketsMd = `# Tickets — ${teamId}\n\n## Naming\n- Backlog tickets live in work/backlog/\n- In-progress tickets live in work/in-progress/\n- Testing tickets live in work/testing/\n- Done tickets live in work/done/\n- Filename ordering is the queue: 0001-..., 0002-...\n\n## Stages\n- backlog → in-progress → testing → done\n\n## QA handoff\n- When work is ready for QA: move the ticket to \`work/testing/\` and assign to test.\n\n## Required fields\nEach ticket should include:\n- Title\n- Context\n- Requirements\n- Acceptance criteria\n- Owner (dev/devops/lead/test)\n- Status (queued/in-progress/testing/done)\n\n## Example\n\n\`\`\`md\n# 0001-example-ticket\n\nOwner: dev\nStatus: queued\n\n## Context\n...\n\n## Requirements\n- ...\n\n## Acceptance criteria\n- ...\n\`\`\`\n`;
+  const defaultTicketsMd = `# Tickets — ${teamId}\n\n## Naming\n- Backlog tickets live in work/backlog/\n- In-progress tickets live in work/in-progress/\n- Testing tickets live in work/testing/\n- Done tickets live in work/done/\n- Filename ordering is the queue: 0001-..., 0002-...\n\n## Stages\n- backlog → in-progress → testing → done\n\n## QA handoff\n- When work is ready for QA: move the ticket to \`work/testing/\` and assign to test.\n\n## Required fields\nEach ticket should include:\n- Title\n- Context\n- Requirements\n- Acceptance criteria\n- Owner (dev/devops/lead/test)\n- Status (queued/in-progress/testing/done)\n\n## Example\n\n\`\`\`md\n# 0001-example-ticket\n\nOwner: dev\nStatus: queued\n\n## Context\n...\n\n## Requirements\n- ...\n\n## Acceptance criteria\n- ...\n\`\`\`\n`;
+
+  // Allow team recipes to override the default team-root ticket spec.
+  // If the recipe defines templates.tickets, we render it and write it to teamDir/TICKETS.md.
+  // Back-compat: if not defined, we write the default content.
+  const ticketsTemplate = recipe?.templates?.["tickets"];
+  const ticketsMd = typeof ticketsTemplate === "string" ? renderTemplate(ticketsTemplate, { teamId, teamDir }) : defaultTicketsMd;
+
   await writeFileSafely(path.join(teamDir, "TICKETS.md"), ticketsMd, mode);
 }
 
@@ -238,6 +247,7 @@ export async function handleScaffoldTeam(
     sharedContextDir,
     notesDir,
     goalsDir,
+    recipe,
     overwrite,
     qaChecklist,
   });
