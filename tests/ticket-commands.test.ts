@@ -137,6 +137,34 @@ describe("ticket command handlers (integration)", () => {
         await fs.rm(base, { recursive: true, force: true });
       }
     });
+
+    test("archives assignment stubs when moving ticket to done", async () => {
+      const { base, workspaceRoot, teamId, teamDir } = await setupTeamWorkspace();
+      const ticketPath = path.join(teamDir, "work", "backlog", "0009-sample.md");
+      await fs.writeFile(ticketPath, "# 0009-sample\n\nStatus: queued\n\n## Context\n", "utf8");
+      const assignmentsDir = path.join(teamDir, "work", "assignments");
+      await fs.mkdir(assignmentsDir, { recursive: true });
+      const stub1 = path.join(assignmentsDir, "0009-assigned-dev.md");
+      const stub2 = path.join(assignmentsDir, "0009-assigned-test.md");
+      await fs.writeFile(stub1, "# Assignment — 0009\nAssigned: dev\n", "utf8");
+      await fs.writeFile(stub2, "# Assignment — 0009\nAssigned: test\n", "utf8");
+
+      try {
+        const api = mockApi(workspaceRoot);
+        const res = await __internal.handleMoveTicket(api, { teamId, ticket: "0009", to: "done", completed: true });
+        expect(res.ok).toBe(true);
+        expect(res.to).toContain(path.join("work", "done"));
+
+        const archiveDir = path.join(assignmentsDir, "archive");
+        expect(await fileExists(archiveDir)).toBe(true);
+        expect(await fileExists(path.join(archiveDir, "0009-assigned-dev.md"))).toBe(true);
+        expect(await fileExists(path.join(archiveDir, "0009-assigned-test.md"))).toBe(true);
+        expect(await fileExists(stub1)).toBe(false);
+        expect(await fileExists(stub2)).toBe(false);
+      } finally {
+        await fs.rm(base, { recursive: true, force: true });
+      }
+    });
   });
 
   describe("handleAssign", () => {
