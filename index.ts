@@ -26,6 +26,7 @@ import {
 } from "./src/handlers/install";
 import {
   handleAssign,
+  handleCleanupClosedAssignments,
   handleDispatch,
   handleHandoff,
   handleMoveTicket,
@@ -482,6 +483,19 @@ const recipesPlugin = {
             console.log(JSON.stringify({ ok: true, moved: { from: res.from, to: res.to } }, null, 2));
           });
 
+        cmd
+          .command("cleanup-closed-assignments")
+          .description("Archive assignment stubs for tickets already in work/done (prevents done work resurfacing)")
+          .requiredOption("--team-id <teamId>", "Team id")
+          .option("--ticket <ticketNums...>", "Optional ticket numbers to target (e.g. 0050 0064)")
+          .action(async (options: { teamId?: string; ticket?: string[] }) => {
+            if (!options.teamId) throw new Error("--team-id is required");
+            const res = await handleCleanupClosedAssignments(api, {
+              teamId: options.teamId,
+              ticketNums: options.ticket,
+            });
+            console.log(JSON.stringify(res, null, 2));
+          });
 
         cmd
           .command("assign")

@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": 1,
+  "plugins": {
+    "kitchen": {
+      "id": "kitchen",
+      "navLabel": "Kitchen Plugin",
+      "title": "ClawKitchen",
+      "tagline": "A modern UI for managing OpenClaw teams, goals, recipes, and cron jobs.",
+      "quickStart": {
+        "openclaw": [
+          "openclaw plugins install @jiggai/kitchen",
+          "openclaw gateway restart",
+          "openclaw plugins list"
+        ],
+        "npm": [
+          "npm i -g @jiggai/kitchen",
+          "# If needed, install via link instead:",
+          "# openclaw plugins install --link $(npm root -g)/@jiggai/kitchen",
+          "openclaw gateway restart"
+        ]
+      },
+      "features": [
+        "Teams board (backlog / in-progress / testing / done)",
+        "Recipe management (browse, edit, scaffold)",
+        "Goals tracking",
+        "Cron jobs management",
+        "Settings + plugin diagnostics"
+      ],
+      "links": {
+        "github": "https://github.com/JIGGAI/ClawKitchen",
+        "docs": "https://github.com/JIGGAI/ClawKitchen#readme"
+      },
+      "screenshots": [
+        "/images/plugins/kitchen/kitchen-01.jpg",
+        "/images/plugins/kitchen/kitchen-02.jpg",
+        "/images/plugins/kitchen/kitchen-03.jpg",
+        "/images/plugins/kitchen/kitchen-04.jpg",
+        "/images/plugins/kitchen/kitchen-05.jpg",
+        "/images/plugins/kitchen/kitchen-06.jpg",
+        "/images/plugins/kitchen/kitchen-07.jpg",
+        "/images/plugins/kitchen/kitchen-08.jpg"
+      ]
+    },
+    "recipes": {
+      "id": "recipes",
+      "navLabel": "Recipes Plugin",
+      "title": "ClawRecipes",
+      "tagline": "CLI-first recipes for scaffolding specialist agents and teams from Markdown.",
+      "quickStart": {
+        "openclaw": [
+          "openclaw plugins install @jiggai/recipes",
+          "openclaw gateway restart",
+          "openclaw plugins list"
+        ],
+        "npm": [
+          "npm i -g @jiggai/recipes",
+          "# If needed, install via link instead:",
+          "# openclaw plugins install --link $(npm root -g)/@jiggai/recipes",
+          "openclaw gateway restart"
+        ]
+      },
+      "features": [
+        "Scaffold single agents and team workspaces from Markdown recipes",
+        "File-first inbox/backlog/in-progress/testing/done workflow",
+        "Ticket dispatch + assignments",
+        "Skills installation + bindings",
+        "Team recipe scaffolding with role templates"
+      ],
+      "links": {
+        "github": "https://github.com/JIGGAI/ClawRecipes",
+        "docs": "https://github.com/JIGGAI/ClawRecipes/tree/main/docs",
+        "installation": "https://github.com/JIGGAI/ClawRecipes/blob/main/docs/INSTALLATION.md"
+      },
+      "screenshots": []
+    }
+  }
+}
