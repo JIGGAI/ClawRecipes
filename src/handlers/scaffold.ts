@@ -1,4 +1,5 @@
 import path from "node:path";
+import fs from "node:fs/promises";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { type AgentConfigSnippet } from "../lib/agent-config";
 import { applyAgentSnippetsToOpenClawConfig } from "../lib/recipes-config";
@@ -39,13 +40,26 @@ export async function scaffoldAgentFromRecipe(
   const vars = opts.vars ?? {};
 
   const fileResults: Array<{ path: string; wrote: boolean; reason: string }> = [];
-  for (const f of files) {
-    const raw = templates[f.template];
-    if (typeof raw !== "string") throw new Error(`Missing template: ${f.template}`);
+  for (const f of files as any[]) {
+    const raw = (templates as any)[f.template];
+    if (typeof raw !== "string") throw new Error(`Missing template: ${String(f.template)}`);
     const rendered = renderTemplate(raw, vars);
-    const target = path.join(opts.filesRootDir, f.path);
+    const target = path.join(opts.filesRootDir, String(f.path));
     const mode = opts.update ? (f.mode ?? "overwrite") : (f.mode ?? "createOnly");
     const r = await writeFileSafely(target, rendered, mode);
+
+    // Optional chmod support for scripts (e.g. 755). Applied even in createOnly mode if the file exists.
+    const chmodRaw = f.chmod;
+    if (chmodRaw != null) {
+      const chmodVal = typeof chmodRaw === "number" ? chmodRaw : parseInt(String(chmodRaw), 8);
+      if (!Number.isFinite(chmodVal)) throw new Error(`Invalid chmod for ${String(f.path)}: ${String(chmodRaw)}`);
+      try {
+        await fs.chmod(target, chmodVal);
+      } catch (e) {
+        throw new Error(`Failed to chmod ${target} to ${String(chmodRaw)}: ${(e as Error).message}`);
+      }
+    }
+
     fileResults.push({ path: target, wrote: r.wrote, reason: r.reason });
   }
 
