@@ -59,6 +59,21 @@ agents:
       deny: ["exec"]
 
 templates:
+  tools: |
+    # TOOLS.md
+
+    # Agent-local notes (paths, conventions, env quirks).
+
+  status: |
+    # STATUS.md
+
+    - (empty)
+
+  notes: |
+    # NOTES.md
+
+    - (empty)
+
   lead.soul: |
     # SOUL.md
 
