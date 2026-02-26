@@ -34,17 +34,56 @@ export async function scaffoldAgentFromRecipe(
 ) {
   await ensureDir(opts.filesRootDir);
 
-  const templates = recipe.templates ?? {};
-  const files = recipe.files ?? [];
+  type RecipeFileMode = "createOnly" | "overwrite";
+  type RecipeFileSpec = {
+    path: string;
+    template: string;
+    mode?: RecipeFileMode;
+  };
+
+  function normalizeTemplates(input: unknown): Record<string, string> {
+    if (!input) return {};
+    if (typeof input !== "object") throw new Error("recipe.templates must be an object");
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+      if (typeof v === "string") out[k] = v;
+    }
+    return out;
+  }
+
+  function normalizeFiles(input: unknown): RecipeFileSpec[] {
+    if (!input) return [];
+    if (!Array.isArray(input)) throw new Error("recipe.files must be an array");
+
+    return input.map((raw, idx) => {
+      if (!raw || typeof raw !== "object") throw new Error(`recipe.files[${idx}] must be an object`);
+      const o = raw as Record<string, unknown>;
+      const filePath = String(o.path ?? "").trim();
+      const template = String(o.template ?? "").trim();
+      const modeRaw = o.mode != null ? String(o.mode).trim() : "";
+
+      if (!filePath) throw new Error(`recipe.files[${idx}].path is required`);
+      if (!template) throw new Error(`recipe.files[${idx}].template is required`);
+
+      const mode: RecipeFileMode | undefined =
+        modeRaw === "createOnly" || modeRaw === "overwrite" ? (modeRaw as RecipeFileMode) : undefined;
+      if (modeRaw && !mode) throw new Error(`recipe.files[${idx}].mode must be createOnly|overwrite`);
+
+      return { path: filePath, template, mode };
+    });
+  }
+
+  const templates = normalizeTemplates(recipe.templates);
+  const files = normalizeFiles(recipe.files);
   const vars = opts.vars ?? {};
 
   const fileResults: Array<{ path: string; wrote: boolean; reason: string }> = [];
   for (const f of files) {
     const raw = templates[f.template];
-    if (typeof raw !== "string") throw new Error(`Missing template: ${f.template}`);
+    if (typeof raw !== "string") throw new Error(`Missing template: ${String(f.template)}`);
     const rendered = renderTemplate(raw, vars);
     const target = path.join(opts.filesRootDir, f.path);
-    const mode = opts.update ? (f.mode ?? "overwrite") : (f.mode ?? "createOnly");
+    const mode: RecipeFileMode = opts.update ? (f.mode ?? "overwrite") : (f.mode ?? "createOnly");
     const r = await writeFileSafely(target, rendered, mode);
     fileResults.push({ path: target, wrote: r.wrote, reason: r.reason });
   }
