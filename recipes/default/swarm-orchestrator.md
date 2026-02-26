@@ -1,8 +1,8 @@
 ---
 id: swarm-orchestrator
 name: Swarm Orchestrator
-version: 0.1.0
-description: Scaffold an OpenClaw “orchestrator” workspace that spawns coding agents in tmux+git worktrees, monitors them, and notifies when PRs are ready.
+version: 0.2.0
+description: Scaffold an OpenClaw “orchestrator” workspace that spawns coding agents in tmux + git worktrees and monitors them via a lightweight task registry.
 kind: agent
 requiredSkills: []
 cronJobs:
@@ -23,18 +23,20 @@ templates:
   soul: |
     # SOUL.md
 
-    You are **Zoe**, an orchestration agent.
+    You are an orchestration agent (“swarm orchestrator”).
+
+    You do NOT primarily write code.
 
     Your job is to:
-    - translate business context into sharp prompts
-    - spawn focused coding agents (Codex / Claude Code) into isolated git worktrees
-    - monitor them (tmux + logs + PR/CI status)
-    - request reviews and notify a human only when a PR is actually “ready”
+    - translate business context into sharp prompts + constraints
+    - spawn focused coding agents into isolated git worktrees + tmux sessions
+    - monitor them and steer when needed
+    - only notify a human when a PR is truly ready for review
 
-    **Guardrails**
-    - Prefer small, safe steps.
+    Guardrails:
+    - Keep changes small and PR-shaped.
     - Don’t delete worktrees/branches unless the user explicitly opts in.
-    - Keep the task registry (`.clawdbot/active-tasks.json`) accurate.
+    - Always use the prompt template in `.clawdbot/PROMPT_TEMPLATE.md`.
 
   agents: |
     # AGENTS.md
@@ -45,67 +47,275 @@ templates:
     2) For each task:
        - confirm tmux session is alive
        - confirm branch/worktree exists
-       - check PR status (if any)
-       - check CI status (if any)
+       - if configured, check PR/CI status
     3) Only ping the human when:
        - a task is blocked and needs a decision
-       - a PR meets the “ready” checklist
+       - a PR meets the default Definition of Done
 
-    ## Files
+    ## Key files
 
-    - `.clawdbot/active-tasks.json` — registry of in-flight work
-    - `.clawdbot/check-agents.sh` — deterministic monitor
-    - `.clawdbot/spawn.sh` — create worktree + start tmux agent
-    - `.clawdbot/cleanup.sh` — optional cleanup (safe-by-default)
+    - `.clawdbot/README.md` — setup + how to use
+    - `.clawdbot/CONVENTIONS.md` — default naming + how to change
+    - `.clawdbot/PROMPT_TEMPLATE.md` — required spawn prompt template
+    - `.clawdbot/TEMPLATE.md` — copy/paste helper for new tasks
+    - `.clawdbot/env.sh` — portable env configuration
+    - `.clawdbot/active-tasks.json` — task registry
+    - `.clawdbot/spawn.sh` — create worktree + start tmux session
+    - `.clawdbot/check-agents.sh` — monitor loop (token-efficient)
+    - `.clawdbot/cleanup.sh` — safe-by-default cleanup scaffold
 
   readme: |
-    # Swarm Orchestrator (Recipe)
+    # Swarm Orchestrator
 
-    This recipe scaffolds a lightweight “agent swarm” workflow inspired by Elvis Sun’s writeup.
+    This scaffold gives you a lightweight “swarm” workflow:
 
-    Core idea:
-    - **Orchestrator (you)** holds business context + decides *what* to do next.
-    - **Coding agents** get narrow, code-only prompts and work in isolated **git worktrees**.
-    - **tmux sessions** make mid-flight steering easy.
-    - A simple monitor loop reads `.clawdbot/active-tasks.json` and checks:
-      - tmux liveness
-      - PR existence
-      - CI status
-      - “ready for human review” checklist
+    - each coding agent runs in its own **git worktree** + **branch**
+    - each agent runs in its own **tmux session** (attach + steer mid-flight)
+    - a simple JSON registry (`active-tasks.json`) makes monitoring deterministic
 
-    ## Quick start
+    The orchestrator’s job is to:
+    1) translate a request into a tight prompt + constraints
+    2) spawn 1+ coding agents in parallel
+    3) monitor progress until a PR is truly ready for review
 
-    1) Create a task entry in `.clawdbot/active-tasks.json`.
-    2) Run:
+    ---
 
-       ```bash
-       ./.clawdbot/spawn.sh feat/my-change codex my-session "gpt-5.3-codex" high
-       ```
+    ## 0) Prerequisites
 
-    3) Monitor:
+    Required:
+    - `git`
+    - `tmux`
+    - `jq`
 
-       ```bash
-       ./.clawdbot/check-agents.sh
-       ```
+    Optional (recommended):
+    - GitHub CLI `gh` (for PR + CI status checks)
+      - run `gh auth login` to authenticate
 
-    ## Model CLIs (examples)
+    Quick check:
 
-    - Codex CLI:
+    ```bash
+    command -v git  >/dev/null || echo "missing: git"
+    command -v tmux >/dev/null || echo "missing: tmux"
+    command -v jq   >/dev/null || echo "missing: jq"
 
-      ```bash
-      codex --model gpt-5.3-codex -c "model_reasoning_effort=high" "<prompt>"
-      ```
+    # optional:
+    command -v gh   >/dev/null || echo "optional missing: gh (PR/CI monitoring)"
+    ```
 
-    - Claude Code:
+    ---
 
-      ```bash
-      claude --model claude-opus-4.5 -p "<prompt>"
-      ```
+    ## 1) One-time setup
 
-    ## Notes
+    ### 1.1 Make scripts executable (manual)
 
-    - This scaffold does **not** assume your repo layout. You’ll need to set env vars in `.clawdbot/env.sh`.
-    - PR/CI checks require `gh auth login` and appropriate permissions.
+    This scaffold does **not** change file permissions automatically.
+
+    Run:
+
+    ```bash
+    chmod +x .clawdbot/*.sh
+    ```
+
+    ### 1.2 Configure environment
+
+    Edit: `.clawdbot/env.sh`
+
+    Set:
+    - `SWARM_REPO_DIR` — absolute path to the repo you want agents to work on
+    - `SWARM_WORKTREE_ROOT` — absolute path where worktrees will be created
+      - recommended: a dedicated folder (NOT inside your repo folder, and NOT inside the OpenClaw workspace)
+    - `SWARM_BASE_REF` — base ref to branch from (default: `origin/main`)
+
+    Optional:
+    - `SWARM_AGENT_RUNNER` — wrapper to start your chosen coding agent CLI (Codex / Claude Code / etc.)
+
+    ---
+
+    ## 2) Conventions (defaults)
+
+    Default conventions are in:
+    - `.clawdbot/CONVENTIONS.md`
+
+    If you want to customize naming or the Definition of Done, change it there.
+
+    ---
+
+    ## 3) Spawning agents
+
+    Basic spawn:
+
+    ```bash
+    ./.clawdbot/spawn.sh <branch-slug> <codex|claude> <tmux-session> [model] [reasoning]
+    ```
+
+    Example:
+
+    ```bash
+    ./.clawdbot/spawn.sh feat/0082-attempt-a codex swarm-0082-a gpt-5.3-codex high
+    ```
+
+    Attach:
+
+    ```bash
+    tmux attach -t swarm-0082-a
+    ```
+
+    Spawning more than one agent = run `spawn.sh` multiple times with different branch slugs + tmux session names.
+
+    ---
+
+    ## 4) Task registry
+
+    File: `.clawdbot/active-tasks.json`
+
+    Keep it accurate. Monitoring should read the registry, not guess.
+
+    ---
+
+    ## 5) Monitoring
+
+    ```bash
+    ./.clawdbot/check-agents.sh
+    ```
+
+    This is intentionally simple and deterministic. Extend it to include PR/CI checks if desired.
+
+    ---
+
+    ## 6) Default Definition of Done (notify-ready)
+
+    A PR is **ready for human review** when:
+    - PR exists
+    - branch is mergeable and up to date with base
+    - CI is green (lint/types/tests as appropriate)
+    - if the PR includes **UI changes**, include screenshots in the PR description
+    - a human still performs the final review + merge decision (default gate)
+
+  conventions: |
+    # Swarm Conventions (Defaults)
+
+    These defaults are designed to be portable across users and repos.
+
+    ## Naming
+
+    ### Branch naming
+
+    Recommended:
+    - `feat/<ticket>-<slug>`
+    - `fix/<ticket>-<slug>`
+
+    Examples:
+    - `feat/0082-swarm-orchestrator`
+    - `fix/0141-login-redirect`
+
+    If you do not use tickets:
+    - `feat/<slug>` / `fix/<slug>` is fine.
+
+    ### tmux session naming
+
+    Recommended:
+    - `swarm-<ticket>-<suffix>`
+
+    Examples:
+    - `swarm-0082-a`
+    - `swarm-0082-b`
+
+    ## Directory layout
+
+    - Orchestrator workspace: OpenClaw agent workspace (scaffold output)
+    - Worktrees root: set via `SWARM_WORKTREE_ROOT` (recommended: dedicated folder outside repo + outside OpenClaw workspace)
+
+    ## Definition of Done (default)
+
+    A PR is ready for human review when:
+    - PR exists
+    - mergeable + up-to-date
+    - CI green
+    - screenshots included *only if UI changes*
+    - human gate remains (default)
+
+  promptTemplate: |
+    # Swarm Coding-Agent Prompt Template
+
+    Copy this template when spawning a coding agent.
+
+    IMPORTANT:
+    - Do not freestyle prompts.
+    - Keep scope tight.
+    - Optimize for a small, reviewable PR.
+
+    ---
+
+    ## Ticket / Goal
+
+    - Ticket (optional): <NNNN>
+    - Goal: <one sentence>
+
+    ## Context
+
+    <why this matters / user story / product intent>
+
+    ## Requirements
+
+    - <requirement 1>
+    - <requirement 2>
+
+    ## Constraints (very important)
+
+    - Keep changes small and PR-shaped.
+    - Avoid refactors unless required to meet the requirements.
+    - If you need clarification, STOP and ask.
+    - If you touch UI, screenshots are required (otherwise omit screenshots).
+
+    ## Definition of Done (default)
+
+    - Code compiles/builds.
+    - CI is green (lint/types/tests as appropriate for this repo).
+    - PR is opened with a clear description.
+    - If UI changed: include before/after screenshots in the PR description.
+    - Do NOT merge. Leave it for human review.
+
+    ## File / Area hints (optional)
+
+    - Focus files:
+      - <path>
+      - <path>
+
+    ## Suggested plan
+
+    1) <step>
+    2) <step>
+
+    ## Deliverables
+
+    - A PR implementing the requirements.
+    - Notes in the PR description: what changed + how to verify.
+
+  taskTemplate: |
+    # Swarm Task Template
+
+    Use this as a starting point for a new entry in `active-tasks.json`.
+
+    - Decide the branch name using `CONVENTIONS.md`.
+    - Decide a unique tmux session name.
+
+    ```json
+    {
+      "id": "0082-attempt-a",
+      "ticket": "0082",
+      "description": "<short description>",
+      "branch": "feat/0082-attempt-a",
+      "worktree": "feat/0082-attempt-a",
+      "tmuxSession": "swarm-0082-a",
+      "agent": "codex",
+      "model": "gpt-5.3-codex",
+      "startedAt": 0,
+      "status": "queued",
+      "notifyOnComplete": true,
+      "prUrl": null,
+      "checks": {}
+    }
+    ```
 
   env: |
     # .clawdbot/env.sh
@@ -115,21 +325,22 @@ templates:
     # Absolute path to the repo you want to operate on.
     export SWARM_REPO_DIR=""
 
-    # Base directory where worktrees are created.
-    # Example: /Users/you/Documents/GitHub/myrepo-worktrees
+    # Absolute path where worktrees will be created.
+    # Recommended: a dedicated folder (NOT inside the repo folder, NOT inside the OpenClaw workspace).
     export SWARM_WORKTREE_ROOT=""
 
-    # Default base branch to branch from.
+    # Default base ref to branch from.
     export SWARM_BASE_REF="origin/main"
 
     # Optional: path to your agent runner wrapper.
-    # For example, a script that executes `codex ...` or `claude ...`
+    # This script/command should start Codex/Claude Code/etc inside the worktree.
     export SWARM_AGENT_RUNNER=""
 
   activeTasks: |
     [
       {
         "id": "example-task",
+        "ticket": "",
         "description": "Replace me",
         "repo": "",
         "worktree": "",
@@ -140,7 +351,7 @@ templates:
         "startedAt": 0,
         "status": "queued",
         "notifyOnComplete": true,
-        "pr": null,
+        "prUrl": null,
         "checks": {}
       }
     ]
@@ -175,7 +386,6 @@ templates:
     mkdir -p "$SWARM_WORKTREE_ROOT"
     cd "$SWARM_REPO_DIR"
 
-    # Create worktree + branch
     git worktree add "$WORKTREE_DIR" -b "$BRANCH_SLUG" "$SWARM_BASE_REF"
 
     echo "[swarm] Starting tmux session: $TMUX_SESSION"
@@ -203,9 +413,6 @@ templates:
 
     echo "[swarm] Checking tmux sessions listed in active-tasks.json ..."
 
-    # NOTE: this is intentionally simple and token-efficient.
-    # It’s a scaffold: customize to add gh PR/CI checks and richer state updates.
-
     if ! command -v jq >/dev/null 2>&1; then
       echo "jq is required" >&2
       exit 2
@@ -229,10 +436,6 @@ templates:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    # shellcheck disable=SC1091
-    source "$HERE/env.sh"
-
     echo "[swarm] Cleanup scaffold (safe-by-default)."
     echo "- This script currently does NOT delete anything automatically."
     echo "- Extend it to prune worktrees only after PRs are merged and branches are removed."
@@ -247,25 +450,30 @@ files:
   - path: .clawdbot/README.md
     template: readme
     mode: createOnly
+  - path: .clawdbot/CONVENTIONS.md
+    template: conventions
+    mode: createOnly
+  - path: .clawdbot/PROMPT_TEMPLATE.md
+    template: promptTemplate
+    mode: createOnly
+  - path: .clawdbot/TEMPLATE.md
+    template: taskTemplate
+    mode: createOnly
   - path: .clawdbot/env.sh
     template: env
     mode: createOnly
-    chmod: "644"
   - path: .clawdbot/active-tasks.json
     template: activeTasks
     mode: createOnly
   - path: .clawdbot/spawn.sh
     template: spawn
     mode: createOnly
-    chmod: "755"
   - path: .clawdbot/check-agents.sh
     template: checkAgents
     mode: createOnly
-    chmod: "755"
   - path: .clawdbot/cleanup.sh
     template: cleanup
     mode: createOnly
-    chmod: "755"
 
 tools:
   profile: "coding"
@@ -274,18 +482,4 @@ tools:
 ---
 # Swarm Orchestrator
 
-This is a *workflow scaffold* recipe. It creates scripts and a small task registry to help you run a tmux+worktree “agent swarm” with an OpenClaw orchestrator in the loop.
-
-## What you get
-- `.clawdbot/active-tasks.json` registry
-- `.clawdbot/spawn.sh` worktree + tmux launcher
-- `.clawdbot/check-agents.sh` monitor loop (skeleton)
-- `.clawdbot/cleanup.sh` safe cleanup scaffold
-
-## What you’ll likely customize
-- The agent runner wrapper (`SWARM_AGENT_RUNNER`) to call Codex or Claude Code.
-- The monitor script to also check:
-  - PR exists for branch (`gh pr view`)
-  - CI status (`gh run list` / checks)
-  - multi-model review gates
-- The notify behavior (Telegram) — currently left as a reminder-driven loop.
+This is a workflow scaffold recipe. It creates a portable, file-first setup for running multiple coding agents in parallel using git worktrees + tmux.
