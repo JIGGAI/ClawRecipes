@@ -142,7 +142,23 @@ templates:
 
     ## 3) Spawning agents
 
-    Basic spawn:
+    ### 3.1 CLI-first (recommended)
+
+    Start a task (writes a spec file, creates worktree/branch, starts tmux, updates registry):
+
+    ```bash
+    ./.clawdbot/task.sh start \
+      --task-id 0082-attempt-a \
+      --spec-file /path/to/spec.md
+    ```
+
+    To see task status (registry + best-effort tmux checks):
+
+    ```bash
+    ./.clawdbot/task.sh status
+    ```
+
+    ### 3.2 Low-level spawn (manual)
 
     ```bash
     ./.clawdbot/spawn.sh <branch-slug> <codex|claude> <tmux-session> [model] [reasoning]
@@ -336,6 +352,9 @@ templates:
     # This script/command should start Codex/Claude Code/etc inside the worktree.
     export SWARM_AGENT_RUNNER=""
 
+  empty: |
+    
+
   activeTasks: |
     [
       {
@@ -488,6 +507,222 @@ templates:
     echo "- This script currently does NOT delete anything automatically."
     echo "- Extend it to prune worktrees only after PRs are merged and branches are removed."
 
+  taskCli: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck disable=SC1091
+    source "$HERE/env.sh"
+
+    REG="$HERE/active-tasks.json"
+    TASKS_DIR="$HERE/tasks"
+
+    usage() {
+      cat <<'USAGE'
+      Usage:
+        ./.clawdbot/task.sh start --task-id <id> (--spec <text> | --spec-file <path>) [--base-ref <ref>] [--branch <branch>] [--tmux-session <name>] [--agent <codex|claude>] [--model <model>] [--reasoning <low|medium|high>]
+        ./.clawdbot/task.sh status
+
+      Notes:
+        - Requires: git, tmux, jq
+        - Requires env in .clawdbot/env.sh: SWARM_REPO_DIR, SWARM_WORKTREE_ROOT, SWARM_BASE_REF
+        - Recommended: set SWARM_AGENT_RUNNER so the tmux session starts your coding agent automatically.
+      USAGE
+    }
+
+    require_cmd() {
+      if ! command -v "$1" >/dev/null 2>&1; then
+        echo "Missing required command: $1" >&2
+        exit 2
+      fi
+    }
+
+    safe_id() {
+      [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]
+    }
+
+    cmd="${1:-}"
+    shift || true
+
+    case "$cmd" in
+      start)
+        require_cmd git
+        require_cmd tmux
+        require_cmd jq
+
+        if [[ -z "${SWARM_REPO_DIR:-}" || -z "${SWARM_WORKTREE_ROOT:-}" || -z "${SWARM_BASE_REF:-}" ]]; then
+          echo "Missing env. Edit $HERE/env.sh (SWARM_REPO_DIR, SWARM_WORKTREE_ROOT, SWARM_BASE_REF)." >&2
+          exit 2
+        fi
+
+        task_id=""
+        spec_text=""
+        spec_file_in=""
+        base_ref="${SWARM_BASE_REF}"
+        branch=""
+        tmux_session=""
+        agent_kind="codex"
+        model=""
+        reasoning="medium"
+
+        while [[ $# -gt 0 ]]; do
+          case "$1" in
+            --task-id) task_id="${2:-}"; shift 2;;
+            --spec) spec_text="${2:-}"; shift 2;;
+            --spec-file) spec_file_in="${2:-}"; shift 2;;
+            --base-ref) base_ref="${2:-}"; shift 2;;
+            --branch) branch="${2:-}"; shift 2;;
+            --tmux-session) tmux_session="${2:-}"; shift 2;;
+            --agent) agent_kind="${2:-codex}"; shift 2;;
+            --model) model="${2:-}"; shift 2;;
+            --reasoning) reasoning="${2:-medium}"; shift 2;;
+            -h|--help) usage; exit 0;;
+            *) echo "Unknown arg: $1" >&2; usage; exit 2;;
+          esac
+        done
+
+        if [[ -z "$task_id" ]]; then
+          echo "--task-id is required" >&2
+          usage
+          exit 2
+        fi
+        if ! safe_id "$task_id"; then
+          echo "task-id must match ^[a-z0-9][a-z0-9-]{0,62}$ (lowercase letters, numbers, dashes)" >&2
+          exit 2
+        fi
+        if [[ -n "$spec_text" && -n "$spec_file_in" ]]; then
+          echo "Provide exactly one of --spec or --spec-file" >&2
+          exit 2
+        fi
+        if [[ -z "$spec_text" && -z "$spec_file_in" ]]; then
+          echo "One of --spec or --spec-file is required" >&2
+          exit 2
+        fi
+        if [[ -n "$spec_file_in" && ! -f "$spec_file_in" ]]; then
+          echo "spec-file not found: $spec_file_in" >&2
+          exit 2
+        fi
+
+        mkdir -p "$TASKS_DIR"
+        task_file="$TASKS_DIR/$task_id.md"
+
+        if [[ -n "$spec_file_in" ]]; then
+          cp "$spec_file_in" "$task_file"
+        else
+          printf "%s\n" "$spec_text" > "$task_file"
+        fi
+
+        branch="${branch:-feat/$task_id}"
+        tmux_session="${tmux_session:-swarm-$task_id}"
+        worktree_dir="$SWARM_WORKTREE_ROOT/$branch"
+
+        echo "[swarm] taskId=$task_id"
+        echo "[swarm] taskFile=$task_file"
+        echo "[swarm] branch=$branch"
+        echo "[swarm] worktree=$worktree_dir"
+        echo "[swarm] tmuxSession=$tmux_session"
+
+        mkdir -p "$SWARM_WORKTREE_ROOT"
+
+        # Create worktree + branch.
+        cd "$SWARM_REPO_DIR"
+        if git show-ref --verify --quiet "refs/heads/$branch"; then
+          echo "Branch already exists locally: $branch" >&2
+          exit 2
+        fi
+        if [[ -d "$worktree_dir" ]]; then
+          echo "Worktree directory already exists: $worktree_dir" >&2
+          exit 2
+        fi
+        git worktree add "$worktree_dir" -b "$branch" "$base_ref"
+
+        # Start tmux session.
+        if tmux has-session -t "$tmux_session" 2>/dev/null; then
+          echo "tmux session already exists: $tmux_session" >&2
+          exit 2
+        fi
+
+        if [[ -z "${SWARM_AGENT_RUNNER:-}" ]]; then
+          echo "SWARM_AGENT_RUNNER not set. Starting bash in tmux (spec is still written to file)." >&2
+          tmux new-session -d -s "$tmux_session" -c "$worktree_dir" "bash"
+        else
+          tmux new-session -d -s "$tmux_session" -c "$worktree_dir" \
+            "$SWARM_AGENT_RUNNER $agent_kind ${model:-} ${reasoning:-medium}"
+          # Best-effort injection: instruct agent to read the spec file.
+          tmux send-keys -t "$tmux_session" -l "Please follow the task spec at: $task_file" C-m || true
+        fi
+
+        # Update registry (atomic).
+        now="$(date +%s)"
+        mkdir -p "$(dirname "$REG")"
+        if [[ ! -f "$REG" ]]; then
+          echo "[]" > "$REG"
+        fi
+
+        tmp="$REG.tmp"
+        jq --arg id "$task_id" \
+           --arg taskFile "$task_file" \
+           --arg branch "$branch" \
+           --arg worktreePath "$worktree_dir" \
+           --arg tmuxSession "$tmux_session" \
+           --arg startedAt "$now" \
+           '([.[] | select(.id != $id)] + [{
+              id: $id,
+              taskId: $id,
+              taskFile: $taskFile,
+              branch: $branch,
+              worktreePath: $worktreePath,
+              tmuxSession: $tmuxSession,
+              startedAt: ($startedAt|tonumber),
+              prUrl: (.prUrl // null),
+              status: "running"
+            }])' "$REG" > "$tmp"
+        mv "$tmp" "$REG"
+
+        echo "[swarm] Started. Attach with: tmux attach -t $tmux_session"
+        ;;
+
+      status)
+        require_cmd tmux
+        require_cmd jq
+
+        if [[ ! -f "$REG" ]]; then
+          echo "Missing registry: $REG" >&2
+          exit 2
+        fi
+
+        echo "[swarm] Registry: $REG"
+        jq -r '.[] | "- \(.id): tmux=\(.tmuxSession // "") branch=\(.branch // "") worktree=\(.worktreePath // "") status=\(.status // "") prUrl=\(.prUrl // "")"' "$REG" || true
+
+        echo ""
+        echo "[swarm] tmux session check:"
+        mapfile -t sessions < <(jq -r '.[].tmuxSession // empty' "$REG" | sort -u)
+        if [[ ${#sessions[@]} -eq 0 ]]; then
+          echo "(none)"
+          exit 0
+        fi
+        for s in "${sessions[@]}"; do
+          if tmux has-session -t "$s" 2>/dev/null; then
+            echo "[ok] $s"
+          else
+            echo "[dead] $s"
+          fi
+        done
+        ;;
+
+      ""|-h|--help)
+        usage
+        exit 0
+        ;;
+
+      *)
+        echo "Unknown command: $cmd" >&2
+        usage
+        exit 2
+        ;;
+    esac
+
 files:
   - path: SOUL.md
     template: soul
@@ -509,6 +744,12 @@ files:
     mode: createOnly
   - path: .clawdbot/env.sh
     template: env
+    mode: createOnly
+  - path: .clawdbot/tasks/.keep
+    template: empty
+    mode: createOnly
+  - path: .clawdbot/task.sh
+    template: taskCli
     mode: createOnly
   - path: .clawdbot/active-tasks.json
     template: activeTasks
