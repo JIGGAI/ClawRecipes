@@ -40,8 +40,13 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Bump prerelease version (no git tag)
-        run: npm version prerelease --preid canary --no-git-tag-version
+      - name: Bump prerelease version (unique per attempt; no git tag)
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          PREID="canary.${PR_NUMBER}.${RUN_ATTEMPT}"
+          npm version prerelease --preid "$PREID" --no-git-tag-version
 
       - name: Publish to npm (tag = canary-<pr>)
         env:
