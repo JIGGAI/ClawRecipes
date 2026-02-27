@@ -394,6 +394,11 @@ files: []
         const teamJsonPath = path.join(res.teamDir, "team.json");
         const teamJson = JSON.parse(await fs.readFile(teamJsonPath, "utf8"));
         expect(teamJson.recipeId).toBe("development-team");
+
+        // Team memory + shared-context starter files
+        expect(await fs.readFile(path.join(res.teamDir, "shared-context", "memory", "team.jsonl"), "utf8")).toBeDefined();
+        expect(await fs.readFile(path.join(res.teamDir, "shared-context", "DECISIONS.md"), "utf8")).toContain("# Decisions");
+        expect(await fs.readFile(path.join(res.teamDir, "shared-context", "GLOSSARY.md"), "utf8")).toContain("# Glossary");
       }
     } finally {
       await fs.rm(base, { recursive: true, force: true });

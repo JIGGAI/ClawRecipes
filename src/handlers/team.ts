@@ -29,6 +29,7 @@ async function ensureTeamDirectoryStructure(
     ensureDir(path.join(sharedContextDir, "feedback")),
     ensureDir(path.join(sharedContextDir, "kpis")),
     ensureDir(path.join(sharedContextDir, "calendar")),
+    ensureDir(path.join(sharedContextDir, "memory")),
     ensureDir(path.join(teamDir, "inbox")),
     ensureDir(path.join(teamDir, "outbox")),
     ensureDir(notesDir),
@@ -57,6 +58,22 @@ async function writeTeamBootstrapFiles(opts: {
   await writeFileSafely(
     path.join(sharedContextDir, "priorities.md"),
     `# Priorities — ${teamId}\n\n- (empty)\n\n## Notes\n- Lead curates this file.\n- Non-lead roles should append updates to shared-context/agent-outputs/ instead.\n`,
+    mode
+  );
+
+  // Team memory (file-first, machine-usable). Non-destructive.
+  await ensureDir(path.join(sharedContextDir, "memory"));
+  await writeFileSafely(path.join(sharedContextDir, "memory", "team.jsonl"), "", mode);
+
+  await writeFileSafely(
+    path.join(sharedContextDir, "DECISIONS.md"),
+    `# Decisions — ${teamId}\n\nAppend-only dated bullets.\n\n- (empty)\n`,
+    mode
+  );
+
+  await writeFileSafely(
+    path.join(sharedContextDir, "GLOSSARY.md"),
+    `# Glossary — ${teamId}\n\nTerms, conventions, acronyms.\n\n- (empty)\n`,
     mode
   );
   await writeFileSafely(path.join(notesDir, "plan.md"), `# Plan — ${teamId}\n\n- (empty)\n`, mode);
