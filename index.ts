@@ -44,7 +44,7 @@ import {
 } from "./src/handlers/team";
 import { handleScaffold, scaffoldAgentFromRecipe } from "./src/handlers/scaffold";
 import { reconcileRecipeCronJobs } from "./src/handlers/cron";
-import { handleWorkflowsApprove, handleWorkflowsResume, handleWorkflowsRun } from "./src/handlers/workflows";
+import { handleWorkflowsApprove, handleWorkflowsPollApprovals, handleWorkflowsResume, handleWorkflowsRun } from "./src/handlers/workflows";
 import { listRecipeFiles, loadRecipeById, workspacePath } from "./src/lib/recipes";
 import {
   executeWorkspaceCleanup,
@@ -492,6 +492,19 @@ const recipesPlugin = {
             const res = await handleWorkflowsResume(api, {
               teamId: String(options.teamId ?? ''),
               runId: String(options.runId ?? ''),
+            });
+            console.log(JSON.stringify(res, null, 2));
+          });
+
+        workflows
+          .command("poll-approvals")
+          .description("Auto-resume any workflow runs whose approval decision has been recorded (approved/rejected)")
+          .requiredOption("--team-id <teamId>", "Team id (workspace-<teamId>)")
+          .option("--limit <n>", "Max approvals to process", (v: string) => Number(v))
+          .action(async (options: { teamId?: string; limit?: number }) => {
+            const res = await handleWorkflowsPollApprovals(api, {
+              teamId: String(options.teamId ?? ''),
+              limit: typeof options.limit === "number" ? options.limit : undefined,
             });
             console.log(JSON.stringify(res, null, 2));
           });

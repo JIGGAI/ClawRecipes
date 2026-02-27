@@ -1,5 +1,5 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-import { approveWorkflowRun, resumeWorkflowRun, runWorkflowOnce } from '../lib/workflows/workflow-runner';
+import { approveWorkflowRun, pollWorkflowApprovals, resumeWorkflowRun, runWorkflowOnce } from '../lib/workflows/workflow-runner';
 
 export async function handleWorkflowsRun(api: OpenClawPluginApi, opts: {
   teamId: string;
@@ -38,4 +38,12 @@ export async function handleWorkflowsResume(api: OpenClawPluginApi, opts: {
   if (!opts.teamId) throw new Error('--team-id is required');
   if (!opts.runId) throw new Error('--run-id is required');
   return resumeWorkflowRun(api, { teamId: opts.teamId, runId: opts.runId });
+}
+
+export async function handleWorkflowsPollApprovals(api: OpenClawPluginApi, opts: {
+  teamId: string;
+  limit?: number;
+}) {
+  if (!opts.teamId) throw new Error('--team-id is required');
+  return pollWorkflowApprovals(api, { teamId: opts.teamId, limit: opts.limit });
 }

@@ -437,10 +437,82 @@ type ApprovalRecord = {
   ticket: string;
   runLog: string;
   note?: string;
+  resumedAt?: string;
+  resumedStatus?: string;
+  resumeError?: string;
 };
 
 async function approvalsPathFor(teamDir: string, runId: string) {
   return path.join(teamDir, 'shared-context', 'workflow-approvals', `${runId}.json`);
+}
+
+export async function pollWorkflowApprovals(api: OpenClawPluginApi, opts: {
+  teamId: string;
+  limit?: number;
+}) {
+  const teamId = String(opts.teamId);
+  const workspaceRoot = resolveWorkspaceRoot(api);
+  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const approvalsDir = path.join(teamDir, 'shared-context', 'workflow-approvals');
+
+  if (!(await fileExists(approvalsDir))) {
+    return { ok: true as const, teamId, polled: 0, resumed: 0, skipped: 0, message: 'No approvals directory present.' };
+  }
+
+  const files = (await fs.readdir(approvalsDir))
+    .filter((f) => f.endsWith('.json'))
+    .slice(0, typeof opts.limit === 'number' && opts.limit > 0 ? opts.limit : undefined);
+
+  let resumed = 0;
+  let skipped = 0;
+  const results: Array<{ runId: string; status: string; action: 'resumed' | 'skipped' | 'error'; message?: string }> = [];
+
+  for (const f of files) {
+    const approvalPath = path.join(approvalsDir, f);
+    let approval: ApprovalRecord;
+    try {
+      approval = JSON.parse(await fs.readFile(approvalPath, 'utf8')) as ApprovalRecord;
+    } catch (e) {
+      skipped++;
+      results.push({ runId: path.basename(f, '.json'), status: 'unknown', action: 'error', message: `Failed to parse: ${(e as Error).message}` });
+      continue;
+    }
+
+    if (approval.status === 'pending') {
+      skipped++;
+      results.push({ runId: approval.runId, status: approval.status, action: 'skipped' });
+      continue;
+    }
+
+    if (approval.resumedAt) {
+      skipped++;
+      results.push({ runId: approval.runId, status: approval.status, action: 'skipped', message: 'Already resumed.' });
+      continue;
+    }
+
+    try {
+      const res = await resumeWorkflowRun(api, { teamId, runId: approval.runId });
+      resumed++;
+      results.push({ runId: approval.runId, status: approval.status, action: 'resumed', message: `resume status=${(res as { status?: string }).status ?? 'ok'}` });
+      const next: ApprovalRecord = {
+        ...approval,
+        resumedAt: new Date().toISOString(),
+        resumedStatus: String((res as { status?: string }).status ?? 'ok'),
+      };
+      await fs.writeFile(approvalPath, JSON.stringify(next, null, 2), 'utf8');
+    } catch (e) {
+      results.push({ runId: approval.runId, status: approval.status, action: 'error', message: (e as Error).message });
+      const next: ApprovalRecord = {
+        ...approval,
+        resumedAt: new Date().toISOString(),
+        resumedStatus: 'error',
+        resumeError: (e as Error).message,
+      };
+      await fs.writeFile(approvalPath, JSON.stringify(next, null, 2), 'utf8');
+    }
+  }
+
+  return { ok: true as const, teamId, polled: files.length, resumed, skipped, results };
 }
 
 export async function approveWorkflowRun(api: OpenClawPluginApi, opts: {
