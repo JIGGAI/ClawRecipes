@@ -181,6 +181,7 @@ async function scaffoldTeamAgents(
  * @param options - recipeId, teamId, recipeIdExplicit, overwrite, overwriteRecipe, autoIncrement, applyConfig
  * @returns ok with teamId, teamDir, agents, cron, or missingSkills with installCommands
  */
+// eslint-disable-next-line max-lines-per-function
 export async function handleScaffoldTeam(
   api: OpenClawPluginApi,
   options: {
