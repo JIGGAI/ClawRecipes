@@ -40,12 +40,16 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Bump prerelease version (unique per attempt; no git tag)
+      - name: Bump prerelease version (unique per run attempt; no git tag)
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_NUMBER: ${{ github.run_number }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
-          PREID="canary.${PR_NUMBER}.${RUN_ATTEMPT}"
+          # npm forbids republishing the same version.
+          # github.run_attempt only changes on re-runs of the same workflow run; a new run starts at attempt=1.
+          # So include run_number (monotonic per repo) to guarantee uniqueness across runs.
+          PREID="canary.${PR_NUMBER}.${RUN_NUMBER}.${RUN_ATTEMPT}"
           npm version prerelease --preid "$PREID" --no-git-tag-version
 
       - name: Publish to npm (tag = canary-<pr>)
