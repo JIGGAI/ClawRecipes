@@ -1,0 +1,72 @@
+name: Publish Canary (PR)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: canary-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish canary tag for PR
+    runs-on: ubuntu-latest
+
+    # Don't publish from forks.
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Install
+        run: npm ci
+
+      - name: Test
+        run: npm test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Bump prerelease version (no git tag)
+        run: npm version prerelease --preid canary --no-git-tag-version
+
+      - name: Publish to npm (tag = canary-<pr>)
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          TAG="canary-${{ github.event.pull_request.number }}"
+          npm publish --tag "$TAG"
+
+      - name: Comment install command
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const tag = `canary-${pr.number}`;
+            const pkg = '@jiggai/recipes';
+            const body = [
+              '✅ Published npm canary build for this PR.',
+              '',
+              `Install: \`npm i ${pkg}@${tag}\``,
+              '',
+              'Note: `@canary` is not used here so multiple PR canaries can coexist.',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body,
+            });

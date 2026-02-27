@@ -381,7 +381,55 @@ templates:
     fi
 
     WORKTREE_DIR="$SWARM_WORKTREE_ROOT/$BRANCH_SLUG"
+    TASKS_DIR="$HERE/tasks"
+    REG="$HERE/active-tasks.json"
 
+    # ---- Task id + spec file ----
+    mkdir -p "$TASKS_DIR"
+
+    # Deterministic-ish id: timestamp + branch slug (+ suffix if needed)
+    base_id="$(date -u +%Y%m%d-%H%M%S)-$BRANCH_SLUG"
+    TASK_ID="$base_id"
+    n=1
+    while [[ -e "$TASKS_DIR/$TASK_ID.md" ]]; do
+      n=$((n+1))
+      TASK_ID="$base_id-$n"
+    done
+
+    started_epoch="$(date -u +%s)"
+    started_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    TASK_FILE="$TASKS_DIR/$TASK_ID.md"
+
+    {
+      echo "# Task $TASK_ID"
+      echo
+      echo "- Started: $started_iso"
+      echo "- Branch: $BRANCH_SLUG"
+      echo "- Worktree: $WORKTREE_DIR"
+      echo "- Tmux: $TMUX_SESSION"
+      echo "- Agent: $AGENT_KIND"
+      echo "- Model: ${MODEL:-}"
+      echo "- Reasoning: ${REASONING:-medium}"
+      echo
+      if [[ -f "$HERE/TEMPLATE.md" ]]; then
+        cat "$HERE/TEMPLATE.md"
+      else
+        echo "(Missing $HERE/TEMPLATE.md)"
+      fi
+    } > "$TASK_FILE"
+
+    echo "[swarm] Wrote task spec: $TASK_FILE"
+
+    # ---- Update registry (active-tasks.json) ----
+    if ! command -v node >/dev/null 2>&1; then
+      echo "node is required to update $REG" >&2
+      exit 2
+    fi
+
+    HERE="$HERE" TASK_ID="$TASK_ID" SWARM_REPO_DIR="$SWARM_REPO_DIR" WORKTREE_DIR="$WORKTREE_DIR" BRANCH_SLUG="$BRANCH_SLUG" TMUX_SESSION="$TMUX_SESSION" AGENT_KIND="$AGENT_KIND" MODEL="$MODEL" STARTED_EPOCH="$started_epoch" \
+      node -e 'const fs=require("fs"); const path=require("path"); const here=process.env.HERE; const regPath=path.join(here,"active-tasks.json"); const task={id:process.env.TASK_ID,ticket:"",description:"",repo:process.env.SWARM_REPO_DIR,worktree:process.env.WORKTREE_DIR,branch:process.env.BRANCH_SLUG,tmuxSession:process.env.TMUX_SESSION,agent:process.env.AGENT_KIND,model:process.env.MODEL||"",startedAt:Number(process.env.STARTED_EPOCH||0),status:"queued",notifyOnComplete:true,prUrl:null,checks:{}}; let data=[]; if (fs.existsSync(regPath)) { data=JSON.parse(fs.readFileSync(regPath,"utf8")||"[]"); if(!Array.isArray(data)) throw new Error(`${regPath} must be a JSON array`); } data.push(task); fs.writeFileSync(regPath, JSON.stringify(data,null,2)+"\\n"); console.log(`[swarm] Added to registry: ${regPath} (id=${task.id})`);'
+
+    # ---- Worktree + tmux ----
     echo "[swarm] Creating worktree: $WORKTREE_DIR"
     mkdir -p "$SWARM_WORKTREE_ROOT"
     cd "$SWARM_REPO_DIR"
