@@ -9,15 +9,37 @@ cronJobs:
     name: "Lead triage loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md. Anti-stuck: if lowest in-progress is HARD BLOCKED, advance the next unblocked ticket (or pull from backlog). If in-progress is stale (>12h no dated update), comment or move it back."
+    message: "Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md. Anti-stuck: if lowest in-progress is HARD BLOCKED, advance the next unblocked ticket (or pull from backlog). If in-progress is stale (>12h no dated update), comment or move it back. Guardrail: run ./scripts/ticket-hygiene.sh each loop; if it fails, fix assignment stubs before proceeding."
     enabledByDefault: true
+
   - id: execution-loop
     name: "Execution loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md."
+    message: "Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md. Guardrail: run ./scripts/ticket-hygiene-dev.sh each loop; if it fails, fix stubs/ownership/stage issues before proceeding."
     enabledByDefault: false
-  # pr-watcher omitted (enable only when a real PR integration exists)
+
+  - id: pr-watcher
+    name: "PR watcher (ticket-linked)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    message: "PR watcher (ticket-linked): scan active in-progress/testing tickets for GitHub PR URLs; summarize checks/review/mergeable; auto-complete tickets when PRs merge."
+    enabledByDefault: false
+
+  - id: testing-lane-loop
+    name: "Testing lane loop"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    message: "Testing lane loop: drain work/testing tickets; follow verification steps; complete on pass; on fail write repro + handoff."
+    enabledByDefault: false
+
+  - id: backup-devteam-work
+    name: "Backup dev-team work (every 3h, off-hours avoided)"
+    # Every 3h during 07:00–22:00 America/New_York (avoids 02:00–07:00 blackout)
+    schedule: "0 7,10,13,16,19,22 * * *"
+    timezone: "America/New_York"
+    message: "Backup job: run ./scripts/backup-work.sh to create a timestamped tarball of work/notes/scripts."
+    enabledByDefault: true
 requiredSkills: []
 team:
   teamId: development-team
@@ -48,6 +70,441 @@ agents:
       deny: []
 
 templates:
+  lead.ticketHygiene: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # ticket-hygiene.sh
+    # Guardrail script used by lead triage cron.
+    # Fails if any assignment stub points at a non-existent or wrong-stage ticket path.
+
+    cd "$(dirname "$0")/.."
+
+    stages=(backlog in-progress testing done)
+
+    fail=0
+
+    for f in work/assignments/*-assigned-*.md; do
+      [[ -f "$f" ]] || continue
+
+      bn="$(basename "$f")"
+      num="${bn%%-*}"
+      if [[ ! "$num" =~ ^[0-9]{4}$ ]]; then
+        continue
+      fi
+
+      canonical=""
+
+      if [[ "$bn" == *"pr-body"* ]]; then
+        for stage in "${stages[@]}"; do
+          cand="work/$stage/${num}-pr-body.md"
+          if [[ -f "$cand" ]]; then
+            canonical="$cand"
+            break
+          fi
+        done
+      fi
+
+      if [[ -z "$canonical" ]]; then
+        for stage in "${stages[@]}"; do
+          match=( work/"$stage"/"$num"-*.md )
+          if [[ -e "${match[0]}" ]]; then
+            canonical="${match[0]}"
+            break
+          fi
+        done
+      fi
+
+      if [[ -z "$canonical" ]]; then
+        echo "[FAIL] $f: no ticket file found for $num in work/{backlog,in-progress,testing,done}/" >&2
+        fail=1
+        continue
+      fi
+
+      ticket_line="$(awk 'BEGIN{flag=0} /^## Ticket$/{flag=1; next} /^## /{if(flag){exit}} {if(flag && $0!=""){print; exit}}' "$f" | tr -d '\r')"
+      if [[ -z "$ticket_line" ]]; then
+        echo "[FAIL] $f: missing Ticket path (expected: $canonical)" >&2
+        fail=1
+        continue
+      fi
+
+      if [[ "$ticket_line" != "$canonical" ]]; then
+        echo "[FAIL] $f: Ticket path mismatch" >&2
+        echo "  has: $ticket_line" >&2
+        echo "  want: $canonical" >&2
+        fail=1
+        continue
+      fi
+
+      if [[ ! -f "$ticket_line" ]]; then
+        echo "[FAIL] $f: Ticket path does not exist on disk: $ticket_line" >&2
+        fail=1
+        continue
+      fi
+
+    done
+
+    if [[ "$fail" -ne 0 ]]; then
+      exit 1
+    fi
+
+    echo "OK"
+
+  lead.ticketHygieneDevShim: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Compatibility shim: automation expects ticket-hygiene-dev.sh
+    DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    exec "$DIR/ticket-hygiene.sh" "$@"
+
+  lead.backupWork: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Backup the dev-team ticket folders (work + notes + scripts) into a timestamped tarball.
+    # Safe-by-default: never deletes tickets; only prunes old backup archives.
+
+    ROOT="$HOME/.openclaw/workspace-{{teamId}}"
+    OUTDIR="$HOME/.openclaw/workspace/_backups"
+    mkdir -p "$OUTDIR"
+
+    TS="$(date -u +%Y%m%dT%H%M%SZ)"
+    OUT="$OUTDIR/workspace-{{teamId}}-${TS}.tgz"
+
+    tar -czf "$OUT" -C "$ROOT" work notes scripts
+
+    echo "$OUT"
+
+    # Keep the most recent 60 backups (~7.5 days at 1 per 3h). Adjust as needed.
+    ls -1t "$OUTDIR"/workspace-{{teamId}}-*.tgz 2>/dev/null | tail -n +61 | xargs -r rm -f
+
+  # Expose the same root scripts under every role namespace
+  # (scaffold-team applies the same `files:` list for each agent role).
+
+  dev.ticketHygiene: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # ticket-hygiene.sh
+    # Guardrail script used by lead triage cron.
+    # Fails if any assignment stub points at a non-existent or wrong-stage ticket path.
+
+    cd "$(dirname "$0")/.."
+
+    stages=(backlog in-progress testing done)
+
+    fail=0
+
+    for f in work/assignments/*-assigned-*.md; do
+      [[ -f "$f" ]] || continue
+
+      bn="$(basename "$f")"
+      num="${bn%%-*}"
+      if [[ ! "$num" =~ ^[0-9]{4}$ ]]; then
+        continue
+      fi
+
+      canonical=""
+
+      if [[ "$bn" == *"pr-body"* ]]; then
+        for stage in "${stages[@]}"; do
+          cand="work/$stage/${num}-pr-body.md"
+          if [[ -f "$cand" ]]; then
+            canonical="$cand"
+            break
+          fi
+        done
+      fi
+
+      if [[ -z "$canonical" ]]; then
+        for stage in "${stages[@]}"; do
+          match=( work/"$stage"/"$num"-*.md )
+          if [[ -e "${match[0]}" ]]; then
+            canonical="${match[0]}"
+            break
+          fi
+        done
+      fi
+
+      if [[ -z "$canonical" ]]; then
+        echo "[FAIL] $f: no ticket file found for $num in work/{backlog,in-progress,testing,done}/" >&2
+        fail=1
+        continue
+      fi
+
+      ticket_line="$(awk 'BEGIN{flag=0} /^## Ticket$/{flag=1; next} /^## /{if(flag){exit}} {if(flag && $0!=""){print; exit}}' "$f" | tr -d '\r')"
+      if [[ -z "$ticket_line" ]]; then
+        echo "[FAIL] $f: missing Ticket path (expected: $canonical)" >&2
+        fail=1
+        continue
+      fi
+
+      if [[ "$ticket_line" != "$canonical" ]]; then
+        echo "[FAIL] $f: Ticket path mismatch" >&2
+        echo "  has: $ticket_line" >&2
+        echo "  want: $canonical" >&2
+        fail=1
+        continue
+      fi
+
+      if [[ ! -f "$ticket_line" ]]; then
+        echo "[FAIL] $f: Ticket path does not exist on disk: $ticket_line" >&2
+        fail=1
+        continue
+      fi
+
+    done
+
+    if [[ "$fail" -ne 0 ]]; then
+      exit 1
+    fi
+
+    echo "OK"
+
+  dev.ticketHygieneDevShim: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Compatibility shim: automation expects ticket-hygiene-dev.sh
+    DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    exec "$DIR/ticket-hygiene.sh" "$@"
+
+  dev.backupWork: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Backup the dev-team ticket folders (work + notes + scripts) into a timestamped tarball.
+    # Safe-by-default: never deletes tickets; only prunes old backup archives.
+
+    ROOT="$HOME/.openclaw/workspace-{{teamId}}"
+    OUTDIR="$HOME/.openclaw/workspace/_backups"
+    mkdir -p "$OUTDIR"
+
+    TS="$(date -u +%Y%m%dT%H%M%SZ)"
+    OUT="$OUTDIR/workspace-{{teamId}}-${TS}.tgz"
+
+    tar -czf "$OUT" -C "$ROOT" work notes scripts
+
+    echo "$OUT"
+
+    # Keep the most recent 60 backups (~7.5 days at 1 per 3h). Adjust as needed.
+    ls -1t "$OUTDIR"/workspace-{{teamId}}-*.tgz 2>/dev/null | tail -n +61 | xargs -r rm -f
+
+  devops.ticketHygiene: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # ticket-hygiene.sh
+    # Guardrail script used by lead triage cron.
+    # Fails if any assignment stub points at a non-existent or wrong-stage ticket path.
+
+    cd "$(dirname "$0")/.."
+
+    stages=(backlog in-progress testing done)
+
+    fail=0
+
+    for f in work/assignments/*-assigned-*.md; do
+      [[ -f "$f" ]] || continue
+
+      bn="$(basename "$f")"
+      num="${bn%%-*}"
+      if [[ ! "$num" =~ ^[0-9]{4}$ ]]; then
+        continue
+      fi
+
+      canonical=""
+
+      if [[ "$bn" == *"pr-body"* ]]; then
+        for stage in "${stages[@]}"; do
+          cand="work/$stage/${num}-pr-body.md"
+          if [[ -f "$cand" ]]; then
+            canonical="$cand"
+            break
+          fi
+        done
+      fi
+
+      if [[ -z "$canonical" ]]; then
+        for stage in "${stages[@]}"; do
+          match=( work/"$stage"/"$num"-*.md )
+          if [[ -e "${match[0]}" ]]; then
+            canonical="${match[0]}"
+            break
+          fi
+        done
+      fi
+
+      if [[ -z "$canonical" ]]; then
+        echo "[FAIL] $f: no ticket file found for $num in work/{backlog,in-progress,testing,done}/" >&2
+        fail=1
+        continue
+      fi
+
+      ticket_line="$(awk 'BEGIN{flag=0} /^## Ticket$/{flag=1; next} /^## /{if(flag){exit}} {if(flag && $0!=""){print; exit}}' "$f" | tr -d '\r')"
+      if [[ -z "$ticket_line" ]]; then
+        echo "[FAIL] $f: missing Ticket path (expected: $canonical)" >&2
+        fail=1
+        continue
+      fi
+
+      if [[ "$ticket_line" != "$canonical" ]]; then
+        echo "[FAIL] $f: Ticket path mismatch" >&2
+        echo "  has: $ticket_line" >&2
+        echo "  want: $canonical" >&2
+        fail=1
+        continue
+      fi
+
+      if [[ ! -f "$ticket_line" ]]; then
+        echo "[FAIL] $f: Ticket path does not exist on disk: $ticket_line" >&2
+        fail=1
+        continue
+      fi
+
+    done
+
+    if [[ "$fail" -ne 0 ]]; then
+      exit 1
+    fi
+
+    echo "OK"
+
+  devops.ticketHygieneDevShim: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Compatibility shim: automation expects ticket-hygiene-dev.sh
+    DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    exec "$DIR/ticket-hygiene.sh" "$@"
+
+  devops.backupWork: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Backup the dev-team ticket folders (work + notes + scripts) into a timestamped tarball.
+    # Safe-by-default: never deletes tickets; only prunes old backup archives.
+
+    ROOT="$HOME/.openclaw/workspace-{{teamId}}"
+    OUTDIR="$HOME/.openclaw/workspace/_backups"
+    mkdir -p "$OUTDIR"
+
+    TS="$(date -u +%Y%m%dT%H%M%SZ)"
+    OUT="$OUTDIR/workspace-{{teamId}}-${TS}.tgz"
+
+    tar -czf "$OUT" -C "$ROOT" work notes scripts
+
+    echo "$OUT"
+
+    # Keep the most recent 60 backups (~7.5 days at 1 per 3h). Adjust as needed.
+    ls -1t "$OUTDIR"/workspace-{{teamId}}-*.tgz 2>/dev/null | tail -n +61 | xargs -r rm -f
+
+  test.ticketHygiene: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # ticket-hygiene.sh
+    # Guardrail script used by lead triage cron.
+    # Fails if any assignment stub points at a non-existent or wrong-stage ticket path.
+
+    cd "$(dirname "$0")/.."
+
+    stages=(backlog in-progress testing done)
+
+    fail=0
+
+    for f in work/assignments/*-assigned-*.md; do
+      [[ -f "$f" ]] || continue
+
+      bn="$(basename "$f")"
+      num="${bn%%-*}"
+      if [[ ! "$num" =~ ^[0-9]{4}$ ]]; then
+        continue
+      fi
+
+      canonical=""
+
+      if [[ "$bn" == *"pr-body"* ]]; then
+        for stage in "${stages[@]}"; do
+          cand="work/$stage/${num}-pr-body.md"
+          if [[ -f "$cand" ]]; then
+            canonical="$cand"
+            break
+          fi
+        done
+      fi
+
+      if [[ -z "$canonical" ]]; then
+        for stage in "${stages[@]}"; do
+          match=( work/"$stage"/"$num"-*.md )
+          if [[ -e "${match[0]}" ]]; then
+            canonical="${match[0]}"
+            break
+          fi
+        done
+      fi
+
+      if [[ -z "$canonical" ]]; then
+        echo "[FAIL] $f: no ticket file found for $num in work/{backlog,in-progress,testing,done}/" >&2
+        fail=1
+        continue
+      fi
+
+      ticket_line="$(awk 'BEGIN{flag=0} /^## Ticket$/{flag=1; next} /^## /{if(flag){exit}} {if(flag && $0!=""){print; exit}}' "$f" | tr -d '\r')"
+      if [[ -z "$ticket_line" ]]; then
+        echo "[FAIL] $f: missing Ticket path (expected: $canonical)" >&2
+        fail=1
+        continue
+      fi
+
+      if [[ "$ticket_line" != "$canonical" ]]; then
+        echo "[FAIL] $f: Ticket path mismatch" >&2
+        echo "  has: $ticket_line" >&2
+        echo "  want: $canonical" >&2
+        fail=1
+        continue
+      fi
+
+      if [[ ! -f "$ticket_line" ]]; then
+        echo "[FAIL] $f: Ticket path does not exist on disk: $ticket_line" >&2
+        fail=1
+        continue
+      fi
+
+    done
+
+    if [[ "$fail" -ne 0 ]]; then
+      exit 1
+    fi
+
+    echo "OK"
+
+  test.ticketHygieneDevShim: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Compatibility shim: automation expects ticket-hygiene-dev.sh
+    DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    exec "$DIR/ticket-hygiene.sh" "$@"
+
+  test.backupWork: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    # Backup the dev-team ticket folders (work + notes + scripts) into a timestamped tarball.
+    # Safe-by-default: never deletes tickets; only prunes old backup archives.
+
+    ROOT="$HOME/.openclaw/workspace-{{teamId}}"
+    OUTDIR="$HOME/.openclaw/workspace/_backups"
+    mkdir -p "$OUTDIR"
+
+    TS="$(date -u +%Y%m%dT%H%M%SZ)"
+    OUT="$OUTDIR/workspace-{{teamId}}-${TS}.tgz"
+
+    tar -czf "$OUT" -C "$ROOT" work notes scripts
+
+    echo "$OUT"
+
+    # Keep the most recent 60 backups (~7.5 days at 1 per 3h). Adjust as needed.
+    ls -1t "$OUTDIR"/workspace-{{teamId}}-*.tgz 2>/dev/null | tail -n +61 | xargs -r rm -f
+
   lead.soul: |
     # SOUL.md
 
@@ -373,6 +830,19 @@ files:
     mode: createOnly
   - path: NOTES.md
     template: notes
+    mode: createOnly
+
+  # Automation / hygiene scripts
+  # NOTE: portable policy: we do NOT chmod automatically. After scaffold:
+  #   chmod +x scripts/*.sh
+  - path: scripts/ticket-hygiene.sh
+    template: ticketHygiene
+    mode: createOnly
+  - path: scripts/ticket-hygiene-dev.sh
+    template: ticketHygieneDevShim
+    mode: createOnly
+  - path: scripts/backup-work.sh
+    template: backupWork
     mode: createOnly
 
 tools:
