@@ -44,7 +44,7 @@ import {
 } from "./src/handlers/team";
 import { handleScaffold, scaffoldAgentFromRecipe } from "./src/handlers/scaffold";
 import { reconcileRecipeCronJobs } from "./src/handlers/cron";
-import { handleWorkflowsRun } from "./src/handlers/workflows";
+import { handleWorkflowsApprove, handleWorkflowsResume, handleWorkflowsRun } from "./src/handlers/workflows";
 import { listRecipeFiles, loadRecipeById, workspacePath } from "./src/lib/recipes";
 import {
   executeWorkspaceCleanup,
@@ -447,9 +447,11 @@ const recipesPlugin = {
             print("Done", out.done);
           });
 
-        cmd
+        const workflows = cmd
           .command("workflows")
-          .description("Workflow runner utilities (MVP)")
+          .description("Workflow runner utilities (MVP)");
+
+        workflows
           .command("run")
           .description("Run a workflow once (manual trigger). Reads from shared-context/workflows/")
           .requiredOption("--team-id <teamId>", "Team id (workspace-<teamId>)")
@@ -458,6 +460,38 @@ const recipesPlugin = {
             const res = await handleWorkflowsRun(api, {
               teamId: String(options.teamId ?? ''),
               workflowFile: String(options.workflowFile ?? ''),
+            });
+            console.log(JSON.stringify(res, null, 2));
+          });
+
+        workflows
+          .command("approve")
+          .description("Record an approval decision for an awaiting workflow run")
+          .requiredOption("--team-id <teamId>", "Team id (workspace-<teamId>)")
+          .requiredOption("--run-id <runId>", "Run id")
+          .requiredOption("--approved <bool>", "true|false")
+          .option("--note <note>", "Optional note")
+          .action(async (options: { teamId?: string; runId?: string; approved?: string; note?: string }) => {
+            const approved = String(options.approved ?? '').toLowerCase();
+            const approvedBool = approved === 'true' || approved === '1' || approved === 'yes';
+            const res = await handleWorkflowsApprove(api, {
+              teamId: String(options.teamId ?? ''),
+              runId: String(options.runId ?? ''),
+              approved: approvedBool,
+              ...(options.note ? { note: String(options.note) } : {}),
+            });
+            console.log(JSON.stringify(res, null, 2));
+          });
+
+        workflows
+          .command("resume")
+          .description("Resume an awaiting workflow run after approval decision is recorded")
+          .requiredOption("--team-id <teamId>", "Team id (workspace-<teamId>)")
+          .requiredOption("--run-id <runId>", "Run id")
+          .action(async (options: { teamId?: string; runId?: string }) => {
+            const res = await handleWorkflowsResume(api, {
+              teamId: String(options.teamId ?? ''),
+              runId: String(options.runId ?? ''),
             });
             console.log(JSON.stringify(res, null, 2));
           });

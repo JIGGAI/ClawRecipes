@@ -146,14 +146,17 @@ async function executeWorkflowNodes(opts: {
   runLogPath: string;
   ticketPath: string;
   initialLane: WorkflowLane;
-}): Promise<{ ticketPath: string; lane: WorkflowLane; status: 'completed' | 'awaiting_approval' }> {
+  startNodeIndex?: number;
+}): Promise<{ ticketPath: string; lane: WorkflowLane; status: 'completed' | 'awaiting_approval' | 'rejected' }> {
   const { api, teamId, teamDir, workflow, workflowFile, runId, runLogPath } = opts;
 
   // MVP: execute nodes in declared order (ignore edges).
   let curLane: WorkflowLane = opts.initialLane;
   let curTicketPath = opts.ticketPath;
 
-  for (const node of workflow.nodes) {
+  for (let i = 0; i < workflow.nodes.length; i++) {
+    if (i < (opts.startNodeIndex ?? 0)) continue;
+    const node = workflow.nodes[i]!;
     const ts = new Date().toISOString();
     const laneRaw = node?.config?.lane ? String(node.config.lane) : null;
     if (laneRaw) {
@@ -225,13 +228,35 @@ async function executeWorkflowNodes(opts: {
 
       const { channel, target, accountId } = await resolveApprovalBindingTarget(api, approvalBindingId);
 
+      // Write a durable approval request file (runner can resume later via CLI).
+      const approvalsDir = path.join(teamDir, 'shared-context', 'workflow-approvals');
+      await ensureDir(approvalsDir);
+      const approvalPath = path.join(approvalsDir, `${runId}.json`);
+      const approvalObj = {
+        runId,
+        teamId,
+        workflowFile,
+        nodeId: node.id,
+        bindingId: approvalBindingId,
+        requestedAt: new Date().toISOString(),
+        status: 'pending',
+        ticket: path.relative(teamDir, curTicketPath),
+        runLog: path.relative(teamDir, runLogPath),
+      };
+      await fs.writeFile(approvalPath, JSON.stringify(approvalObj, null, 2), 'utf8');
+
       const msg = [
         `Approval requested for workflow run: ${workflow.name ?? workflow.id ?? workflowFile}`,
         `RunId: ${runId}`,
         `Node: ${node.name ?? node.id}`,
         `Ticket: ${path.relative(teamDir, curTicketPath)}`,
         `Run log: ${path.relative(teamDir, runLogPath)}`,
-        `\nReply in-thread with APPROVE or REJECT (MVP runner does not auto-resume yet).`,
+        `Approval file: ${path.relative(teamDir, approvalPath)}`,
+        `\nMVP: To approve/reject, run one of:`,
+        `- openclaw recipes workflows approve --team-id ${teamId} --run-id ${runId} --approved true`,
+        `- openclaw recipes workflows approve --team-id ${teamId} --run-id ${runId} --approved false`,
+        `Then resume:`,
+        `- openclaw recipes workflows resume --team-id ${teamId} --run-id ${runId}`,
       ].join('\n');
 
       await toolsInvoke<ToolTextResult>(api, {
@@ -248,8 +273,8 @@ async function executeWorkflowNodes(opts: {
       await appendRunLog(runLogPath, (cur) => ({
         ...cur,
         status: 'awaiting_approval',
-        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.awaiting_approval', nodeId: node.id, bindingId: approvalBindingId }],
-        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, approvalBindingId }],
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.awaiting_approval', nodeId: node.id, bindingId: approvalBindingId, approvalFile: path.relative(teamDir, approvalPath) }],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, approvalBindingId, approvalFile: path.relative(teamDir, approvalPath) }],
       }));
 
       return { ticketPath: curTicketPath, lane: curLane, status: 'awaiting_approval' };
@@ -397,4 +422,135 @@ export async function runWorkflowOnce(api: OpenClawPluginApi, opts: {
     lane: execRes.lane,
     status: execRes.status,
   };
+}
+
+
+type ApprovalRecord = {
+  runId: string;
+  teamId: string;
+  workflowFile: string;
+  nodeId: string;
+  bindingId: string;
+  requestedAt: string;
+  status: 'pending' | 'approved' | 'rejected';
+  decidedAt?: string;
+  ticket: string;
+  runLog: string;
+  note?: string;
+};
+
+async function approvalsPathFor(teamDir: string, runId: string) {
+  return path.join(teamDir, 'shared-context', 'workflow-approvals', `${runId}.json`);
+}
+
+export async function approveWorkflowRun(api: OpenClawPluginApi, opts: {
+  teamId: string;
+  runId: string;
+  approved: boolean;
+  note?: string;
+}) {
+  const teamId = String(opts.teamId);
+  const runId = String(opts.runId);
+  const workspaceRoot = resolveWorkspaceRoot(api);
+  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+
+  const approvalPath = await approvalsPathFor(teamDir, runId);
+  if (!(await fileExists(approvalPath))) {
+    throw new Error(`Approval file not found for runId=${runId}: ${path.relative(teamDir, approvalPath)}`);
+  }
+  const raw = await fs.readFile(approvalPath, 'utf8');
+  const cur = JSON.parse(raw) as ApprovalRecord;
+  const next: ApprovalRecord = {
+    ...cur,
+    status: opts.approved ? 'approved' : 'rejected',
+    decidedAt: new Date().toISOString(),
+    ...(opts.note ? { note: String(opts.note) } : {}),
+  };
+  await fs.writeFile(approvalPath, JSON.stringify(next, null, 2), 'utf8');
+
+  return { ok: true as const, runId, status: next.status, approvalFile: path.relative(teamDir, approvalPath) };
+}
+
+export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
+  teamId: string;
+  runId: string;
+}) {
+  const teamId = String(opts.teamId);
+  const runId = String(opts.runId);
+  const workspaceRoot = resolveWorkspaceRoot(api);
+  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const sharedContextDir = path.join(teamDir, 'shared-context');
+  const runsDir = path.join(sharedContextDir, 'workflow-runs');
+  const workflowsDir = path.join(sharedContextDir, 'workflows');
+
+  const runLogPath = path.join(runsDir, `${runId}.json`);
+  if (!(await fileExists(runLogPath))) throw new Error(`Run log not found: ${path.relative(teamDir, runLogPath)}`);
+  const runRaw = await fs.readFile(runLogPath, 'utf8');
+  const runLog = JSON.parse(runRaw) as RunLog;
+
+  if (runLog.status === 'completed' || runLog.status === 'rejected') {
+    return { ok: true as const, runId, status: runLog.status, message: 'No-op; run already finished.' };
+  }
+  if (runLog.status !== 'awaiting_approval') {
+    throw new Error(`Run is not awaiting approval (status=${runLog.status}).`);
+  }
+
+  const workflowFile = String(runLog.workflow.file);
+  const workflowPath = path.join(workflowsDir, workflowFile);
+  const workflowRaw = await fs.readFile(workflowPath, 'utf8');
+  const workflow = JSON.parse(workflowRaw) as WorkflowV1;
+
+  const approvalPath = await approvalsPathFor(teamDir, runId);
+  if (!(await fileExists(approvalPath))) throw new Error(`Missing approval file: ${path.relative(teamDir, approvalPath)}`);
+  const approvalRaw = await fs.readFile(approvalPath, 'utf8');
+  const approval = JSON.parse(approvalRaw) as ApprovalRecord;
+  if (approval.status === 'pending') {
+    throw new Error(`Approval still pending. Update ${path.relative(teamDir, approvalPath)} first.`);
+  }
+
+  const ticketPath = path.join(teamDir, runLog.ticket.file);
+
+  // Find the approval node index; resume after it.
+  const approvalIdx = workflow.nodes.findIndex((n) => n.kind === 'human_approval' && String(n.id) === String(approval.nodeId));
+  if (approvalIdx < 0) throw new Error(`Approval node not found in workflow: nodeId=${approval.nodeId}`);
+  const startNodeIndex = approvalIdx + 1;
+
+  if (approval.status === 'rejected') {
+    // Mark run rejected and move ticket to done.
+    const moved = await moveRunTicket({ teamDir, ticketPath, toLane: 'done' });
+    await appendRunLog(runLogPath, (cur) => ({
+      ...cur,
+      status: 'rejected',
+      ticket: { ...cur.ticket, file: path.relative(teamDir, moved.ticketPath), lane: 'done' },
+      events: [...cur.events, { ts: new Date().toISOString(), type: 'run.rejected', nodeId: approval.nodeId }],
+    }));
+    return { ok: true as const, runId, status: 'rejected' as const, ticketPath: moved.ticketPath, runLogPath };
+  }
+
+  await appendRunLog(runLogPath, (cur) => ({
+    ...cur,
+    status: 'running',
+    events: [...cur.events, { ts: new Date().toISOString(), type: 'node.approved', nodeId: approval.nodeId }],
+  }));
+
+  // Determine current lane from run log.
+  const laneRaw = String(runLog.ticket.lane);
+  assertLane(laneRaw);
+  const initialLane = laneRaw as WorkflowLane;
+
+  const execRes = await executeWorkflowNodes({
+    api,
+    teamId,
+    teamDir,
+    workflow,
+    workflowPath,
+    workflowFile,
+    runId,
+    runLogPath,
+    ticketPath,
+    initialLane,
+    startNodeIndex,
+  });
+
+  return { ok: true as const, runId, status: execRes.status, ticketPath: execRes.ticketPath, runLogPath };
 }
