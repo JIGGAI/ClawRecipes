@@ -44,6 +44,7 @@ import {
 } from "./src/handlers/team";
 import { handleScaffold, scaffoldAgentFromRecipe } from "./src/handlers/scaffold";
 import { reconcileRecipeCronJobs } from "./src/handlers/cron";
+import { handleWorkflowsRun } from "./src/handlers/workflows";
 import { listRecipeFiles, loadRecipeById, workspacePath } from "./src/lib/recipes";
 import {
   executeWorkspaceCleanup,
@@ -444,6 +445,21 @@ const recipesPlugin = {
             print("In progress", out.inProgress);
             print("Testing", out.testing);
             print("Done", out.done);
+          });
+
+        cmd
+          .command("workflows")
+          .description("Workflow runner utilities (MVP)")
+          .command("run")
+          .description("Run a workflow once (manual trigger). Reads from shared-context/workflows/")
+          .requiredOption("--team-id <teamId>", "Team id (workspace-<teamId>)")
+          .requiredOption("--workflow-file <file>", "Workflow filename under shared-context/workflows/")
+          .action(async (options: { teamId?: string; workflowFile?: string }) => {
+            const res = await handleWorkflowsRun(api, {
+              teamId: String(options.teamId ?? ''),
+              workflowFile: String(options.workflowFile ?? ''),
+            });
+            console.log(JSON.stringify(res, null, 2));
           });
 
         cmd
