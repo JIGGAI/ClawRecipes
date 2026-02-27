@@ -40,7 +40,7 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Bump prerelease version (unique per run; no git tag)
+      - name: Bump prerelease version (unique per run attempt; no git tag)
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           RUN_NUMBER: ${{ github.run_number }}
