@@ -59,6 +59,11 @@ agents:
       deny: ["exec"]
 
 templates:
+  lead.tools: |
+    # TOOLS.md
+
+    # Agent-local notes (paths, conventions, env quirks).
+
   tools: |
     # TOOLS.md
 
