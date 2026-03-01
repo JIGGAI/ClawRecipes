@@ -1,0 +1,10 @@
+{
+  "laneByOwner": {
+    "dev": "in-progress",
+    "devops": "in-progress",
+    "lead": "backlog",
+    "test": "testing",
+    "qa": "testing"
+  },
+  "defaultLane": "in-progress"
+}
