@@ -59,6 +59,11 @@ agents:
       deny: ["exec"]
 
 templates:
+  lead.tools: |
+    # TOOLS.md
+
+    # Agent-local notes (paths, conventions, env quirks).
+
   tools: |
     # TOOLS.md
 
@@ -282,6 +287,106 @@ templates:
     Output:
     - Document request lists → outbox/ops/
     - Follow-up trackers → notes/status.md updates
+
+
+  # Auto-added blanks to ensure every role can scaffold every declared file.
+
+  # --- role: lead ---
+  lead.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  lead.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: advisor ---
+  advisor.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  advisor.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  advisor.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: analyst ---
+  analyst.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  analyst.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  analyst.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: tax ---
+  tax.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  tax.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  tax.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: insurance ---
+  insurance.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  insurance.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  insurance.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: ops ---
+  ops.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  ops.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  ops.notes: |
+    # NOTES.md
+    
+    - (empty)
+
 
 files:
   - path: SOUL.md

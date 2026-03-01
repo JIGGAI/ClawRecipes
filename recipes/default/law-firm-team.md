@@ -59,6 +59,11 @@ agents:
       deny: ["exec"]
 
 templates:
+  lead.tools: |
+    # TOOLS.md
+
+    # Agent-local notes (paths, conventions, env quirks).
+
   tools: |
     # TOOLS.md
 
@@ -283,6 +288,106 @@ templates:
     - Matter indexes → work/matters/<matter>/INDEX.md
     - Deadline trackers → notes/status.md updates
     - Templates/playbooks → shared-context/playbooks/
+
+
+
+  # Auto-added blanks to ensure every role can scaffold every declared file.
+
+  # --- role: lead ---
+  lead.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  lead.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: intake ---
+  intake.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  intake.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  intake.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: researcher ---
+  researcher.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  researcher.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  researcher.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: drafter ---
+  drafter.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  drafter.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  drafter.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: compliance ---
+  compliance.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  compliance.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  compliance.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: ops ---
+  ops.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  ops.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  ops.notes: |
+    # NOTES.md
+    
+    - (empty)
 
 
 files:

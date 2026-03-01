@@ -59,6 +59,11 @@ agents:
       deny: ["exec"]
 
 templates:
+  lead.tools: |
+    # TOOLS.md
+
+    # Agent-local notes (paths, conventions, env quirks).
+
   tools: |
     # TOOLS.md
 
@@ -282,6 +287,106 @@ templates:
     Output:
     - Daily journal → work/journal/daily/
     - Post-mortems → work/journal/post-mortems/
+
+
+  # Auto-added blanks to ensure every role can scaffold every declared file.
+
+  # --- role: lead ---
+  lead.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  lead.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: onchain ---
+  onchain.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  onchain.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  onchain.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: news ---
+  news.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  news.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  news.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: risk ---
+  risk.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  risk.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  risk.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: ops ---
+  ops.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  ops.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  ops.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: journal ---
+  journal.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  journal.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  journal.notes: |
+    # NOTES.md
+    
+    - (empty)
+
 
 files:
   - path: SOUL.md

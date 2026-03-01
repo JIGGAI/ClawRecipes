@@ -59,6 +59,11 @@ agents:
       deny: ["exec"]
 
 templates:
+  lead.tools: |
+    # TOOLS.md
+
+    # Agent-local notes (paths, conventions, env quirks).
+
   tools: |
     # TOOLS.md
 
@@ -282,6 +287,106 @@ templates:
     Output:
     - Handouts/FAQs → work/patient-education/
     - After-visit summaries → work/patient-education/after-visit/
+
+
+  # Auto-added blanks to ensure every role can scaffold every declared file.
+
+  # --- role: lead ---
+  lead.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  lead.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: intake ---
+  intake.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  intake.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  intake.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: scheduler ---
+  scheduler.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  scheduler.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  scheduler.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: billing ---
+  billing.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  billing.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  billing.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: compliance ---
+  compliance.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  compliance.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  compliance.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: educator ---
+  educator.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  educator.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  educator.notes: |
+    # NOTES.md
+    
+    - (empty)
+
 
 files:
   - path: SOUL.md

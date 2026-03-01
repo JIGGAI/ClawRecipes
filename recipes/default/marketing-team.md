@@ -1955,6 +1955,10 @@ templates:
 
     - (empty)
 
+
+  # Auto-added blanks to ensure every role can scaffold every declared file.
+
+
 files:
   - path: SOUL.md
     template: soul

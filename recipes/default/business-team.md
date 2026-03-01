@@ -59,6 +59,11 @@ agents:
       deny: ["exec"]
 
 templates:
+  lead.tools: |
+    # TOOLS.md
+
+    # Agent-local notes (paths, conventions, env quirks).
+
   tools: |
     # TOOLS.md
 
@@ -282,6 +287,106 @@ templates:
     Output:
     - Research briefs → outbox/research/
     - Metrics definitions/dashboards notes → shared-context/metrics/
+
+
+  # Auto-added blanks to ensure every role can scaffold every declared file.
+
+  # --- role: lead ---
+  lead.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  lead.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: ops ---
+  ops.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  ops.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  ops.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: sales ---
+  sales.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  sales.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  sales.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: marketing ---
+  marketing.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  marketing.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  marketing.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: finance ---
+  finance.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  finance.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  finance.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+
+  # --- role: analyst ---
+  analyst.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  analyst.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  analyst.notes: |
+    # NOTES.md
+    
+    - (empty)
+
 
 files:
   - path: SOUL.md
