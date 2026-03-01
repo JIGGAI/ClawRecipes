@@ -10,7 +10,6 @@ async function mkTeamDir() {
   await fs.mkdir(path.join(dir, 'work', 'in-progress'), { recursive: true });
   // Intentionally omit work/testing to simulate older workspaces.
   await fs.mkdir(path.join(dir, 'work', 'done'), { recursive: true });
-  await fs.mkdir(path.join(dir, 'work', 'assignments'), { recursive: true });
   return dir;
 }
 
@@ -37,12 +36,7 @@ describe('ticket workflow: handoff', () => {
       const nextTicket = await fs.readFile(r1.destPath, 'utf8');
       expect(nextTicket).toMatch(/^Owner:\s*test$/m);
       expect(nextTicket).toMatch(/^Status:\s*testing$/m);
-      expect(nextTicket).toMatch(/^Assignment:\s*work\/assignments\/0001-assigned-test\.md$/m);
-
-      const assignmentPath = path.join(teamDir, 'work', 'assignments', '0001-assigned-test.md');
-      const assignment = await fs.readFile(assignmentPath, 'utf8');
-      expect(assignment).toMatch(/Created by: openclaw recipes handoff/);
-      expect(assignment).toMatch(/work\/testing\/0001-sample\.md/);
+      expect(nextTicket).not.toMatch(/^Assignment:\s*/m);
 
       const r2 = await handoffTicket({ teamDir, ticket: '0001', tester: 'test', overwriteAssignment: true });
       expect(r2.moved).toBe(false);

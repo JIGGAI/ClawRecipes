@@ -76,7 +76,7 @@ templates:
 
     # ticket-hygiene.sh
     # Guardrail script used by lead triage cron.
-    # Fails if any assignment stub points at a non-existent or wrong-stage ticket path.
+    # Assignment stubs are deprecated; this script currently returns OK.
 
     cd "$(dirname "$0")/.."
 
@@ -84,7 +84,11 @@ templates:
 
     fail=0
 
-    for f in work/assignments/*-assigned-*.md; do
+    # (assignment stubs removed)
+    echo "OK"
+    exit 0
+
+    # legacy (dead code): for f in work/assignments/*-assigned-*.md; do
       [[ -f "$f" ]] || continue
 
       bn="$(basename "$f")"
@@ -187,7 +191,7 @@ templates:
 
     # ticket-hygiene.sh
     # Guardrail script used by lead triage cron.
-    # Fails if any assignment stub points at a non-existent or wrong-stage ticket path.
+    # Assignment stubs are deprecated; this script currently returns OK.
 
     cd "$(dirname "$0")/.."
 
@@ -195,7 +199,11 @@ templates:
 
     fail=0
 
-    for f in work/assignments/*-assigned-*.md; do
+    # (assignment stubs removed)
+    echo "OK"
+    exit 0
+
+    # legacy (dead code): for f in work/assignments/*-assigned-*.md; do
       [[ -f "$f" ]] || continue
 
       bn="$(basename "$f")"
@@ -295,7 +303,7 @@ templates:
 
     # ticket-hygiene.sh
     # Guardrail script used by lead triage cron.
-    # Fails if any assignment stub points at a non-existent or wrong-stage ticket path.
+    # Assignment stubs are deprecated; this script currently returns OK.
 
     cd "$(dirname "$0")/.."
 
@@ -303,7 +311,11 @@ templates:
 
     fail=0
 
-    for f in work/assignments/*-assigned-*.md; do
+    # (assignment stubs removed)
+    echo "OK"
+    exit 0
+
+    # legacy (dead code): for f in work/assignments/*-assigned-*.md; do
       [[ -f "$f" ]] || continue
 
       bn="$(basename "$f")"
@@ -403,7 +415,7 @@ templates:
 
     # ticket-hygiene.sh
     # Guardrail script used by lead triage cron.
-    # Fails if any assignment stub points at a non-existent or wrong-stage ticket path.
+    # Assignment stubs are deprecated; this script currently returns OK.
 
     cd "$(dirname "$0")/.."
 
@@ -411,7 +423,11 @@ templates:
 
     fail=0
 
-    for f in work/assignments/*-assigned-*.md; do
+    # (assignment stubs removed)
+    echo "OK"
+    exit 0
+
+    # legacy (dead code): for f in work/assignments/*-assigned-*.md; do
       [[ -f "$f" ]] || continue
 
       bn="$(basename "$f")"

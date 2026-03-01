@@ -13,7 +13,7 @@ async function mkTeamDir() {
 }
 
 describe('ticket workflow: take', () => {
-  test('moves ticket to in-progress, patches headers, writes assignment (creates missing lanes)', async () => {
+  test('moves ticket to in-progress, patches headers (creates missing lanes)', async () => {
     const teamDir = await mkTeamDir();
     try {
       const ticketPath = path.join(teamDir, 'work', 'backlog', '0007-sample.md');
@@ -30,12 +30,7 @@ describe('ticket workflow: take', () => {
       const nextTicket = await fs.readFile(res.destPath, 'utf8');
       expect(nextTicket).toMatch(/^Owner:\s*devops$/m);
       expect(nextTicket).toMatch(/^Status:\s*in-progress$/m);
-      expect(nextTicket).toMatch(/^Assignment:\s*work\/assignments\/0007-assigned-devops\.md$/m);
-
-      const assignmentPath = path.join(teamDir, 'work', 'assignments', '0007-assigned-devops.md');
-      const assignment = await fs.readFile(assignmentPath, 'utf8');
-      expect(assignment).toMatch(/Created by: openclaw recipes take/);
-      expect(assignment).toMatch(/work\/in-progress\/0007-sample\.md/);
+      expect(nextTicket).not.toMatch(/^Assignment:\s*/m);
     } finally {
       await fs.rm(teamDir, { recursive: true, force: true });
     }
@@ -65,20 +60,23 @@ describe('ticket workflow: take', () => {
     }
   });
 
-  test('skips overwriting assignment when overwriteAssignment false and assignment exists', async () => {
+  test('does not create assignment stubs (legacy work/assignments may exist)', async () => {
     const teamDir = await mkTeamDir();
     await fs.mkdir(path.join(teamDir, 'work', 'in-progress'), { recursive: true });
     await fs.mkdir(path.join(teamDir, 'work', 'assignments'), { recursive: true });
     const ticketPath = path.join(teamDir, 'work', 'in-progress', '0002-sample.md');
     await fs.writeFile(ticketPath, '# 0002-sample\n\n## Context\n', 'utf8');
-    const assignmentPath = path.join(teamDir, 'work', 'assignments', '0002-assigned-dev.md');
-    await fs.writeFile(assignmentPath, 'ORIGINAL', 'utf8');
+
+    // Pre-existing legacy stub file should remain untouched.
+    const legacyPath = path.join(teamDir, 'work', 'assignments', '0002-assigned-dev.md');
+    await fs.writeFile(legacyPath, 'ORIGINAL', 'utf8');
+
     try {
       const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
       const res = await takeTicket({ teamDir, ticket: '0002', owner: 'dev', overwriteAssignment: false });
       errSpy.mockRestore();
       expect(res.moved).toBe(false);
-      expect(await fs.readFile(assignmentPath, 'utf8')).toBe('ORIGINAL');
+      expect(await fs.readFile(legacyPath, 'utf8')).toBe('ORIGINAL');
     } finally {
       await fs.rm(teamDir, { recursive: true, force: true });
     }

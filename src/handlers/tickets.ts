@@ -6,7 +6,7 @@ import { findTicketFile, handoffTicket, takeTicket } from "../lib/ticket-workflo
 import { ticketStageDir } from "../lib/lanes";
 import { computeNextTicketNumber, TICKET_FILENAME_REGEX } from "../lib/ticket-finder";
 import { resolveTeamContext } from "../lib/workspace";
-import { DEFAULT_TICKET_NUMBER, VALID_ROLES, VALID_STAGES } from "../lib/constants";
+import { VALID_ROLES, VALID_STAGES } from "../lib/constants";
 
 export function patchTicketField(md: string, key: string, value: string): string {
   const lineRe = new RegExp(`^${key}:\\s.*$`, "m");
@@ -108,40 +108,20 @@ export async function handleMoveTicket(
   await fs.writeFile(srcPath, patched, "utf8");
   if (srcPath !== destPath) await fs.rename(srcPath, destPath);
 
-  // When a ticket is moved to done, archive any assignment stubs into work/assignments/archive/.
-  if (dest === "done") {
-    const filename = path.basename(destPath);
-    const m = filename.match(TICKET_FILENAME_REGEX);
-    const ticketNumStr = m?.[1] ?? null;
-    if (ticketNumStr) {
-      const assignmentsDir = ticketStageDir(teamDir, "assignments");
-      if (await fileExists(assignmentsDir)) {
-        const files = (await fs.readdir(assignmentsDir)).filter((f) => f.startsWith(`${ticketNumStr}-assigned-`) && f.endsWith(".md"));
-        if (files.length) {
-          const archiveDir = path.join(assignmentsDir, "archive");
-          await ensureDir(archiveDir);
-          for (const f of files) {
-            const from = path.join(assignmentsDir, f);
-            const to = path.join(archiveDir, f);
-            await fs.rename(from, to);
-          }
-        }
-      }
-    }
-  }
+  // Assignment stubs are deprecated; no archival behavior.
 
   return { ok: true, from: srcPath, to: destPath };
 }
 
 /**
- * Assign a ticket to an owner (writes assignment stub + updates Owner:).
+ * Assign a ticket to an owner (updates Owner: only; assignment stubs are deprecated).
  * @param api - OpenClaw plugin API
- * @param options - teamId, ticket, owner, optional overwrite, dryRun
+ * @param options - teamId, ticket, owner, optional dryRun
  * @returns Plan (dryRun) or ok with plan
  */
 export async function handleAssign(
   api: OpenClawPluginApi,
-  options: { teamId: string; ticket: string; owner: string; overwrite?: boolean; dryRun?: boolean },
+  options: { teamId: string; ticket: string; owner: string; dryRun?: boolean },
 ) {
   const teamId = String(options.teamId);
   const { teamDir } = await resolveTeamContext(api, teamId);
@@ -151,14 +131,8 @@ export async function handleAssign(
   }
   const ticketPath = await findTicketFile(teamDir, options.ticket);
   if (!ticketPath) throw new Error(`Ticket not found: ${options.ticket}`);
-  const filename = path.basename(ticketPath);
-  const m = filename.match(TICKET_FILENAME_REGEX);
-  const ticketNumStr = m?.[1] ?? DEFAULT_TICKET_NUMBER;
-  const slug = m?.[2] ?? (options.ticket.replace(/^\d{4}-?/, "") || "ticket");
-  const assignmentsDir = ticketStageDir(teamDir, "assignments");
-  await ensureDir(assignmentsDir);
-  const assignmentPath = path.join(assignmentsDir, `${ticketNumStr}-assigned-${owner}.md`);
-  const plan = { ticketPath, assignmentPath, owner };
+  // Previously parsed for assignment-stub ids; assignment stubs are deprecated.
+  const plan = { ticketPath, owner };
   if (options.dryRun) return { ok: true, plan };
   const patchOwner = (md: string) => {
     if (md.match(/^Owner:\s.*$/m)) return md.replace(/^Owner:\s.*$/m, `Owner: ${owner}`);
@@ -167,8 +141,7 @@ export async function handleAssign(
   const md = await fs.readFile(ticketPath, "utf8");
   const nextMd = patchOwner(md);
   await fs.writeFile(ticketPath, nextMd, "utf8");
-  const assignmentMd = `# Assignment — ${ticketNumStr}-${slug}\n\nAssigned: ${owner}\n\n## Ticket\n${path.relative(teamDir, ticketPath)}\n\n## Notes\n- Created by: openclaw recipes assign\n`;
-  await writeFileSafely(assignmentPath, assignmentMd, options.overwrite ? "overwrite" : "createOnly");
+  // Assignment stubs are deprecated; do not create/update work/assignments/*.md.
   return { ok: true, plan };
 }
 
@@ -269,7 +242,8 @@ export async function handleDispatch(
   if (!requestText) throw new Error("Request cannot be empty");
   const inboxDir = path.join(teamDir, "inbox");
   const backlogDir = ticketStageDir(teamDir, "backlog");
-  const assignmentsDir = ticketStageDir(teamDir, "assignments");
+  // Assignment stubs are deprecated; do not create work/assignments/*.
+  // Keep old stubs if they exist (migration will move them to work/assignments.__deprecated__/).
   const slugify = (s: string) =>
     s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 60) || "request";
   const nowKey = () => {
@@ -283,27 +257,22 @@ export async function handleDispatch(
   const baseSlug = slugify(title);
   const inboxPath = path.join(inboxDir, `${nowKey()}-${baseSlug}.md`);
   const ticketPath = path.join(backlogDir, `${ticketNumStr}-${baseSlug}.md`);
-  const assignmentPath = path.join(assignmentsDir, `${ticketNumStr}-assigned-${owner}.md`);
   const receivedIso = new Date().toISOString();
-  const inboxMd = `# Inbox — ${teamId}\n\nReceived: ${receivedIso}\n\n## Request\n${requestText}\n\n## Proposed work\n- Ticket: ${ticketNumStr}-${baseSlug}\n- Owner: ${owner}\n\n## Links\n- Ticket: ${path.relative(teamDir, ticketPath)}\n- Assignment: ${path.relative(teamDir, assignmentPath)}\n`;
-  const ticketMd = `# ${ticketNumStr}-${baseSlug}\n\nCreated: ${receivedIso}\nOwner: ${owner}\nStatus: queued\nInbox: ${path.relative(teamDir, inboxPath)}\nAssignment: ${path.relative(teamDir, assignmentPath)}\n\n## Context\n${requestText}\n\n## Requirements\n- (fill in)\n\n## Acceptance criteria\n- (fill in)\n\n## Tasks\n- [ ] (fill in)\n\n## Comments\n- (use this section for @mentions, questions, decisions, and dated replies)\n`;
-  const assignmentMd = `# Assignment — ${ticketNumStr}-${baseSlug}\n\nCreated: ${receivedIso}\nAssigned: ${owner}\n\n## Goal\n${title}\n\n## Ticket\n${path.relative(teamDir, ticketPath)}\n\n## Notes\n- Created by: openclaw recipes dispatch\n`;
+  const inboxMd = `# Inbox — ${teamId}\n\nReceived: ${receivedIso}\n\n## Request\n${requestText}\n\n## Proposed work\n- Ticket: ${ticketNumStr}-${baseSlug}\n- Owner: ${owner}\n\n## Links\n- Ticket: ${path.relative(teamDir, ticketPath)}\n`;
+  const ticketMd = `# ${ticketNumStr}-${baseSlug}\n\nCreated: ${receivedIso}\nOwner: ${owner}\nStatus: queued\nInbox: ${path.relative(teamDir, inboxPath)}\n\n## Context\n${requestText}\n\n## Requirements\n- (fill in)\n\n## Acceptance criteria\n- (fill in)\n\n## Tasks\n- [ ] (fill in)\n\n## Comments\n- (use this section for @mentions, questions, decisions, and dated replies)\n`;
   const plan = {
     teamId,
     request: requestText,
     files: [
       { path: inboxPath, kind: "inbox", summary: title },
       { path: ticketPath, kind: "backlog-ticket", summary: title },
-      { path: assignmentPath, kind: "assignment", summary: owner },
     ],
   };
   if (options.dryRun) return { ok: true as const, plan };
   await ensureDir(inboxDir);
   await ensureDir(backlogDir);
-  await ensureDir(assignmentsDir);
   await writeFileSafely(inboxPath, inboxMd, "createOnly");
   await writeFileSafely(ticketPath, ticketMd, "createOnly");
-  await writeFileSafely(assignmentPath, assignmentMd, "createOnly");
   let nudgeQueued = false;
   try {
     const leadAgentId = `${teamId}-lead`;
@@ -312,7 +281,8 @@ export async function handleDispatch(
         `Dispatch created new intake for team: ${teamId}`,
         `- Inbox: ${path.relative(teamDir, inboxPath)}`,
         `- Backlog: ${path.relative(teamDir, ticketPath)}`,
-        `- Assignment: ${path.relative(teamDir, assignmentPath)}`,
+        // Assignment stubs are deprecated; no assignment artifact is created.
+
         `Action: please triage/normalize the ticket (fill Requirements/AC/tasks) and move it through the workflow.`,
       ].join("\n"),
       { sessionKey: `agent:${leadAgentId}:main` },
@@ -326,58 +296,6 @@ export async function handleDispatch(
   return { ok: true as const, wrote: plan.files.map((f) => f.path), nudgeQueued };
 }
 
-/**
- * Cleanup assignment stubs for tickets that are already closed (in work/done).
- *
- * Why: some automation/board views treat assignment stubs as active work signals.
- * If a ticket is manually moved to done (outside `openclaw recipes move-ticket`),
- * its `work/assignments/<num>-assigned-*.md` stubs may linger and resurface the ticket.
- *
- * This command archives any matching assignment stubs into `work/assignments/archive/`.
- */
-export async function handleCleanupClosedAssignments(
-  api: OpenClawPluginApi,
-  options: { teamId: string; ticketNums?: string[] }
-): Promise<{ ok: true; teamId: string; archived: Array<{ from: string; to: string }> }> {
-  const teamId = String(options.teamId);
-  const { teamDir } = await resolveTeamContext(api, teamId);
-
-  const assignmentsDir = ticketStageDir(teamDir, "assignments");
-  const archiveDir = path.join(assignmentsDir, "archive");
-  const doneDir = ticketStageDir(teamDir, "done");
-
-  const archived: Array<{ from: string; to: string }> = [];
-  if (!(await fileExists(assignmentsDir))) return { ok: true, teamId, archived };
-  await ensureDir(archiveDir);
-
-  const ticketNumsFilter = Array.isArray(options.ticketNums) && options.ticketNums.length
-    ? new Set(options.ticketNums.map((n) => String(n).padStart(4, "0")))
-    : null;
-
-  const doneFiles = (await fileExists(doneDir)) ? await fs.readdir(doneDir) : [];
-  const doneNums = new Set(
-    doneFiles
-      .map((f) => f.match(/^([0-9]{4})-/)?.[1])
-      .filter((x): x is string => !!x)
-  );
-
-  const files = (await fs.readdir(assignmentsDir)).filter((f) => f.endsWith(".md"));
-  for (const f of files) {
-    if (f === "archive") continue;
-    if (f.startsWith("archive" + path.sep)) continue;
-    const m = f.match(/^([0-9]{4})-assigned-.*\.md$/);
-    if (!m) continue;
-    const num = m[1];
-    if (ticketNumsFilter && !ticketNumsFilter.has(num)) continue;
-
-    // If the ticket number is present in done/, this assignment is considered closed.
-    if (!doneNums.has(num)) continue;
-
-    const from = path.join(assignmentsDir, f);
-    const to = path.join(archiveDir, f);
-    await fs.rename(from, to);
-    archived.push({ from, to });
-  }
-
-  return { ok: true, teamId, archived };
-}
+// Assignment stubs are deprecated and preserved only via migration to work/assignments.__deprecated__/.
+// This handler is intentionally removed to avoid continuing stub semantics.
+// (If you need to clean up legacy stubs, do it via a one-time migration script.)
