@@ -137,7 +137,7 @@ describe("index.ts handlers (remove-team)", () => {
         });
         expect(out.ok).toBe(true);
         expect((out as any).plan.teamId).toBe("test-dispatch-team");
-        expect((out as any).plan.files).toHaveLength(3);
+        expect((out as any).plan.files).toHaveLength(2);
       } finally {
         await fs.rm(base, { recursive: true, force: true });
       }
@@ -159,7 +159,7 @@ describe("index.ts handlers (remove-team)", () => {
           owner: "dev",
         });
         expect(out.ok).toBe(true);
-        expect(out.wrote).toHaveLength(3);
+        expect(out.wrote).toHaveLength(2);
         const inboxDir = path.join(teamDir, "inbox");
         const files = await fs.readdir(inboxDir);
         expect(files.some((f) => f.includes("fix-bug"))).toBe(true);

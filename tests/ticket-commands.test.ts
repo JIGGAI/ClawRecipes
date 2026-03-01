@@ -138,7 +138,7 @@ describe("ticket command handlers (integration)", () => {
       }
     });
 
-    test("archives assignment stubs when moving ticket to done", async () => {
+    test("does not touch legacy assignment stubs when moving ticket to done", async () => {
       const { base, workspaceRoot, teamId, teamDir } = await setupTeamWorkspace();
       const ticketPath = path.join(teamDir, "work", "backlog", "0009-sample.md");
       await fs.writeFile(ticketPath, "# 0009-sample\n\nStatus: queued\n\n## Context\n", "utf8");
@@ -155,12 +155,9 @@ describe("ticket command handlers (integration)", () => {
         expect(res.ok).toBe(true);
         expect(res.to).toContain(path.join("work", "done"));
 
-        const archiveDir = path.join(assignmentsDir, "archive");
-        expect(await fileExists(archiveDir)).toBe(true);
-        expect(await fileExists(path.join(archiveDir, "0009-assigned-dev.md"))).toBe(true);
-        expect(await fileExists(path.join(archiveDir, "0009-assigned-test.md"))).toBe(true);
-        expect(await fileExists(stub1)).toBe(false);
-        expect(await fileExists(stub2)).toBe(false);
+        // Legacy stubs should remain untouched; they will be handled by a one-time migration.
+        expect(await fileExists(stub1)).toBe(true);
+        expect(await fileExists(stub2)).toBe(true);
       } finally {
         await fs.rm(base, { recursive: true, force: true });
       }
@@ -168,7 +165,7 @@ describe("ticket command handlers (integration)", () => {
   });
 
   describe("handleAssign", () => {
-    test("assigns ticket to owner and creates assignment stub", async () => {
+    test("assigns ticket to owner (no assignment stubs)", async () => {
       const { base, workspaceRoot, teamId, teamDir } = await setupTeamWorkspace();
       const ticketPath = path.join(teamDir, "work", "backlog", "0002-feat.md");
       await fs.writeFile(ticketPath, "# 0002-feat\n\nStatus: queued\n\n## Context\n", "utf8");
@@ -180,7 +177,7 @@ describe("ticket command handlers (integration)", () => {
         const ticketContent = await fs.readFile(ticketPath, "utf8");
         expect(ticketContent).toMatch(/Owner:\s*dev/);
         const assignmentPath = path.join(teamDir, "work", "assignments", "0002-assigned-dev.md");
-        expect(await fileExists(assignmentPath)).toBe(true);
+        expect(await fileExists(assignmentPath)).toBe(false);
       } finally {
         await fs.rm(base, { recursive: true, force: true });
       }
@@ -217,7 +214,7 @@ describe("ticket command handlers (integration)", () => {
   });
 
   describe("handleTake", () => {
-    test("moves ticket to in-progress and creates assignment", async () => {
+    test("moves ticket to in-progress (no assignment stubs)", async () => {
       const { base, workspaceRoot, teamId, teamDir } = await setupTeamWorkspace();
       const ticketPath = path.join(teamDir, "work", "backlog", "0004-task.md");
       await fs.writeFile(ticketPath, "# 0004-task\n\nStatus: queued\n\n## Context\n", "utf8");
@@ -227,7 +224,7 @@ describe("ticket command handlers (integration)", () => {
         expect("srcPath" in res).toBe(true);
         expect(res.srcPath).toBeDefined();
         expect(res.destPath).toContain(path.join("work", "in-progress"));
-        expect(res.assignmentPath).toContain("0004-assigned-dev");
+        expect((res as any).assignmentPath).toBeUndefined();
         expect(await fileExists(ticketPath)).toBe(false);
         const inProgressPath = path.join(teamDir, "work", "in-progress", "0004-task.md");
         expect(await fileExists(inProgressPath)).toBe(true);

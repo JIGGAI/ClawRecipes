@@ -1,19 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import { fileExists } from "./fs-utils";
 import { ensureLaneDir } from "./lanes";
-import { DEFAULT_TICKET_NUMBER } from "./constants";
 import { findTicketFile as findTicketFileFromFinder } from "./ticket-finder";
-import { parseTicketFilename } from "./ticket-finder";
-
-async function ensureDir(p: string) {
-  await fs.mkdir(p, { recursive: true });
-}
 
 function patchTicketFields(
   md: string,
-  opts: { ownerSafe: string; status: string; assignmentRel: string }
+  opts: { ownerSafe: string; status: string }
 ): string {
   let out = md;
   if (out.match(/^Owner:\s.*$/m)) out = out.replace(/^Owner:\s.*$/m, `Owner: ${opts.ownerSafe}`);
@@ -22,9 +15,7 @@ function patchTicketFields(
   if (out.match(/^Status:\s.*$/m)) out = out.replace(/^Status:\s.*$/m, `Status: ${opts.status}`);
   else out = out.replace(/^(# .+\n)/, `$1\nStatus: ${opts.status}\n`);
 
-  if (out.match(/^Assignment:\s.*$/m)) out = out.replace(/^Assignment:\s.*$/m, `Assignment: ${opts.assignmentRel}`);
-  else out = out.replace(/^Owner:.*$/m, (line) => `${line}\nAssignment: ${opts.assignmentRel}`);
-
+  // Assignment stubs are deprecated; do not write/update Assignment: here.
   return out;
 }
 
@@ -47,34 +38,20 @@ export async function takeTicket(opts: { teamDir: string; ticket: string; owner?
   const filename = path.basename(srcPath);
   const destPath = path.join(inProgressDir, filename);
 
-  const parsed = parseTicketFilename(filename) ?? { ticketNumStr: opts.ticket.match(/^\d{4}$/) ? opts.ticket : DEFAULT_TICKET_NUMBER, slug: "ticket" };
-  const { ticketNumStr, slug } = parsed;
-
-  const assignmentsDir = path.join(teamDir, 'work', 'assignments');
-  await ensureDir(assignmentsDir);
-  const assignmentPath = path.join(assignmentsDir, `${ticketNumStr}-assigned-${ownerSafe}.md`);
-  const assignmentRel = path.relative(teamDir, assignmentPath);
+  // Previously parsed filename for assignment-stub ids; no longer needed.
 
   const alreadyInProgress = srcPath === destPath;
 
   const md = await fs.readFile(srcPath, 'utf8');
-  const nextMd = patchTicketFields(md, { ownerSafe, status: 'in-progress', assignmentRel });
+  const nextMd = patchTicketFields(md, { ownerSafe, status: 'in-progress' });
   await fs.writeFile(srcPath, nextMd, 'utf8');
 
   if (!alreadyInProgress) {
     await fs.rename(srcPath, destPath);
   }
 
-  const assignmentMd = `# Assignment — ${ticketNumStr}-${slug}\n\nAssigned: ${ownerSafe}\n\n## Ticket\n${path.relative(teamDir, destPath)}\n\n## Notes\n- Created by: openclaw recipes take\n`;
-
-  const assignmentExists = await fileExists(assignmentPath);
-  if (assignmentExists && !opts.overwriteAssignment) {
-    // createOnly
-  } else {
-    await fs.writeFile(assignmentPath, assignmentMd, 'utf8');
-  }
-
-  return { srcPath, destPath, moved: !alreadyInProgress, assignmentPath };
+  // Assignment stubs are deprecated; do not create/update work/assignments/*.md.
+  return { srcPath, destPath, moved: !alreadyInProgress };
 }
 
 export async function handoffTicket(opts: { teamDir: string; ticket: string; tester?: string; overwriteAssignment: boolean }) {
@@ -91,32 +68,18 @@ export async function handoffTicket(opts: { teamDir: string; ticket: string; tes
   const filename = path.basename(srcPath);
   const destPath = path.join(testingDir, filename);
 
-  const parsed = parseTicketFilename(filename) ?? { ticketNumStr: opts.ticket.match(/^\d{4}$/) ? opts.ticket : DEFAULT_TICKET_NUMBER, slug: "ticket" };
-  const { ticketNumStr, slug } = parsed;
-
-  const assignmentsDir = path.join(teamDir, 'work', 'assignments');
-  await ensureDir(assignmentsDir);
-  const assignmentPath = path.join(assignmentsDir, `${ticketNumStr}-assigned-${testerSafe}.md`);
-  const assignmentRel = path.relative(teamDir, assignmentPath);
+  // Previously parsed filename for assignment-stub ids; no longer needed.
 
   const alreadyInTesting = srcPath === destPath;
 
   const md = await fs.readFile(srcPath, 'utf8');
-  const nextMd = patchTicketFields(md, { ownerSafe: testerSafe, status: 'testing', assignmentRel });
+  const nextMd = patchTicketFields(md, { ownerSafe: testerSafe, status: 'testing' });
   await fs.writeFile(srcPath, nextMd, 'utf8');
 
   if (!alreadyInTesting) {
     await fs.rename(srcPath, destPath);
   }
 
-  const assignmentMd = `# Assignment — ${ticketNumStr}-${slug}\n\nAssigned: ${testerSafe}\n\n## Ticket\n${path.relative(teamDir, destPath)}\n\n## Notes\n- Created by: openclaw recipes handoff\n`;
-
-  const assignmentExists = await fileExists(assignmentPath);
-  if (assignmentExists && !opts.overwriteAssignment) {
-    // createOnly: leave as-is
-  } else {
-    await fs.writeFile(assignmentPath, assignmentMd, 'utf8');
-  }
-
-  return { srcPath, destPath, moved: !alreadyInTesting, assignmentPath };
+  // Assignment stubs are deprecated; do not create/update work/assignments/*.md.
+  return { srcPath, destPath, moved: !alreadyInTesting };
 }
