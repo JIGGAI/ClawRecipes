@@ -288,6 +288,93 @@ templates:
     - Handouts/FAQs → work/patient-education/
     - After-visit summaries → work/patient-education/after-visit/
 
+
+  # Auto-added blanks to ensure every role can scaffold every declared file.
+  lead.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  lead.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  intake.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  intake.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  intake.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  scheduler.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  scheduler.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  scheduler.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  billing.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  billing.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  billing.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  compliance.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  compliance.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  compliance.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  educator.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  educator.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  educator.notes: |
+    # NOTES.md
+    
+    - (empty)
+
 files:
   - path: SOUL.md
     template: soul

@@ -288,6 +288,93 @@ templates:
     - Research briefs → outbox/research/
     - Metrics definitions/dashboards notes → shared-context/metrics/
 
+
+  # Auto-added blanks to ensure every role can scaffold every declared file.
+  lead.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  lead.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  ops.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  ops.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  ops.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  sales.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  sales.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  sales.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  marketing.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  marketing.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  marketing.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  finance.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  finance.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  finance.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  analyst.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  analyst.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  analyst.notes: |
+    # NOTES.md
+    
+    - (empty)
+
 files:
   - path: SOUL.md
     template: soul

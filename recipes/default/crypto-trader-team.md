@@ -288,6 +288,93 @@ templates:
     - Daily journal → work/journal/daily/
     - Post-mortems → work/journal/post-mortems/
 
+
+  # Auto-added blanks to ensure every role can scaffold every declared file.
+  lead.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  lead.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  onchain.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  onchain.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  onchain.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  news.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  news.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  news.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  risk.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  risk.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  risk.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  ops.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  ops.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  ops.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  journal.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  journal.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  journal.notes: |
+    # NOTES.md
+    
+    - (empty)
+
 files:
   - path: SOUL.md
     template: soul

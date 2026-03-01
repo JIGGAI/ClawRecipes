@@ -290,6 +290,93 @@ templates:
     - Templates/playbooks → shared-context/playbooks/
 
 
+
+  # Auto-added blanks to ensure every role can scaffold every declared file.
+  lead.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  lead.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  intake.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  intake.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  intake.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  researcher.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  researcher.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  researcher.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  drafter.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  drafter.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  drafter.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  compliance.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  compliance.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  compliance.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  ops.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  ops.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  ops.notes: |
+    # NOTES.md
+    
+    - (empty)
+
 files:
   - path: SOUL.md
     template: soul

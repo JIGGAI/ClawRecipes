@@ -288,6 +288,93 @@ templates:
     - Vendor/quote comparisons → outbox/procurement/
     - Long-lead tracker → work/project/long-lead.md
 
+
+  # Auto-added blanks to ensure every role can scaffold every declared file.
+  lead.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  lead.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  pm.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  pm.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  pm.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  estimator.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  estimator.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  estimator.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  scheduler.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  scheduler.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  scheduler.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  safety.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  safety.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  safety.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  procurement.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  procurement.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  procurement.notes: |
+    # NOTES.md
+    
+    - (empty)
+
 files:
   - path: SOUL.md
     template: soul

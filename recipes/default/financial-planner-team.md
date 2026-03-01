@@ -288,6 +288,93 @@ templates:
     - Document request lists → outbox/ops/
     - Follow-up trackers → notes/status.md updates
 
+
+  # Auto-added blanks to ensure every role can scaffold every declared file.
+  lead.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  lead.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  advisor.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  advisor.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  advisor.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  analyst.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  analyst.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  analyst.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  tax.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  tax.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  tax.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  insurance.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  insurance.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  insurance.notes: |
+    # NOTES.md
+    
+    - (empty)
+
+  ops.tools: |
+    # TOOLS.md
+    
+    - (empty)
+
+  ops.status: |
+    # STATUS.md
+    
+    - (empty)
+
+  ops.notes: |
+    # NOTES.md
+    
+    - (empty)
+
 files:
   - path: SOUL.md
     template: soul
