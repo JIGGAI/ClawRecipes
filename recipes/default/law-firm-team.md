@@ -292,6 +292,8 @@ templates:
 
 
   # Auto-added blanks to ensure every role can scaffold every declared file.
+
+  # --- role: lead ---
   lead.status: |
     # STATUS.md
     
@@ -302,6 +304,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: intake ---
   intake.tools: |
     # TOOLS.md
     
@@ -317,6 +321,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: researcher ---
   researcher.tools: |
     # TOOLS.md
     
@@ -332,6 +338,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: drafter ---
   drafter.tools: |
     # TOOLS.md
     
@@ -347,6 +355,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: compliance ---
   compliance.tools: |
     # TOOLS.md
     
@@ -362,6 +372,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: ops ---
   ops.tools: |
     # TOOLS.md
     
@@ -376,6 +388,7 @@ templates:
     # NOTES.md
     
     - (empty)
+
 
 files:
   - path: SOUL.md

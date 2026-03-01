@@ -1957,16 +1957,22 @@ templates:
 
 
   # Auto-added blanks to ensure every role can scaffold every declared file.
+
+  # --- role: lead ---
   lead.tickets: |
     # TICKETS.md
     
     
 
+
+  # --- role: seo ---
   seo.tickets: |
     # TICKETS.md
     
     
 
+
+  # --- role: copywriter ---
   copywriter.agents: |
     # AGENTS.md
     
@@ -1977,50 +1983,69 @@ templates:
     
     
 
+
+  # --- role: ads ---
   ads.tickets: |
     # TICKETS.md
     
     
 
+
+  # --- role: social ---
   social.tickets: |
     # TICKETS.md
     
     
 
+
+  # --- role: designer ---
   designer.tickets: |
     # TICKETS.md
     
     
 
+
+  # --- role: analyst ---
   analyst.tickets: |
     # TICKETS.md
     
     
 
+
+  # --- role: video ---
   video.tickets: |
     # TICKETS.md
     
     
 
+
+  # --- role: compliance ---
   compliance.tickets: |
     # TICKETS.md
     
     
 
+
+  # --- role: offer ---
   offer.tickets: |
     # TICKETS.md
     
     
 
+
+  # --- role: funnel ---
   funnel.tickets: |
     # TICKETS.md
     
     
 
+
+  # --- role: lifecycle ---
   lifecycle.tickets: |
     # TICKETS.md
     
     
+
 
 files:
   - path: SOUL.md

@@ -290,6 +290,8 @@ templates:
 
 
   # Auto-added blanks to ensure every role can scaffold every declared file.
+
+  # --- role: lead ---
   lead.status: |
     # STATUS.md
     
@@ -300,6 +302,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: intake ---
   intake.tools: |
     # TOOLS.md
     
@@ -315,6 +319,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: scheduler ---
   scheduler.tools: |
     # TOOLS.md
     
@@ -330,6 +336,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: billing ---
   billing.tools: |
     # TOOLS.md
     
@@ -345,6 +353,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: compliance ---
   compliance.tools: |
     # TOOLS.md
     
@@ -360,6 +370,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: educator ---
   educator.tools: |
     # TOOLS.md
     
@@ -374,6 +386,7 @@ templates:
     # NOTES.md
     
     - (empty)
+
 
 files:
   - path: SOUL.md

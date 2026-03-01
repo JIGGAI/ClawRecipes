@@ -290,6 +290,8 @@ templates:
 
 
   # Auto-added blanks to ensure every role can scaffold every declared file.
+
+  # --- role: lead ---
   lead.status: |
     # STATUS.md
     
@@ -300,6 +302,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: onchain ---
   onchain.tools: |
     # TOOLS.md
     
@@ -315,6 +319,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: news ---
   news.tools: |
     # TOOLS.md
     
@@ -330,6 +336,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: risk ---
   risk.tools: |
     # TOOLS.md
     
@@ -345,6 +353,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: ops ---
   ops.tools: |
     # TOOLS.md
     
@@ -360,6 +370,8 @@ templates:
     
     - (empty)
 
+
+  # --- role: journal ---
   journal.tools: |
     # TOOLS.md
     
@@ -374,6 +386,7 @@ templates:
     # NOTES.md
     
     - (empty)
+
 
 files:
   - path: SOUL.md
