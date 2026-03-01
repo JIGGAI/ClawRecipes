@@ -9,14 +9,14 @@ cronJobs:
     name: "Lead triage loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md. Anti-stuck: if lowest in-progress is HARD BLOCKED, advance the next unblocked ticket (or pull from backlog). If in-progress is stale (>12h no dated update), comment or move it back. Guardrail: run ./scripts/ticket-hygiene.sh each loop; if it fails, fix assignment stubs before proceeding."
+    message: "Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md. Anti-stuck: if lowest in-progress is HARD BLOCKED, advance the next unblocked ticket (or pull from backlog). If in-progress is stale (>12h no dated update), comment or move it back. Guardrail: run ./scripts/ticket-hygiene.sh each loop; if it fails, fix lane/status/owner mismatches before proceeding (assignment stubs are deprecated)."
     enabledByDefault: true
 
   - id: execution-loop
     name: "Execution loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md. Guardrail: run ./scripts/ticket-hygiene-dev.sh each loop; if it fails, fix stubs/ownership/stage issues before proceeding."
+    message: "Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md. Guardrail: run ./scripts/ticket-hygiene-dev.sh each loop; if it fails, fix lane/status/owner mismatches before proceeding (assignment stubs are deprecated)."
     enabledByDefault: false
 
   - id: pr-watcher
@@ -70,82 +70,111 @@ agents:
       deny: []
 
 templates:
+  sharedContext.ticketFlow: |
+    {
+      "laneByOwner": {
+        "lead": "backlog",
+        "dev": "in-progress",
+        "devops": "in-progress",
+        "test": "testing",
+        "qa": "testing"
+      },
+      "defaultLane": "in-progress"
+    }
+
   lead.ticketHygiene: |
     #!/usr/bin/env bash
     set -euo pipefail
 
     # ticket-hygiene.sh
-    # Guardrail script used by lead triage cron.
-    # Assignment stubs are deprecated; this script currently returns OK.
+    # Guardrail script used by lead triage + execution loops.
+    # Assignment stubs are deprecated.
+    #
+    # Checks (ACTIVE lanes only):
+    # - Ticket file location (lane) must match Status:
+    # - Ticket Owner should be in the expected lane per shared-context/ticket-flow.json (best-effort)
+    #
+    # Notes:
+    # - We intentionally do NOT enforce mapping for work/done/ because historical tickets may have old Owner/Status.
 
     cd "$(dirname "$0")/.."
 
-    stages=(backlog in-progress testing done)
-
     fail=0
+    flow="shared-context/ticket-flow.json"
 
-    # (assignment stubs removed)
-    echo "OK"
-    exit 0
+    lane_from_rel() {
+      # expects work/<lane>/<file>.md
+      echo "$1" | sed -E 's#^work/([^/]+)/.*$##'
+    }
 
-    # legacy (dead code): for f in work/assignments/*-assigned-*.md; do
-      [[ -f "$f" ]] || continue
+    field_from_md() {
+      local file="$1"
+      local key="$2"
+      # Extract first matching header line like: Key: value
+      local line
+      line="$(grep -m1 -E "^${key}:[[:space:]]*" "$file" 2>/dev/null || true)"
+      echo "${line#${key}:}" | sed -E 's/^\s+//'
+    }
 
-      bn="$(basename "$f")"
-      num="${bn%%-*}"
-      if [[ ! "$num" =~ ^[0-9]{4}$ ]]; then
-        continue
+    expected_lane_for_owner() {
+      local owner="$1"
+      local currentLane="$2"
+
+      # If jq or the mapping file isn't available, do not block progress.
+      if [[ ! -f "$flow" ]]; then
+        echo "$currentLane"
+        return 0
+      fi
+      if ! command -v jq >/dev/null 2>&1; then
+        echo "$currentLane"
+        return 0
       fi
 
-      canonical=""
+      local out
+      out="$(jq -r --arg o "$owner" '.laneByOwner[$o] // .defaultLane // empty' "$flow" 2>/dev/null || true)"
+      if [[ -n "$out" ]]; then
+        echo "$out"
+      else
+        echo "$currentLane"
+      fi
+    }
 
-      if [[ "$bn" == *"pr-body"* ]]; then
-        for stage in "${stages[@]}"; do
-          cand="work/$stage/${num}-pr-body.md"
-          if [[ -f "$cand" ]]; then
-            canonical="$cand"
-            break
-          fi
-        done
+    check_ticket() {
+      local file="$1"
+      local rel="$file"
+      rel="${rel#./}"
+
+      local lane
+      lane="$(lane_from_rel "$rel")"
+
+      # Ignore done lane for owner/status enforcement.
+      if [[ "$lane" == "done" ]]; then
+        return 0
       fi
 
-      if [[ -z "$canonical" ]]; then
-        for stage in "${stages[@]}"; do
-          match=( work/"$stage"/"$num"-*.md )
-          if [[ -e "${match[0]}" ]]; then
-            canonical="${match[0]}"
-            break
-          fi
-        done
-      fi
+      local owner status
+      owner="$(field_from_md "$file" "Owner")"
+      status="$(field_from_md "$file" "Status")"
 
-      if [[ -z "$canonical" ]]; then
-        echo "[FAIL] $f: no ticket file found for $num in work/{backlog,in-progress,testing,done}/" >&2
+      if [[ -n "$status" && "$status" != "$lane" ]]; then
+        echo "[FAIL] $rel: Status mismatch (has: $status, lane: $lane)" >&2
         fail=1
-        continue
       fi
 
-      ticket_line="$(awk 'BEGIN{flag=0} /^## Ticket$/{flag=1; next} /^## /{if(flag){exit}} {if(flag && $0!=""){print; exit}}' "$f" | tr -d '\r')"
-      if [[ -z "$ticket_line" ]]; then
-        echo "[FAIL] $f: missing Ticket path (expected: $canonical)" >&2
-        fail=1
-        continue
+      if [[ -n "$owner" ]]; then
+        local expected
+        expected="$(expected_lane_for_owner "$owner" "$lane")"
+        if [[ -n "$expected" && "$expected" != "$lane" ]]; then
+          echo "[FAIL] $rel: Owner '$owner' expects lane '$expected' per $flow (currently in '$lane')" >&2
+          fail=1
+        fi
       fi
+    }
 
-      if [[ "$ticket_line" != "$canonical" ]]; then
-        echo "[FAIL] $f: Ticket path mismatch" >&2
-        echo "  has: $ticket_line" >&2
-        echo "  want: $canonical" >&2
-        fail=1
-        continue
-      fi
-
-      if [[ ! -f "$ticket_line" ]]; then
-        echo "[FAIL] $f: Ticket path does not exist on disk: $ticket_line" >&2
-        fail=1
-        continue
-      fi
-
+    shopt -s nullglob
+    for file in work/backlog/*.md work/in-progress/*.md work/testing/*.md work/done/*.md; do
+      [[ -f "$file" ]] || continue
+      check_ticket "$file"
     done
 
     if [[ "$fail" -ne 0 ]]; then
@@ -190,77 +219,94 @@ templates:
     set -euo pipefail
 
     # ticket-hygiene.sh
-    # Guardrail script used by lead triage cron.
-    # Assignment stubs are deprecated; this script currently returns OK.
+    # Guardrail script used by lead triage + execution loops.
+    # Assignment stubs are deprecated.
+    #
+    # Checks (ACTIVE lanes only):
+    # - Ticket file location (lane) must match Status:
+    # - Ticket Owner should be in the expected lane per shared-context/ticket-flow.json (best-effort)
+    #
+    # Notes:
+    # - We intentionally do NOT enforce mapping for work/done/ because historical tickets may have old Owner/Status.
 
     cd "$(dirname "$0")/.."
 
-    stages=(backlog in-progress testing done)
-
     fail=0
+    flow="shared-context/ticket-flow.json"
 
-    # (assignment stubs removed)
-    echo "OK"
-    exit 0
+    lane_from_rel() {
+      # expects work/<lane>/<file>.md
+      echo "$1" | sed -E 's#^work/([^/]+)/.*$##'
+    }
 
-    # legacy (dead code): for f in work/assignments/*-assigned-*.md; do
-      [[ -f "$f" ]] || continue
+    field_from_md() {
+      local file="$1"
+      local key="$2"
+      # Extract first matching header line like: Key: value
+      local line
+      line="$(grep -m1 -E "^${key}:[[:space:]]*" "$file" 2>/dev/null || true)"
+      echo "${line#${key}:}" | sed -E 's/^\s+//'
+    }
 
-      bn="$(basename "$f")"
-      num="${bn%%-*}"
-      if [[ ! "$num" =~ ^[0-9]{4}$ ]]; then
-        continue
+    expected_lane_for_owner() {
+      local owner="$1"
+      local currentLane="$2"
+
+      # If jq or the mapping file isn't available, do not block progress.
+      if [[ ! -f "$flow" ]]; then
+        echo "$currentLane"
+        return 0
+      fi
+      if ! command -v jq >/dev/null 2>&1; then
+        echo "$currentLane"
+        return 0
       fi
 
-      canonical=""
+      local out
+      out="$(jq -r --arg o "$owner" '.laneByOwner[$o] // .defaultLane // empty' "$flow" 2>/dev/null || true)"
+      if [[ -n "$out" ]]; then
+        echo "$out"
+      else
+        echo "$currentLane"
+      fi
+    }
 
-      if [[ "$bn" == *"pr-body"* ]]; then
-        for stage in "${stages[@]}"; do
-          cand="work/$stage/${num}-pr-body.md"
-          if [[ -f "$cand" ]]; then
-            canonical="$cand"
-            break
-          fi
-        done
+    check_ticket() {
+      local file="$1"
+      local rel="$file"
+      rel="${rel#./}"
+
+      local lane
+      lane="$(lane_from_rel "$rel")"
+
+      # Ignore done lane for owner/status enforcement.
+      if [[ "$lane" == "done" ]]; then
+        return 0
       fi
 
-      if [[ -z "$canonical" ]]; then
-        for stage in "${stages[@]}"; do
-          match=( work/"$stage"/"$num"-*.md )
-          if [[ -e "${match[0]}" ]]; then
-            canonical="${match[0]}"
-            break
-          fi
-        done
-      fi
+      local owner status
+      owner="$(field_from_md "$file" "Owner")"
+      status="$(field_from_md "$file" "Status")"
 
-      if [[ -z "$canonical" ]]; then
-        echo "[FAIL] $f: no ticket file found for $num in work/{backlog,in-progress,testing,done}/" >&2
+      if [[ -n "$status" && "$status" != "$lane" ]]; then
+        echo "[FAIL] $rel: Status mismatch (has: $status, lane: $lane)" >&2
         fail=1
-        continue
       fi
 
-      ticket_line="$(awk 'BEGIN{flag=0} /^## Ticket$/{flag=1; next} /^## /{if(flag){exit}} {if(flag && $0!=""){print; exit}}' "$f" | tr -d '\r')"
-      if [[ -z "$ticket_line" ]]; then
-        echo "[FAIL] $f: missing Ticket path (expected: $canonical)" >&2
-        fail=1
-        continue
+      if [[ -n "$owner" ]]; then
+        local expected
+        expected="$(expected_lane_for_owner "$owner" "$lane")"
+        if [[ -n "$expected" && "$expected" != "$lane" ]]; then
+          echo "[FAIL] $rel: Owner '$owner' expects lane '$expected' per $flow (currently in '$lane')" >&2
+          fail=1
+        fi
       fi
+    }
 
-      if [[ "$ticket_line" != "$canonical" ]]; then
-        echo "[FAIL] $f: Ticket path mismatch" >&2
-        echo "  has: $ticket_line" >&2
-        echo "  want: $canonical" >&2
-        fail=1
-        continue
-      fi
-
-      if [[ ! -f "$ticket_line" ]]; then
-        echo "[FAIL] $f: Ticket path does not exist on disk: $ticket_line" >&2
-        fail=1
-        continue
-      fi
-
+    shopt -s nullglob
+    for file in work/backlog/*.md work/in-progress/*.md work/testing/*.md work/done/*.md; do
+      [[ -f "$file" ]] || continue
+      check_ticket "$file"
     done
 
     if [[ "$fail" -ne 0 ]]; then
@@ -302,77 +348,94 @@ templates:
     set -euo pipefail
 
     # ticket-hygiene.sh
-    # Guardrail script used by lead triage cron.
-    # Assignment stubs are deprecated; this script currently returns OK.
+    # Guardrail script used by lead triage + execution loops.
+    # Assignment stubs are deprecated.
+    #
+    # Checks (ACTIVE lanes only):
+    # - Ticket file location (lane) must match Status:
+    # - Ticket Owner should be in the expected lane per shared-context/ticket-flow.json (best-effort)
+    #
+    # Notes:
+    # - We intentionally do NOT enforce mapping for work/done/ because historical tickets may have old Owner/Status.
 
     cd "$(dirname "$0")/.."
 
-    stages=(backlog in-progress testing done)
-
     fail=0
+    flow="shared-context/ticket-flow.json"
 
-    # (assignment stubs removed)
-    echo "OK"
-    exit 0
+    lane_from_rel() {
+      # expects work/<lane>/<file>.md
+      echo "$1" | sed -E 's#^work/([^/]+)/.*$##'
+    }
 
-    # legacy (dead code): for f in work/assignments/*-assigned-*.md; do
-      [[ -f "$f" ]] || continue
+    field_from_md() {
+      local file="$1"
+      local key="$2"
+      # Extract first matching header line like: Key: value
+      local line
+      line="$(grep -m1 -E "^${key}:[[:space:]]*" "$file" 2>/dev/null || true)"
+      echo "${line#${key}:}" | sed -E 's/^\s+//'
+    }
 
-      bn="$(basename "$f")"
-      num="${bn%%-*}"
-      if [[ ! "$num" =~ ^[0-9]{4}$ ]]; then
-        continue
+    expected_lane_for_owner() {
+      local owner="$1"
+      local currentLane="$2"
+
+      # If jq or the mapping file isn't available, do not block progress.
+      if [[ ! -f "$flow" ]]; then
+        echo "$currentLane"
+        return 0
+      fi
+      if ! command -v jq >/dev/null 2>&1; then
+        echo "$currentLane"
+        return 0
       fi
 
-      canonical=""
+      local out
+      out="$(jq -r --arg o "$owner" '.laneByOwner[$o] // .defaultLane // empty' "$flow" 2>/dev/null || true)"
+      if [[ -n "$out" ]]; then
+        echo "$out"
+      else
+        echo "$currentLane"
+      fi
+    }
 
-      if [[ "$bn" == *"pr-body"* ]]; then
-        for stage in "${stages[@]}"; do
-          cand="work/$stage/${num}-pr-body.md"
-          if [[ -f "$cand" ]]; then
-            canonical="$cand"
-            break
-          fi
-        done
+    check_ticket() {
+      local file="$1"
+      local rel="$file"
+      rel="${rel#./}"
+
+      local lane
+      lane="$(lane_from_rel "$rel")"
+
+      # Ignore done lane for owner/status enforcement.
+      if [[ "$lane" == "done" ]]; then
+        return 0
       fi
 
-      if [[ -z "$canonical" ]]; then
-        for stage in "${stages[@]}"; do
-          match=( work/"$stage"/"$num"-*.md )
-          if [[ -e "${match[0]}" ]]; then
-            canonical="${match[0]}"
-            break
-          fi
-        done
-      fi
+      local owner status
+      owner="$(field_from_md "$file" "Owner")"
+      status="$(field_from_md "$file" "Status")"
 
-      if [[ -z "$canonical" ]]; then
-        echo "[FAIL] $f: no ticket file found for $num in work/{backlog,in-progress,testing,done}/" >&2
+      if [[ -n "$status" && "$status" != "$lane" ]]; then
+        echo "[FAIL] $rel: Status mismatch (has: $status, lane: $lane)" >&2
         fail=1
-        continue
       fi
 
-      ticket_line="$(awk 'BEGIN{flag=0} /^## Ticket$/{flag=1; next} /^## /{if(flag){exit}} {if(flag && $0!=""){print; exit}}' "$f" | tr -d '\r')"
-      if [[ -z "$ticket_line" ]]; then
-        echo "[FAIL] $f: missing Ticket path (expected: $canonical)" >&2
-        fail=1
-        continue
+      if [[ -n "$owner" ]]; then
+        local expected
+        expected="$(expected_lane_for_owner "$owner" "$lane")"
+        if [[ -n "$expected" && "$expected" != "$lane" ]]; then
+          echo "[FAIL] $rel: Owner '$owner' expects lane '$expected' per $flow (currently in '$lane')" >&2
+          fail=1
+        fi
       fi
+    }
 
-      if [[ "$ticket_line" != "$canonical" ]]; then
-        echo "[FAIL] $f: Ticket path mismatch" >&2
-        echo "  has: $ticket_line" >&2
-        echo "  want: $canonical" >&2
-        fail=1
-        continue
-      fi
-
-      if [[ ! -f "$ticket_line" ]]; then
-        echo "[FAIL] $f: Ticket path does not exist on disk: $ticket_line" >&2
-        fail=1
-        continue
-      fi
-
+    shopt -s nullglob
+    for file in work/backlog/*.md work/in-progress/*.md work/testing/*.md work/done/*.md; do
+      [[ -f "$file" ]] || continue
+      check_ticket "$file"
     done
 
     if [[ "$fail" -ne 0 ]]; then
@@ -414,77 +477,94 @@ templates:
     set -euo pipefail
 
     # ticket-hygiene.sh
-    # Guardrail script used by lead triage cron.
-    # Assignment stubs are deprecated; this script currently returns OK.
+    # Guardrail script used by lead triage + execution loops.
+    # Assignment stubs are deprecated.
+    #
+    # Checks (ACTIVE lanes only):
+    # - Ticket file location (lane) must match Status:
+    # - Ticket Owner should be in the expected lane per shared-context/ticket-flow.json (best-effort)
+    #
+    # Notes:
+    # - We intentionally do NOT enforce mapping for work/done/ because historical tickets may have old Owner/Status.
 
     cd "$(dirname "$0")/.."
 
-    stages=(backlog in-progress testing done)
-
     fail=0
+    flow="shared-context/ticket-flow.json"
 
-    # (assignment stubs removed)
-    echo "OK"
-    exit 0
+    lane_from_rel() {
+      # expects work/<lane>/<file>.md
+      echo "$1" | sed -E 's#^work/([^/]+)/.*$##'
+    }
 
-    # legacy (dead code): for f in work/assignments/*-assigned-*.md; do
-      [[ -f "$f" ]] || continue
+    field_from_md() {
+      local file="$1"
+      local key="$2"
+      # Extract first matching header line like: Key: value
+      local line
+      line="$(grep -m1 -E "^${key}:[[:space:]]*" "$file" 2>/dev/null || true)"
+      echo "${line#${key}:}" | sed -E 's/^\s+//'
+    }
 
-      bn="$(basename "$f")"
-      num="${bn%%-*}"
-      if [[ ! "$num" =~ ^[0-9]{4}$ ]]; then
-        continue
+    expected_lane_for_owner() {
+      local owner="$1"
+      local currentLane="$2"
+
+      # If jq or the mapping file isn't available, do not block progress.
+      if [[ ! -f "$flow" ]]; then
+        echo "$currentLane"
+        return 0
+      fi
+      if ! command -v jq >/dev/null 2>&1; then
+        echo "$currentLane"
+        return 0
       fi
 
-      canonical=""
+      local out
+      out="$(jq -r --arg o "$owner" '.laneByOwner[$o] // .defaultLane // empty' "$flow" 2>/dev/null || true)"
+      if [[ -n "$out" ]]; then
+        echo "$out"
+      else
+        echo "$currentLane"
+      fi
+    }
 
-      if [[ "$bn" == *"pr-body"* ]]; then
-        for stage in "${stages[@]}"; do
-          cand="work/$stage/${num}-pr-body.md"
-          if [[ -f "$cand" ]]; then
-            canonical="$cand"
-            break
-          fi
-        done
+    check_ticket() {
+      local file="$1"
+      local rel="$file"
+      rel="${rel#./}"
+
+      local lane
+      lane="$(lane_from_rel "$rel")"
+
+      # Ignore done lane for owner/status enforcement.
+      if [[ "$lane" == "done" ]]; then
+        return 0
       fi
 
-      if [[ -z "$canonical" ]]; then
-        for stage in "${stages[@]}"; do
-          match=( work/"$stage"/"$num"-*.md )
-          if [[ -e "${match[0]}" ]]; then
-            canonical="${match[0]}"
-            break
-          fi
-        done
-      fi
+      local owner status
+      owner="$(field_from_md "$file" "Owner")"
+      status="$(field_from_md "$file" "Status")"
 
-      if [[ -z "$canonical" ]]; then
-        echo "[FAIL] $f: no ticket file found for $num in work/{backlog,in-progress,testing,done}/" >&2
+      if [[ -n "$status" && "$status" != "$lane" ]]; then
+        echo "[FAIL] $rel: Status mismatch (has: $status, lane: $lane)" >&2
         fail=1
-        continue
       fi
 
-      ticket_line="$(awk 'BEGIN{flag=0} /^## Ticket$/{flag=1; next} /^## /{if(flag){exit}} {if(flag && $0!=""){print; exit}}' "$f" | tr -d '\r')"
-      if [[ -z "$ticket_line" ]]; then
-        echo "[FAIL] $f: missing Ticket path (expected: $canonical)" >&2
-        fail=1
-        continue
+      if [[ -n "$owner" ]]; then
+        local expected
+        expected="$(expected_lane_for_owner "$owner" "$lane")"
+        if [[ -n "$expected" && "$expected" != "$lane" ]]; then
+          echo "[FAIL] $rel: Owner '$owner' expects lane '$expected' per $flow (currently in '$lane')" >&2
+          fail=1
+        fi
       fi
+    }
 
-      if [[ "$ticket_line" != "$canonical" ]]; then
-        echo "[FAIL] $f: Ticket path mismatch" >&2
-        echo "  has: $ticket_line" >&2
-        echo "  want: $canonical" >&2
-        fail=1
-        continue
-      fi
-
-      if [[ ! -f "$ticket_line" ]]; then
-        echo "[FAIL] $f: Ticket path does not exist on disk: $ticket_line" >&2
-        fail=1
-        continue
-      fi
-
+    shopt -s nullglob
+    for file in work/backlog/*.md work/in-progress/*.md work/testing/*.md work/done/*.md; do
+      [[ -f "$file" ]] || continue
+      check_ticket "$file"
     done
 
     if [[ "$fail" -ne 0 ]]; then
@@ -847,6 +927,10 @@ files:
   - path: NOTES.md
     template: notes
     mode: createOnly
+  - path: shared-context/ticket-flow.json
+    template: sharedContext.ticketFlow
+    mode: createOnly
+
 
   # Automation / hygiene scripts
   # NOTE: portable policy: we do NOT chmod automatically. After scaffold:
