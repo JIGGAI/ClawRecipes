@@ -2,26 +2,39 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-
-vi.mock("openclaw/plugin-sdk", async () => {
-
-  return {
-    callGatewayLeastPrivilege: vi.fn(),
-  };
-}, { virtual: true });
-import { callGatewayLeastPrivilege } from "openclaw/plugin-sdk";
 import { reconcileRecipeCronJobs } from "../src/handlers/cron";
 import { cronKey } from "../src/lib/cron-utils";
 
+const runCommandWithTimeout = vi.fn();
 const api = {
   config: { gateway: { port: 18789, auth: { token: "secret" } }, agents: { defaults: { workspace: "/x" } } },
+  runtime: { system: { runCommandWithTimeout } },
 } as any;
 
+function makeCmdResult(stdout: unknown, code = 0, stderr = "") {
+  return {
+    code,
+    stdout: typeof stdout === "string" ? stdout : JSON.stringify(stdout),
+    stderr,
+  };
+}
+
+function setupCronCliMock(impl: (argv: string[]) => { code: number; stdout: string; stderr: string }) {
+  runCommandWithTimeout.mockImplementation(async (argv: string[]) => impl(argv));
+}
 
 describe("cron handler", () => {
   let stateDir: string;
 
   beforeEach(async () => {
+    runCommandWithTimeout.mockReset();
+    setupCronCliMock((argv) => {
+      const cmd = argv.slice(0, 3).join(" ");
+      if (cmd === "openclaw cron list") return makeCmdResult({ jobs: [] });
+      if (cmd === "openclaw cron add") return makeCmdResult({ id: "cron-new-default" });
+      if (cmd === "openclaw cron edit") return makeCmdResult({ ok: true });
+      return makeCmdResult({}, 1, `unexpected argv: ${argv.join(" ")}`);
+    });
     stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "cron-handler-"));
   });
 
@@ -32,8 +45,13 @@ describe("cron handler", () => {
 
   describe("reconcileRecipeCronJobs", () => {
     test("cron-installation-on creates new job when none exist", async () => {
-      (callGatewayLeastPrivilege as any).mockResolvedValueOnce({ id: "cron-new-1" });
-      const recipe = {
+      setupCronCliMock((argv) => {
+        const cmd = argv.slice(0, 3).join(" ");
+        if (cmd === "openclaw cron list") return makeCmdResult({ jobs: [] });
+        if (cmd === "openclaw cron add") return makeCmdResult({ id: "cron-new-1" });
+        return makeCmdResult({}, 1, `unexpected argv: ${argv.join(" ")}`);
+      });
+            const recipe = {
         id: "test",
         kind: "agent" as const,
         cronJobs: [{ id: "j1", schedule: "0 9 * * *", message: "run" }],
@@ -76,6 +94,12 @@ describe("cron handler", () => {
     });
 
     test("updates existing job when spec changes", async () => {
+      setupCronCliMock((argv) => {
+        const cmd = argv.slice(0, 3).join(" ");
+        if (cmd === "openclaw cron list") return makeCmdResult({ jobs: [{ id: "cron-existing", enabled: true }] });
+        if (cmd === "openclaw cron edit") return makeCmdResult({ ok: true });
+        return makeCmdResult({}, 1, `unexpected argv: ${argv.join(" ")}`);
+      });
       const statePath = path.join(stateDir, "notes", "cron-jobs.json");
       await fs.mkdir(path.dirname(statePath), { recursive: true });
       const key = cronKey({ kind: "agent", agentId: "a", recipeId: "test" }, "j1");
@@ -93,14 +117,6 @@ describe("cron handler", () => {
           },
         })
       );
-      let callCount = 0;
-      (callGatewayLeastPrivilege as any).mockImplementation(async () => {
-        callCount++;
-        if (callCount == 1) {
-          return { jobs: [{ id: "cron-existing", enabled: true }] };
-        }
-        return {};
-      });
       const result = await reconcileRecipeCronJobs({
         api,
         recipe: {
@@ -124,8 +140,7 @@ describe("cron handler", () => {
       const origTTY = process.stdin.isTTY;
       Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-      (callGatewayLeastPrivilege as any).mockResolvedValueOnce({ id: "cron-non-tty" });
-      try {
+            try {
         const result = await reconcileRecipeCronJobs({
           api,
           recipe: { id: "test", kind: "agent", cronJobs: [{ id: "j1", schedule: "0 9 * * *", message: "run" }] } as any,
@@ -135,7 +150,7 @@ describe("cron handler", () => {
         expect(result.ok).toBe(true);
         expect(result.changed).toBe(true);
         expect(result.results).toContainEqual(
-          expect.objectContaining({ action: "created", enabled: false, installedCronId: "cron-non-tty" })
+          expect.objectContaining({ action: "created", enabled: false, installedCronId: "cron-new-default" })
         );
         expect(errSpy).toHaveBeenCalledWith(
           "Non-interactive mode: cronInstallation=prompt; reconciling 1 cron job(s) as disabled (no prompt)."
@@ -151,8 +166,7 @@ describe("cron handler", () => {
       vi.spyOn(promptMod, "promptYesNo").mockResolvedValue(true);
       const origTTY = process.stdin.isTTY;
       Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
-      (callGatewayLeastPrivilege as any).mockResolvedValueOnce({ id: "cron-from-prompt" });
-      try {
+            try {
         const result = await reconcileRecipeCronJobs({
           api,
           recipe: { id: "test", kind: "agent", cronJobs: [{ id: "j1", schedule: "0 9 * * *", message: "run" }] } as any,
@@ -162,7 +176,7 @@ describe("cron handler", () => {
         expect(result.ok).toBe(true);
         expect(result.changed).toBe(true);
         expect(result.results).toContainEqual(
-          expect.objectContaining({ action: "created", installedCronId: "cron-from-prompt" })
+          expect.objectContaining({ action: "created", installedCronId: "cron-new-default" })
         );
       } finally {
         Object.defineProperty(process.stdin, "isTTY", { value: origTTY, configurable: true });
@@ -170,8 +184,7 @@ describe("cron handler", () => {
     });
 
     test("creates job with agentId, timezone, channel, to (delivery block)", async () => {
-      (callGatewayLeastPrivilege as any).mockResolvedValueOnce({ job: { id: "cron-delivery" } });
-      const recipe = {
+            const recipe = {
         id: "test",
         kind: "team" as const,
         cronJobs: [
@@ -194,11 +207,22 @@ describe("cron handler", () => {
       });
       expect(result.ok).toBe(true);
       expect(result.results).toContainEqual(
-        expect.objectContaining({ action: "created", installedCronId: "cron-delivery" })
+        expect.objectContaining({ action: "created", installedCronId: "cron-new-default" })
       );
     });
 
     test("disables orphaned job when recipe removes it", async () => {
+      setupCronCliMock((argv) => {
+        const cmd = argv.slice(0, 3).join(" ");
+        if (cmd === "openclaw cron list") {
+          return makeCmdResult({ jobs: [
+            { id: "cron-orphan", enabled: true },
+            { id: "cron-kept", enabled: true },
+          ] });
+        }
+        if (cmd === "openclaw cron edit") return makeCmdResult({ ok: true });
+        return makeCmdResult({}, 1, `unexpected argv: ${argv.join(" ")}`);
+      });
       const statePath = path.join(stateDir, "notes", "cron-jobs.json");
       await fs.mkdir(path.dirname(statePath), { recursive: true });
       const keyRemoved = cronKey({ kind: "agent", agentId: "a", recipeId: "test" }, "j-orphan");
@@ -223,19 +247,6 @@ describe("cron handler", () => {
           },
         })
       );
-      let callCount = 0;
-      (callGatewayLeastPrivilege as any).mockImplementation(async () => {
-        callCount++;
-        if (callCount === 1) {
-          return {
-            jobs: [
-              { id: "cron-orphan", enabled: true },
-              { id: "cron-kept", enabled: true },
-            ],
-          };
-        }
-        return {};
-      });
       const result = await reconcileRecipeCronJobs({
         api,
         recipe: {

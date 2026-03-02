@@ -143,99 +143,78 @@ async function disableOrphanedCronJobs(opts: {
   }
 }
 
-function isCronUnavailableError(err: unknown): boolean {
+async function cronList(api: OpenClawPluginApi) {
+  // Use the stable OpenClaw CLI (cron is managed by the Gateway subsystem).
+  // This avoids relying on a non-existent `cron` *tool*.
+  const result = await api.runtime.system.runCommandWithTimeout(["openclaw", "cron", "list", "--all", "--json"], {
+    timeoutMs: 30_000,
+  });
+  if (result.code !== 0) {
+    throw new Error(`openclaw cron list failed (code=${result.code}): ${result.stderr || result.stdout}`);
+  }
+  const parsed = JSON.parse(result.stdout || "{}") as { jobs?: OpenClawCronJob[] };
+  return { jobs: parsed.jobs ?? [] };
+}
+
+function isCronToolUnavailableError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  // Backward-compat: older builds routed cron through tools/invoke.
-  if (/Tool not available:\s*cron/i.test(msg)) return true;
-  // Some builds may not expose cron RPC methods.
-  if (/unknown method/i.test(msg) && /cron\./i.test(msg)) return true;
-  if (/method not found/i.test(msg) && /cron\./i.test(msg)) return true;
-  if (/cron/i.test(msg) && /not available/i.test(msg)) return true;
-  return false;
+  return /Tool not available:\s*cron/i.test(msg);
 }
 
 type CronAddResponse = { id?: string; job?: { id?: string } } | null;
 
-type GatewayCaller = <T = unknown>(opts: {
-  api: OpenClawPluginApi;
-  method: string;
-  params?: unknown;
-}) => Promise<T>;
-
-const gatewayCall: GatewayCaller = async ({ api, method, params }) => {
-  // Prefer the first-class SDK gateway caller when it's available in the runtime.
-  // In some builds `callGatewayLeastPrivilege` is not exported (or plugin-sdk isn't resolvable in unit tests),
-  // so we fall back to the stable CLI surface: `openclaw gateway call <method> --json --params <json>`.
-
-  try {
-    // NOTE: dynamic import keeps unit tests runnable (openclaw/plugin-sdk is provided by the OpenClaw runtime,
-    // not installed as an NPM dependency of this plugin repo).
-    const mod = (await import("openclaw/plugin-sdk")) as unknown as {
-      callGatewayLeastPrivilege?: <T = unknown>(opts: {
-        config: unknown;
-        method: string;
-        params?: unknown;
-        timeoutMs?: number;
-      }) => Promise<T>;
-    };
-
-    if (typeof mod.callGatewayLeastPrivilege === "function") {
-      return await mod.callGatewayLeastPrivilege({
-        config: api.config,
-        method,
-        params,
-        timeoutMs: 30_000,
-      });
-    }
-  } catch {
-    // ignore and fall through to CLI fallback
-  }
-
-  const runner = (api as unknown as any)?.runtime?.system?.runCommandWithTimeout;
-  if (typeof runner !== "function") {
-    throw new Error(`Cron gateway call fallback unavailable (missing api.runtime.system.runCommandWithTimeout) for method ${method}`);
-  }
-
-  const cmd = [
-    "openclaw",
-    "gateway",
-    "call",
-    method,
-    "--json",
-    "--timeout",
-    String(30_000),
-    "--params",
-    JSON.stringify((params ?? {}) as unknown),
-  ];
-
-  const res = await runner({
-    command: cmd,
-    timeoutMs: 35_000,
-  });
-
-  const stdout = String(res?.stdout ?? "").trim();
-  if (!stdout) return null as any;
-
-  try {
-    return JSON.parse(stdout);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`Failed to parse gateway CLI JSON for ${method}: ${msg}\nstdout=${stdout}`);
-  }
-};
-
-async function cronList(api: OpenClawPluginApi) {
-  const result = await gatewayCall<{ jobs?: OpenClawCronJob[] }>({ api, method: "cron.list", params: { includeDisabled: true } });
-  return { jobs: result?.jobs ?? [] };
-}
-
 async function cronAdd(api: OpenClawPluginApi, job: Record<string, unknown>): Promise<CronAddResponse> {
-  // cron.add returns { id } in some builds; { job: { id } } in others.
-  return await gatewayCall<CronAddResponse>({ api, method: "cron.add", params: job });
+  // Map internal job payload to CLI flags.
+  const argv: string[] = ["openclaw", "cron", "add", "--json"];
+  for (const [k, v] of Object.entries(job)) {
+    if (v === undefined || v === null || v === "") continue;
+    if (k === "name") argv.push("--name", String(v));
+    else if (k === "description") argv.push("--description", String(v));
+    else if (k === "cron") argv.push("--cron", String(v));
+    else if (k === "every") argv.push("--every", String(v));
+    else if (k === "at") argv.push("--at", String(v));
+    else if (k === "tz") argv.push("--tz", String(v));
+    else if (k === "agentId" || k === "agent") argv.push("--agent", String(v));
+    else if (k === "message") argv.push("--message", String(v));
+    else if (k === "systemEvent") argv.push("--system-event", String(v));
+    else if (k === "channel") argv.push("--channel", String(v));
+    else if (k === "to") argv.push("--to", String(v));
+    else if (k === "announce") {
+      if (v) argv.push("--announce");
+    } else if (k === "enabled") {
+      if (v === false) argv.push("--disabled");
+    }
+  }
+
+  const result = await api.runtime.system.runCommandWithTimeout(argv, { timeoutMs: 30_000 });
+  if (result.code !== 0) {
+    throw new Error(`openclaw cron add failed (code=${result.code}): ${result.stderr || result.stdout}`);
+  }
+  return (result.stdout ? (JSON.parse(result.stdout) as CronAddResponse) : null) ?? null;
 }
 
 async function cronUpdate(api: OpenClawPluginApi, jobId: string, patch: CronJobPatch) {
-  return await gatewayCall({ api, method: "cron.update", params: { id: jobId, patch } });
+  const argv: string[] = ["openclaw", "cron", "edit", jobId];
+
+  if (patch.name) argv.push("--name", String(patch.name));
+  if (patch.description) argv.push("--description", String(patch.description));
+  if (patch.cron) argv.push("--cron", String(patch.cron));
+  if (patch.every) argv.push("--every", String(patch.every));
+  if (patch.at) argv.push("--at", String(patch.at));
+  if (patch.tz) argv.push("--tz", String(patch.tz));
+  if (patch.agentId) argv.push("--agent", String(patch.agentId));
+  if (patch.sessionKey === null) argv.push("--clear-session-key");
+  if (patch.message) argv.push("--message", String(patch.message));
+  if (patch.systemEvent) argv.push("--system-event", String(patch.systemEvent));
+  if (patch.channel) argv.push("--channel", String(patch.channel));
+  if (patch.to) argv.push("--to", String(patch.to));
+  if (typeof patch.enabled === "boolean") argv.push(patch.enabled ? "--enable" : "--disable");
+
+  const result = await api.runtime.system.runCommandWithTimeout(argv, { timeoutMs: 30_000 });
+  if (result.code !== 0) {
+    throw new Error(`openclaw cron edit failed (code=${result.code}): ${result.stderr || result.stdout}`);
+  }
+  return result.stdout?.trim() ? JSON.parse(result.stdout) : null;
 }
 
 async function resolveCronUserOptIn(
@@ -419,14 +398,14 @@ export async function reconcileRecipeCronJobs(opts: {
   const state = await loadCronMappingState(statePath);
   const hasAnyInstalled = desired.some((j) => Boolean(state.entries[cronKey(opts.scope, j.id)]?.installedCronId));
 
-  // Cron is managed by the Gateway subsystem. Some OpenClaw builds may not expose the cron RPC methods.
+  // Cron is managed by the Gateway subsystem. Some OpenClaw builds do not expose it via toolsInvoke.
   // In that case, cron reconciliation must be best-effort and must NOT block scaffolds.
   let list: { jobs: OpenClawCronJob[] } = { jobs: [] };
   if (hasAnyInstalled) {
     try {
       list = await cronList(opts.api);
     } catch (err) {
-      if (isCronUnavailableError(err)) {
+      if (isCronToolUnavailableError(err)) {
         console.error('[recipes] note: cron tool unavailable; skipping cron reconciliation (scaffold will proceed).');
         return { ok: true as const, changed: false as const, note: "cron-tool-unavailable" as const, desiredCount: desired.length };
       }
@@ -460,7 +439,7 @@ export async function reconcileRecipeCronJobs(opts: {
   });
   await writeJsonFile(statePath, state);
   } catch (err) {
-    if (isCronUnavailableError(err)) {
+    if (isCronToolUnavailableError(err)) {
       console.error('[recipes] note: cron tool unavailable; skipping cron reconciliation (scaffold will proceed).');
       return { ok: true as const, changed: false as const, note: "cron-tool-unavailable" as const, desiredCount: desired.length };
     }
