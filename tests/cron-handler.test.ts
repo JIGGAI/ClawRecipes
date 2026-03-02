@@ -61,6 +61,33 @@ describe("cron handler", () => {
       expect(state.entries[cronKey({ kind: "agent", agentId: "a", recipeId: "test" }, "j1")]).toBeDefined();
     });
 
+    test("cron tool unavailable does not block scaffold (best-effort skip)", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              ok: false,
+              error: { message: "Tool not available: cron" },
+            }),
+        })
+      );
+      const recipe = {
+        id: "test",
+        kind: "agent" as const,
+        cronJobs: [{ id: "j1", schedule: "0 9 * * *", message: "run" }],
+      };
+      const result = await reconcileRecipeCronJobs({
+        api,
+        recipe: recipe as any,
+        scope: { kind: "agent", agentId: "a", recipeId: "test", stateDir },
+        cronInstallation: "on",
+      });
+      expect(result.ok).toBe(true);
+      expect((result as any).note).toBe("cron-tool-unavailable");
+    });
+
     test("cron-installation-prompt returns declined when promptYesNo returns false", async () => {
       const promptMod = await import("../src/lib/prompt");
       const promptSpy = vi.spyOn(promptMod, "promptYesNo").mockResolvedValue(false);

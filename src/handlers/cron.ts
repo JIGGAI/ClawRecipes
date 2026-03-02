@@ -359,46 +359,48 @@ export async function reconcileRecipeCronJobs(opts: {
 
   // Cron is managed by the Gateway subsystem. Some OpenClaw builds do not expose it via toolsInvoke.
   // In that case, cron reconciliation must be best-effort and must NOT block scaffolds.
-  let list: { jobs: OpenClawCronJob[] } = { jobs: [] };
-  if (hasAnyInstalled) {
-    try {
+  // IMPORTANT: tool availability errors can happen on list/add/update, so wrap the whole reconcile.
+  try {
+    let list: { jobs: OpenClawCronJob[] } = { jobs: [] };
+    if (hasAnyInstalled) {
       list = await cronList(opts.api);
-    } catch (err) {
-      if (isCronToolUnavailableError(err)) {
-        console.error('[recipes] note: cron tool unavailable; skipping cron reconciliation (scaffold will proceed).');
-        return { ok: true as const, changed: false as const, note: "cron-tool-unavailable" as const, desiredCount: desired.length };
-      }
-      throw err;
     }
+
+    const byId = new Map((list?.jobs ?? []).map((j) => [j.id, j] as const));
+    const now = Date.now();
+    const desiredIds = new Set(desired.map((j) => j.id));
+    const results: CronReconcileResult[] = [];
+
+    await reconcileDesiredCronJobs({
+      ...opts,
+      desired,
+      userOptIn: optIn.userOptIn,
+      enableInstalled: optIn.enableInstalled,
+      state,
+      byId,
+      now,
+      results,
+    });
+    await disableOrphanedCronJobs({
+      api: opts.api,
+      state,
+      byId,
+      recipeId: opts.scope.recipeId,
+      desiredIds,
+      now,
+      results,
+    });
+    await writeJsonFile(statePath, state);
+
+    const changed = results.some(
+      (r) => r.action === "created" || r.action === "updated" || r.action?.startsWith("disabled")
+    );
+    return { ok: true, changed, results };
+  } catch (err) {
+    if (isCronToolUnavailableError(err)) {
+      console.error('[recipes] note: cron tool unavailable; skipping cron reconciliation (scaffold will proceed).');
+      return { ok: true as const, changed: false as const, note: "cron-tool-unavailable" as const, desiredCount: desired.length };
+    }
+    throw err;
   }
-  const byId = new Map((list?.jobs ?? []).map((j) => [j.id, j] as const));
-  const now = Date.now();
-  const desiredIds = new Set(desired.map((j) => j.id));
-  const results: CronReconcileResult[] = [];
-
-  await reconcileDesiredCronJobs({
-    ...opts,
-    desired,
-    userOptIn: optIn.userOptIn,
-    enableInstalled: optIn.enableInstalled,
-    state,
-    byId,
-    now,
-    results,
-  });
-  await disableOrphanedCronJobs({
-    api: opts.api,
-    state,
-    byId,
-    recipeId: opts.scope.recipeId,
-    desiredIds,
-    now,
-    results,
-  });
-  await writeJsonFile(statePath, state);
-
-  const changed = results.some(
-    (r) => r.action === "created" || r.action === "updated" || r.action?.startsWith("disabled")
-  );
-  return { ok: true, changed, results };
 }
