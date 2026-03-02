@@ -166,13 +166,26 @@ type CronAddResponse = { id?: string; job?: { id?: string } } | null;
 async function cronAdd(api: OpenClawPluginApi, job: Record<string, unknown>): Promise<CronAddResponse> {
   const argv: string[] = ["openclaw", "cron", "add", "--json"];
 
+  type CronAddJob = {
+    name?: string;
+    description?: string;
+    enabled?: boolean;
+    agentId?: string | null;
+    sessionTarget?: "main" | "isolated";
+    schedule?: { kind: "cron"; expr: string; tz?: string } | { kind: "every"; every: string } | { kind: "at"; at: string };
+    payload?: { kind: "agentTurn"; message: string } | { kind: "systemEvent"; text: string };
+    delivery?: { mode: "announce"; channel?: string; to?: string; bestEffort?: boolean };
+  };
+
+  const j = job as unknown as CronAddJob;
+
   // name/description
-  if (typeof (job as any).name === "string" && (job as any).name.trim()) argv.push("--name", (job as any).name.trim());
-  if (typeof (job as any).description === "string" && (job as any).description.trim())
-    argv.push("--description", (job as any).description.trim());
+  if (typeof j.name === "string" && j.name.trim()) argv.push("--name", j.name.trim());
+  if (typeof j.description === "string" && j.description.trim())
+    argv.push("--description", j.description.trim());
 
   // schedule: require exactly one of --cron/--every/--at
-  const schedule = (job as { schedule?: any }).schedule;
+  const schedule = j.schedule;
   if (schedule && typeof schedule === "object") {
     const kind = String(schedule.kind ?? "");
     if (kind === "cron") {
@@ -186,16 +199,16 @@ async function cronAdd(api: OpenClawPluginApi, job: Record<string, unknown>): Pr
   }
 
   // enabled
-  if ((job as any).enabled === false) argv.push("--disabled");
+  if (j.enabled === false) argv.push("--disabled");
 
   // agentId + sessionTarget
-  if (typeof (job as any).agentId === "string" && (job as any).agentId.trim())
-    argv.push("--agent", String((job as any).agentId).trim());
-  const sessionTarget = (job as any).sessionTarget;
+  if (typeof j.agentId === "string" && j.agentId.trim())
+    argv.push("--agent", String(j.agentId).trim());
+  const sessionTarget = j.sessionTarget;
   if (sessionTarget === "main" || sessionTarget === "isolated") argv.push("--session", sessionTarget);
 
   // payload
-  const payload = (job as any).payload;
+  const payload = j.payload;
   if (payload && typeof payload === "object") {
     const pk = String(payload.kind ?? "");
     if (pk === "agentTurn" && payload.message) argv.push("--message", String(payload.message));
@@ -203,7 +216,7 @@ async function cronAdd(api: OpenClawPluginApi, job: Record<string, unknown>): Pr
   }
 
   // delivery
-  const delivery = (job as any).delivery;
+  const delivery = j.delivery;
   if (delivery && typeof delivery === "object" && String(delivery.mode ?? "") === "announce") {
     argv.push("--announce");
     if (delivery.channel) argv.push("--channel", String(delivery.channel));
