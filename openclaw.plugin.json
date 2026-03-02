@@ -7,22 +7,70 @@
     "type": "object",
     "additionalProperties": false,
     "properties": {
-      "workspaceRecipesDir": { "type": "string", "default": "recipes" },
-      "workspaceAgentsDir": { "type": "string", "default": "agents" },
-      "workspaceSkillsDir": { "type": "string", "default": "skills" },
-      "workspaceTeamsDir": { "type": "string", "default": "teams" },
-      "autoInstallMissingSkills": { "type": "boolean", "default": false },
-      "confirmAutoInstall": { "type": "boolean", "default": true },
-      "cronInstallation": { "type": "string", "enum": ["off", "prompt", "on"], "default": "prompt" }
+      "workspaceRecipesDir": {
+        "type": "string",
+        "default": "recipes"
+      },
+      "workspaceAgentsDir": {
+        "type": "string",
+        "default": "agents"
+      },
+      "workspaceSkillsDir": {
+        "type": "string",
+        "default": "skills"
+      },
+      "workspaceTeamsDir": {
+        "type": "string",
+        "default": "teams"
+      },
+      "autoInstallMissingSkills": {
+        "type": "boolean",
+        "default": false
+      },
+      "confirmAutoInstall": {
+        "type": "boolean",
+        "default": true
+      },
+      "cronInstallation": {
+        "type": "string",
+        "enum": [
+          "off",
+          "prompt",
+          "on"
+        ],
+        "default": "prompt"
+      }
     }
   },
   "uiHints": {
-    "workspaceRecipesDir": { "label": "Workspace recipes dir", "placeholder": "recipes" },
-    "workspaceAgentsDir": { "label": "Workspace agents dir", "placeholder": "agents" },
-    "workspaceSkillsDir": { "label": "Workspace skills dir", "placeholder": "skills" },
-    "workspaceTeamsDir": { "label": "Workspace teams dir", "placeholder": "teams" },
-    "autoInstallMissingSkills": { "label": "Auto-install missing skills", "help": "If enabled, recipes can install missing skills into the workspace skills directory (still confirmation-gated if confirmAutoInstall=true)." },
-    "confirmAutoInstall": { "label": "Confirm auto-install", "help": "If enabled, even auto-install requires an explicit confirmation flag (e.g. --yes) or prompt." },
-    "cronInstallation": { "label": "Cron job installation", "help": "Controls whether recipe-defined cron jobs are installed during scaffold. off=never, prompt=ask, on=auto-install." }
-  }
+    "workspaceRecipesDir": {
+      "label": "Workspace recipes dir",
+      "placeholder": "recipes"
+    },
+    "workspaceAgentsDir": {
+      "label": "Workspace agents dir",
+      "placeholder": "agents"
+    },
+    "workspaceSkillsDir": {
+      "label": "Workspace skills dir",
+      "placeholder": "skills"
+    },
+    "workspaceTeamsDir": {
+      "label": "Workspace teams dir",
+      "placeholder": "teams"
+    },
+    "autoInstallMissingSkills": {
+      "label": "Auto-install missing skills",
+      "help": "If enabled, recipes can install missing skills into the workspace skills directory (still confirmation-gated if confirmAutoInstall=true)."
+    },
+    "confirmAutoInstall": {
+      "label": "Confirm auto-install",
+      "help": "If enabled, even auto-install requires an explicit confirmation flag (e.g. --yes) or prompt."
+    },
+    "cronInstallation": {
+      "label": "Cron job installation",
+      "help": "Controls whether recipe-defined cron jobs are installed during scaffold. off=never, prompt=ask, on=auto-install."
+    }
+  },
+  "main": "index.ts"
 }
