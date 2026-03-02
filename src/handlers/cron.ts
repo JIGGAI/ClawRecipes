@@ -154,6 +154,11 @@ async function cronList(api: OpenClawPluginApi) {
   return { jobs: parsed?.jobs ?? [] };
 }
 
+function isCronToolUnavailableError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return /Tool not available:\s*cron/i.test(msg);
+}
+
 type CronAddResponse = { id?: string; job?: { id?: string } } | null;
 
 async function cronAdd(api: OpenClawPluginApi, job: Record<string, unknown>): Promise<CronAddResponse> {
@@ -351,7 +356,21 @@ export async function reconcileRecipeCronJobs(opts: {
   const statePath = path.join(opts.scope.stateDir, "notes", "cron-jobs.json");
   const state = await loadCronMappingState(statePath);
   const hasAnyInstalled = desired.some((j) => Boolean(state.entries[cronKey(opts.scope, j.id)]?.installedCronId));
-  const list = hasAnyInstalled ? await cronList(opts.api) : { jobs: [] };
+
+  // Cron is managed by the Gateway subsystem. Some OpenClaw builds do not expose it via toolsInvoke.
+  // In that case, cron reconciliation must be best-effort and must NOT block scaffolds.
+  let list: { jobs: OpenClawCronJob[] } = { jobs: [] };
+  if (hasAnyInstalled) {
+    try {
+      list = await cronList(opts.api);
+    } catch (err) {
+      if (isCronToolUnavailableError(err)) {
+        console.error('[recipes] note: cron tool unavailable; skipping cron reconciliation (scaffold will proceed).');
+        return { ok: true as const, changed: false as const, note: "cron-tool-unavailable" as const, desiredCount: desired.length };
+      }
+      throw err;
+    }
+  }
   const byId = new Map((list?.jobs ?? []).map((j) => [j.id, j] as const));
   const now = Date.now();
   const desiredIds = new Set(desired.map((j) => j.id));
