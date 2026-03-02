@@ -163,23 +163,65 @@ type GatewayCaller = <T = unknown>(opts: {
 }) => Promise<T>;
 
 const gatewayCall: GatewayCaller = async ({ api, method, params }) => {
-  // NOTE: dynamic import keeps unit tests runnable (openclaw/plugin-sdk is provided by the OpenClaw runtime,
-  // not installed as an NPM dependency of this plugin repo).
-  const mod = (await import("openclaw/plugin-sdk")) as unknown as {
-    callGatewayLeastPrivilege: <T = unknown>(opts: {
-      config: unknown;
-      method: string;
-      params?: unknown;
-      timeoutMs?: number;
-    }) => Promise<T>;
-  };
+  // Prefer the first-class SDK gateway caller when it's available in the runtime.
+  // In some builds `callGatewayLeastPrivilege` is not exported (or plugin-sdk isn't resolvable in unit tests),
+  // so we fall back to the stable CLI surface: `openclaw gateway call <method> --json --params <json>`.
 
-  return await mod.callGatewayLeastPrivilege({
-    config: api.config,
+  try {
+    // NOTE: dynamic import keeps unit tests runnable (openclaw/plugin-sdk is provided by the OpenClaw runtime,
+    // not installed as an NPM dependency of this plugin repo).
+    const mod = (await import("openclaw/plugin-sdk")) as unknown as {
+      callGatewayLeastPrivilege?: <T = unknown>(opts: {
+        config: unknown;
+        method: string;
+        params?: unknown;
+        timeoutMs?: number;
+      }) => Promise<T>;
+    };
+
+    if (typeof mod.callGatewayLeastPrivilege === "function") {
+      return await mod.callGatewayLeastPrivilege({
+        config: api.config,
+        method,
+        params,
+        timeoutMs: 30_000,
+      });
+    }
+  } catch {
+    // ignore and fall through to CLI fallback
+  }
+
+  const runner = (api as unknown as any)?.runtime?.system?.runCommandWithTimeout;
+  if (typeof runner !== "function") {
+    throw new Error(`Cron gateway call fallback unavailable (missing api.runtime.system.runCommandWithTimeout) for method ${method}`);
+  }
+
+  const cmd = [
+    "openclaw",
+    "gateway",
+    "call",
     method,
-    params,
-    timeoutMs: 30_000,
+    "--json",
+    "--timeout",
+    String(30_000),
+    "--params",
+    JSON.stringify((params ?? {}) as unknown),
+  ];
+
+  const res = await runner({
+    command: cmd,
+    timeoutMs: 35_000,
   });
+
+  const stdout = String(res?.stdout ?? "").trim();
+  if (!stdout) return null as any;
+
+  try {
+    return JSON.parse(stdout);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`Failed to parse gateway CLI JSON for ${method}: ${msg}\nstdout=${stdout}`);
+  }
 };
 
 async function cronList(api: OpenClawPluginApi) {
