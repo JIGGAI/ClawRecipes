@@ -20,6 +20,9 @@ jobs:
     # Don't publish from forks.
     if: >-
       github.event.pull_request.head.repo.full_name == github.repository
+      && !contains(join(github.event.pull_request.labels.*.name, ','), 'release')
+
+    # Skip publishing canaries for release PRs (label: release).
 
     steps:
       - uses: actions/checkout@v4
