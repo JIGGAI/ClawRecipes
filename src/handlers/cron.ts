@@ -1,11 +1,10 @@
 import path from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import type { RecipeFrontmatter } from "../lib/recipe-frontmatter";
-import { cronKey, hashSpec, loadCronMappingState, parseToolTextJson } from "../lib/cron-utils";
+import { cronKey, hashSpec, loadCronMappingState } from "../lib/cron-utils";
 import { writeJsonFile } from "../lib/json-utils";
 import { promptYesNo } from "../lib/prompt";
 import { normalizeCronJobs } from "../lib/recipe-frontmatter";
-import { toolsInvoke, type ToolTextResult } from "../toolsInvoke";
 
 export type CronInstallMode = "off" | "prompt" | "on";
 
@@ -144,36 +143,57 @@ async function disableOrphanedCronJobs(opts: {
   }
 }
 
-async function cronList(api: OpenClawPluginApi) {
-  const result = await toolsInvoke<ToolTextResult>(api, {
-    tool: "cron",
-    args: { action: "list", includeDisabled: true },
-  });
-  const text = result?.content?.find((c) => c.type === "text")?.text;
-  const parsed = text ? (parseToolTextJson(text, "cron.list") as { jobs?: OpenClawCronJob[] }) : null;
-  return { jobs: parsed?.jobs ?? [] };
-}
-
-function isCronToolUnavailableError(err: unknown): boolean {
+function isCronUnavailableError(err: unknown): boolean {
   const msg = err instanceof Error ? err.message : String(err);
-  return /Tool not available:\s*cron/i.test(msg);
+  // Backward-compat: older builds routed cron through tools/invoke.
+  if (/Tool not available:\s*cron/i.test(msg)) return true;
+  // Some builds may not expose cron RPC methods.
+  if (/unknown method/i.test(msg) && /cron\./i.test(msg)) return true;
+  if (/method not found/i.test(msg) && /cron\./i.test(msg)) return true;
+  if (/cron/i.test(msg) && /not available/i.test(msg)) return true;
+  return false;
 }
 
 type CronAddResponse = { id?: string; job?: { id?: string } } | null;
 
+type GatewayCaller = <T = unknown>(opts: {
+  api: OpenClawPluginApi;
+  method: string;
+  params?: unknown;
+}) => Promise<T>;
+
+const gatewayCall: GatewayCaller = async ({ api, method, params }) => {
+  // NOTE: dynamic import keeps unit tests runnable (openclaw/plugin-sdk is provided by the OpenClaw runtime,
+  // not installed as an NPM dependency of this plugin repo).
+  const mod = (await import("openclaw/plugin-sdk")) as unknown as {
+    callGatewayLeastPrivilege: <T = unknown>(opts: {
+      config: unknown;
+      method: string;
+      params?: unknown;
+      timeoutMs?: number;
+    }) => Promise<T>;
+  };
+
+  return await mod.callGatewayLeastPrivilege({
+    config: api.config,
+    method,
+    params,
+    timeoutMs: 30_000,
+  });
+};
+
+async function cronList(api: OpenClawPluginApi) {
+  const result = await gatewayCall<{ jobs?: OpenClawCronJob[] }>({ api, method: "cron.list", params: { includeDisabled: true } });
+  return { jobs: result?.jobs ?? [] };
+}
+
 async function cronAdd(api: OpenClawPluginApi, job: Record<string, unknown>): Promise<CronAddResponse> {
-  const result = await toolsInvoke<ToolTextResult>(api, { tool: "cron", args: { action: "add", job } });
-  const text = result?.content?.find((c) => c.type === "text")?.text;
-  return text ? parseToolTextJson<CronAddResponse>(text, "cron.add") : null;
+  // cron.add returns { id } in some builds; { job: { id } } in others.
+  return await gatewayCall<CronAddResponse>({ api, method: "cron.add", params: job });
 }
 
 async function cronUpdate(api: OpenClawPluginApi, jobId: string, patch: CronJobPatch) {
-  const result = await toolsInvoke<ToolTextResult>(api, {
-    tool: "cron",
-    args: { action: "update", jobId, patch },
-  });
-  const text = result?.content?.find((c) => c.type === "text")?.text;
-  return text ? parseToolTextJson(text, "cron.update") : null;
+  return await gatewayCall({ api, method: "cron.update", params: { id: jobId, patch } });
 }
 
 async function resolveCronUserOptIn(
@@ -357,14 +377,14 @@ export async function reconcileRecipeCronJobs(opts: {
   const state = await loadCronMappingState(statePath);
   const hasAnyInstalled = desired.some((j) => Boolean(state.entries[cronKey(opts.scope, j.id)]?.installedCronId));
 
-  // Cron is managed by the Gateway subsystem. Some OpenClaw builds do not expose it via toolsInvoke.
+  // Cron is managed by the Gateway subsystem. Some OpenClaw builds may not expose the cron RPC methods.
   // In that case, cron reconciliation must be best-effort and must NOT block scaffolds.
   let list: { jobs: OpenClawCronJob[] } = { jobs: [] };
   if (hasAnyInstalled) {
     try {
       list = await cronList(opts.api);
     } catch (err) {
-      if (isCronToolUnavailableError(err)) {
+      if (isCronUnavailableError(err)) {
         console.error('[recipes] note: cron tool unavailable; skipping cron reconciliation (scaffold will proceed).');
         return { ok: true as const, changed: false as const, note: "cron-tool-unavailable" as const, desiredCount: desired.length };
       }
@@ -398,7 +418,7 @@ export async function reconcileRecipeCronJobs(opts: {
   });
   await writeJsonFile(statePath, state);
   } catch (err) {
-    if (isCronToolUnavailableError(err)) {
+    if (isCronUnavailableError(err)) {
       console.error('[recipes] note: cron tool unavailable; skipping cron reconciliation (scaffold will proceed).');
       return { ok: true as const, changed: false as const, note: "cron-tool-unavailable" as const, desiredCount: desired.length };
     }

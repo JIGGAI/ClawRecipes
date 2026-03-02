@@ -2,6 +2,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+vi.mock("openclaw/plugin-sdk", async () => {
+
+  return {
+    callGatewayLeastPrivilege: vi.fn(),
+  };
+}, { virtual: true });
+import { callGatewayLeastPrivilege } from "openclaw/plugin-sdk";
 import { reconcileRecipeCronJobs } from "../src/handlers/cron";
 import { cronKey } from "../src/lib/cron-utils";
 
@@ -9,15 +17,6 @@ const api = {
   config: { gateway: { port: 18789, auth: { token: "secret" } }, agents: { defaults: { workspace: "/x" } } },
 } as any;
 
-/** toolsInvoke returns json.result; cron expects result.content[].text to be JSON. */
-function makeCronResult(content: unknown) {
-  return {
-    ok: true,
-    result: {
-      content: [{ type: "text", text: JSON.stringify(content) }],
-    },
-  };
-}
 
 describe("cron handler", () => {
   let stateDir: string;
@@ -33,13 +32,7 @@ describe("cron handler", () => {
 
   describe("reconcileRecipeCronJobs", () => {
     test("cron-installation-on creates new job when none exist", async () => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: true,
-          json: () => Promise.resolve(makeCronResult({ id: "cron-new-1" })),
-        })
-      );
+      (callGatewayLeastPrivilege as any).mockResolvedValueOnce({ id: "cron-new-1" });
       const recipe = {
         id: "test",
         kind: "agent" as const,
@@ -101,25 +94,13 @@ describe("cron handler", () => {
         })
       );
       let callCount = 0;
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockImplementation(() => {
-          callCount++;
-          if (callCount === 1) {
-            return Promise.resolve({
-              ok: true,
-              json: () =>
-                Promise.resolve(
-                  makeCronResult({ jobs: [{ id: "cron-existing", enabled: true }] })
-                ),
-            });
-          }
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve(makeCronResult({})),
-          });
-        })
-      );
+      (callGatewayLeastPrivilege as any).mockImplementation(async () => {
+        callCount++;
+        if (callCount == 1) {
+          return { jobs: [{ id: "cron-existing", enabled: true }] };
+        }
+        return {};
+      });
       const result = await reconcileRecipeCronJobs({
         api,
         recipe: {
@@ -143,13 +124,7 @@ describe("cron handler", () => {
       const origTTY = process.stdin.isTTY;
       Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
       const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: true,
-          json: () => Promise.resolve(makeCronResult({ id: "cron-non-tty" })),
-        })
-      );
+      (callGatewayLeastPrivilege as any).mockResolvedValueOnce({ id: "cron-non-tty" });
       try {
         const result = await reconcileRecipeCronJobs({
           api,
@@ -176,13 +151,7 @@ describe("cron handler", () => {
       vi.spyOn(promptMod, "promptYesNo").mockResolvedValue(true);
       const origTTY = process.stdin.isTTY;
       Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: true,
-          json: () => Promise.resolve(makeCronResult({ id: "cron-from-prompt" })),
-        })
-      );
+      (callGatewayLeastPrivilege as any).mockResolvedValueOnce({ id: "cron-from-prompt" });
       try {
         const result = await reconcileRecipeCronJobs({
           api,
@@ -201,16 +170,7 @@ describe("cron handler", () => {
     });
 
     test("creates job with agentId, timezone, channel, to (delivery block)", async () => {
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockResolvedValue({
-          ok: true,
-          json: () =>
-            Promise.resolve(
-              makeCronResult({ job: { id: "cron-delivery" } })
-            ),
-        })
-      );
+      (callGatewayLeastPrivilege as any).mockResolvedValueOnce({ job: { id: "cron-delivery" } });
       const recipe = {
         id: "test",
         kind: "team" as const,
@@ -264,30 +224,18 @@ describe("cron handler", () => {
         })
       );
       let callCount = 0;
-      vi.stubGlobal(
-        "fetch",
-        vi.fn().mockImplementation(() => {
-          callCount++;
-          if (callCount === 1) {
-            return Promise.resolve({
-              ok: true,
-              json: () =>
-                Promise.resolve(
-                  makeCronResult({
-                    jobs: [
-                      { id: "cron-orphan", enabled: true },
-                      { id: "cron-kept", enabled: true },
-                    ],
-                  })
-                ),
-            });
-          }
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve(makeCronResult({})),
-          });
-        })
-      );
+      (callGatewayLeastPrivilege as any).mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          return {
+            jobs: [
+              { id: "cron-orphan", enabled: true },
+              { id: "cron-kept", enabled: true },
+            ],
+          };
+        }
+        return {};
+      });
       const result = await reconcileRecipeCronJobs({
         api,
         recipe: {
