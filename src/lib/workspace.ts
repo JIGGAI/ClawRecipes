@@ -22,7 +22,42 @@ export function resolveWorkspaceRoot(api: OpenClawPluginApi): string {
   return path.join(os.homedir(), ".openclaw", "workspace");
 }
 
+function tryResolveTeamDirFromAnyDir(dir: string, teamId: string): string | undefined {
+  const seg = `workspace-${teamId}`;
+  const abs = path.resolve(dir);
+
+  // Walk up the directory tree looking for a path segment named workspace-<teamId>
+  const parts = abs.split(path.sep).filter(Boolean);
+  const idx = parts.lastIndexOf(seg);
+  if (idx >= 0) {
+    const prefix = parts.slice(0, idx + 1);
+    return path.isAbsolute(abs) ? path.sep + path.join(...prefix) : path.join(...prefix);
+  }
+
+  return undefined;
+}
+
+/**
+ * Resolve a team's directory (`.../workspace-<teamId>`) even when the agent workspace
+ * is nested under `workspace-<teamId>/roles/<role>`.
+ */
 export function resolveTeamDir(api: OpenClawPluginApi, teamId: string): string {
+  // Explicit override (useful for testing or specialized deployments)
+  const envTeamDir = process.env.OPENCLAW_TEAM_DIR;
+  if (envTeamDir) return path.resolve(envTeamDir);
+
+  const agentWorkspace = api.config.agents?.defaults?.workspace;
+  if (agentWorkspace) {
+    const resolved = tryResolveTeamDirFromAnyDir(agentWorkspace, teamId);
+    if (resolved) return resolved;
+  }
+
+  // Best-effort fallback using current working directory (some plugin invocations
+  // may not have agents.defaults.workspace populated)
+  const cwdResolved = tryResolveTeamDirFromAnyDir(process.cwd(), teamId);
+  if (cwdResolved) return cwdResolved;
+
+  // Default historical behavior: assume agentWorkspaceRoot is ~/.openclaw/workspace
   const workspaceRoot = resolveWorkspaceRoot(api);
   return path.resolve(workspaceRoot, "..", "workspace-" + teamId);
 }
@@ -38,9 +73,16 @@ export async function ensureTicketStageDirs(teamDir: string): Promise<void> {
   ]);
 }
 
-export async function resolveTeamContext(api: OpenClawPluginApi, teamId: string): Promise<{ workspaceRoot: string; teamDir: string }> {
-  const workspaceRoot = resolveWorkspaceRoot(api);
-  const teamDir = path.resolve(workspaceRoot, "..", "workspace-" + teamId);
+export async function resolveTeamContext(
+  api: OpenClawPluginApi,
+  teamId: string
+): Promise<{ workspaceRoot: string; teamDir: string }> {
+  const teamDir = resolveTeamDir(api, teamId);
+
+  // Canonical workspaceRoot is the sibling of workspace-<teamId>
+  // Example: ~/.openclaw/workspace-my-team -> ~/.openclaw/workspace
+  const workspaceRoot = path.resolve(teamDir, "..", "workspace");
+
   await ensureTicketStageDirs(teamDir);
   return { workspaceRoot, teamDir };
 }

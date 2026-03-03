@@ -45,6 +45,20 @@ describe("workspace", () => {
       const teamDir = resolveTeamDir(api, "my-team");
       expect(teamDir).toBe(path.resolve("/base", "workspace-my-team"));
     });
+
+    test("resolves workspace-<teamId> when agent workspace is under roles/<role>", () => {
+      const api = {
+        config: {
+          agents: {
+            defaults: {
+              workspace: "/base/workspace-my-team/roles/lead",
+            },
+          },
+        },
+      } as any;
+      const teamDir = resolveTeamDir(api, "my-team");
+      expect(teamDir).toBe(path.resolve("/base", "workspace-my-team"));
+    });
   });
 
   describe("ensureTicketStageDirs", () => {
