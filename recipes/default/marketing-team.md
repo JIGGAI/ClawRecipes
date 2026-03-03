@@ -812,6 +812,21 @@ templates:
     - Ignoring compliance
     - Ignoring funnel stage
 
+  copywriter.agents: |
+    # MARKETING TEAM: AGENTS — Copywriter
+    Team: {{teamId}}
+    Workspace (source of truth): {{teamDir}}
+    
+    Role: copywriter
+    - Owns conversion copy drafts (landing pages, emails, ads, scripts).
+    - Works from ticket requirements + analyst/compliance constraints.
+    
+    Rules:
+    - Read the current ticket first.
+    - Write deliverables to shared-context/agent-outputs/ and summarize in the ticket.
+    - Do not publish; route through lead + approval gate.
+    
+
   copywriter.tools: |
     # TOOLS.md
     # TOOL POLICY: Copywriter
@@ -1955,6 +1970,80 @@ templates:
 
     - (empty)
 
+
+  # Per-role tickets templates (required by scaffold-team fallback rules)
+  lead.tickets: |
+    # TICKETS.md
+    
+    This role uses the team ticket system.
+    See: ../TICKETS.md (team root) and work/* lanes.
+    
+  seo.tickets: |
+    # TICKETS.md
+    
+    This role uses the team ticket system.
+    See: ../TICKETS.md (team root) and work/* lanes.
+    
+  copywriter.tickets: |
+    # TICKETS.md
+    
+    This role uses the team ticket system.
+    See: ../TICKETS.md (team root) and work/* lanes.
+    
+  ads.tickets: |
+    # TICKETS.md
+    
+    This role uses the team ticket system.
+    See: ../TICKETS.md (team root) and work/* lanes.
+    
+  social.tickets: |
+    # TICKETS.md
+    
+    This role uses the team ticket system.
+    See: ../TICKETS.md (team root) and work/* lanes.
+    
+  designer.tickets: |
+    # TICKETS.md
+    
+    This role uses the team ticket system.
+    See: ../TICKETS.md (team root) and work/* lanes.
+    
+  analyst.tickets: |
+    # TICKETS.md
+    
+    This role uses the team ticket system.
+    See: ../TICKETS.md (team root) and work/* lanes.
+    
+  video.tickets: |
+    # TICKETS.md
+    
+    This role uses the team ticket system.
+    See: ../TICKETS.md (team root) and work/* lanes.
+    
+  compliance.tickets: |
+    # TICKETS.md
+    
+    This role uses the team ticket system.
+    See: ../TICKETS.md (team root) and work/* lanes.
+    
+  offer.tickets: |
+    # TICKETS.md
+    
+    This role uses the team ticket system.
+    See: ../TICKETS.md (team root) and work/* lanes.
+    
+  funnel.tickets: |
+    # TICKETS.md
+    
+    This role uses the team ticket system.
+    See: ../TICKETS.md (team root) and work/* lanes.
+    
+  lifecycle.tickets: |
+    # TICKETS.md
+    
+    This role uses the team ticket system.
+    See: ../TICKETS.md (team root) and work/* lanes.
+    
 
   # Auto-added blanks to ensure every role can scaffold every declared file.
 
