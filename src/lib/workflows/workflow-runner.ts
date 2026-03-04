@@ -100,11 +100,17 @@ type RunEvent = Record<string, unknown> & { ts: string; type: string };
 type RunLog = {
   runId: string;
   createdAt: string;
+  updatedAt?: string;
   teamId: string;
   workflow: { file: string; id: string | null; name: string | null };
   ticket: { file: string; number: string; lane: WorkflowLane };
   trigger: { kind: string; at?: string };
   status: string;
+  // Scheduler/runner fields
+  priority?: number;
+  claimedBy?: string | null;
+  claimExpiresAt?: string | null;
+  nextNodeIndex?: number;
   events: RunEvent[];
   nodeResults?: Array<Record<string, unknown>>;
 };
@@ -112,7 +118,11 @@ type RunLog = {
 async function appendRunLog(runLogPath: string, fn: (cur: RunLog) => RunLog) {
   const raw = await fs.readFile(runLogPath, 'utf8');
   const cur = JSON.parse(raw) as RunLog;
-  const next = fn(cur);
+  const next0 = fn(cur);
+  const next = {
+    ...next0,
+    updatedAt: new Date().toISOString(),
+  };
   await fs.writeFile(runLogPath, JSON.stringify(next, null, 2), 'utf8');
 }
 
@@ -213,6 +223,7 @@ async function executeWorkflowNodes(opts: {
 
       await appendRunLog(runLogPath, (cur) => ({
         ...cur,
+        nextNodeIndex: i + 1,
         events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind: node.kind, outputPath }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, agentId, outputPath, bytes: text.length }],
       }));
@@ -273,6 +284,7 @@ async function executeWorkflowNodes(opts: {
       await appendRunLog(runLogPath, (cur) => ({
         ...cur,
         status: 'awaiting_approval',
+        nextNodeIndex: i + 1,
         events: [...cur.events, { ts: new Date().toISOString(), type: 'node.awaiting_approval', nodeId: node.id, bindingId: approvalBindingId, approvalFile: path.relative(teamDir, approvalPath) }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, approvalBindingId, approvalFile: path.relative(teamDir, approvalPath) }],
       }));
@@ -298,6 +310,7 @@ async function executeWorkflowNodes(opts: {
 
       await appendRunLog(runLogPath, (cur) => ({
         ...cur,
+        nextNodeIndex: i + 1,
         events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind: node.kind, writebackPaths }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, writebackPaths }],
       }));
@@ -309,6 +322,7 @@ async function executeWorkflowNodes(opts: {
     if (node.kind === 'tool') {
       await appendRunLog(runLogPath, (cur) => ({
         ...cur,
+        nextNodeIndex: i + 1,
         events: [...cur.events, { ts, type: 'node.skipped', nodeId: node.id, kind: node.kind, reason: 'integration stub' }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, skipped: true, reason: 'integration stub' }],
       }));
@@ -325,6 +339,365 @@ async function executeWorkflowNodes(opts: {
   }));
 
   return { ticketPath: curTicketPath, lane: curLane, status: 'completed' };
+}
+
+
+function runFilePathFor(runsDir: string, runId: string) {
+  // Back-compat: prefer new extension, but fall back to old .json if present.
+  return {
+    primary: path.join(runsDir, `${runId}.run.json`),
+    legacy: path.join(runsDir, `${runId}.json`),
+  };
+}
+
+async function loadRunFile(teamDir: string, runsDir: string, runId: string): Promise<{ path: string; run: RunLog }> {
+  const p = runFilePathFor(runsDir, runId);
+  const chosen = (await fileExists(p.primary)) ? p.primary : p.legacy;
+  if (!(await fileExists(chosen))) throw new Error(`Run file not found: ${path.relative(teamDir, chosen)}`);
+  const raw = await fs.readFile(chosen, 'utf8');
+  return { path: chosen, run: JSON.parse(raw) as RunLog };
+}
+
+async function writeRunFile(runPath: string, fn: (cur: RunLog) => RunLog) {
+  const raw = await fs.readFile(runPath, 'utf8');
+  const cur = JSON.parse(raw) as RunLog;
+  const next = fn(cur);
+  await fs.writeFile(runPath, JSON.stringify(next, null, 2), 'utf8');
+}
+
+export async function enqueueWorkflowRun(api: OpenClawPluginApi, opts: {
+  teamId: string;
+  workflowFile: string; // filename under shared-context/workflows/
+  trigger?: { kind: string; at?: string };
+}) {
+  const teamId = String(opts.teamId);
+  const workspaceRoot = resolveWorkspaceRoot(api);
+  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const sharedContextDir = path.join(teamDir, 'shared-context');
+  const workflowsDir = path.join(sharedContextDir, 'workflows');
+  const runsDir = path.join(sharedContextDir, 'workflow-runs');
+
+  const workflowPath = path.join(workflowsDir, opts.workflowFile);
+  const raw = await fs.readFile(workflowPath, 'utf8');
+  const workflow = JSON.parse(raw) as WorkflowV1;
+
+  if (!workflow.nodes?.length) throw new Error('Workflow has no nodes');
+
+  // Determine initial lane from first node that declares lane.
+  const firstLaneRaw = String(workflow.nodes.find(n => n?.config && typeof n.config === 'object' && 'lane' in n.config)?.config?.lane ?? 'backlog');
+  assertLane(firstLaneRaw);
+  const initialLane: WorkflowLane = firstLaneRaw;
+
+  const runId = `${isoCompact()}-${crypto.randomBytes(4).toString('hex')}`;
+  await ensureDir(runsDir);
+  const runLogPath = path.join(runsDir, `${runId}.run.json`);
+
+  const ticketNum = await nextTicketNumber(teamDir);
+  const slug = `workflow-run-${(workflow.id ?? path.basename(opts.workflowFile, path.extname(opts.workflowFile))).replace(/[^a-z0-9-]+/gi, '-').toLowerCase()}`;
+  const ticketFile = `${ticketNum}-${slug}.md`;
+
+  const laneDir = path.join(teamDir, 'work', initialLane);
+  await ensureDir(laneDir);
+  const ticketPath = path.join(laneDir, ticketFile);
+
+  const header = `# ${ticketNum} — Workflow run: ${workflow.name ?? workflow.id ?? opts.workflowFile}\n\n`;
+  const md = [
+    header,
+    `Owner: lead`,
+    `Status: ${laneToStatus(initialLane)}`,
+    `\n## Run`,
+    `- workflow: ${path.relative(teamDir, workflowPath)}`,
+    `- run file: ${path.relative(teamDir, runLogPath)}`,
+    `- trigger: ${opts.trigger?.kind ?? 'manual'}${opts.trigger?.at ? ` @ ${opts.trigger.at}` : ''}`,
+    `- runId: ${runId}`,
+    `\n## Notes`,
+    `- Created by: openclaw recipes workflows run (enqueue-only)`,
+    ``,
+  ].join('\n');
+
+  const createdAt = new Date().toISOString();
+  const trigger = opts.trigger ?? { kind: 'manual' };
+
+  const initialLog: RunLog = {
+    runId,
+    createdAt,
+    updatedAt: createdAt,
+    teamId,
+    workflow: { file: opts.workflowFile, id: workflow.id ?? null, name: workflow.name ?? null },
+    ticket: { file: path.relative(teamDir, ticketPath), number: ticketNum, lane: initialLane },
+    trigger,
+    status: 'queued',
+    priority: 0,
+    claimedBy: null,
+    claimExpiresAt: null,
+    nextNodeIndex: 0,
+    events: [{ ts: createdAt, type: 'run.enqueued', lane: initialLane }],
+    nodeResults: [],
+  };
+
+  await Promise.all([
+    fs.writeFile(ticketPath, md, 'utf8'),
+    fs.writeFile(runLogPath, JSON.stringify(initialLog, null, 2), 'utf8'),
+  ]);
+
+  return {
+    ok: true as const,
+    teamId,
+    teamDir,
+    workflowPath,
+    runId,
+    runLogPath,
+    ticketPath,
+    lane: initialLane,
+    status: 'queued' as const,
+  };
+}
+
+export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
+  teamId: string;
+  leaseSeconds?: number;
+}) {
+  const teamId = String(opts.teamId);
+  const workspaceRoot = resolveWorkspaceRoot(api);
+  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const sharedContextDir = path.join(teamDir, 'shared-context');
+  const runsDir = path.join(sharedContextDir, 'workflow-runs');
+  const workflowsDir = path.join(sharedContextDir, 'workflows');
+
+  if (!(await fileExists(runsDir))) {
+    return { ok: true as const, teamId, claimed: 0, message: 'No workflow-runs directory present.' };
+  }
+
+  const leaseSeconds = typeof opts.leaseSeconds === 'number' && opts.leaseSeconds > 0 ? opts.leaseSeconds : 60;
+  const now = Date.now();
+
+  const files = (await fs.readdir(runsDir)).filter((f) => f.endsWith('.run.json'));
+  const candidates: Array<{ file: string; run: RunLog }> = [];
+
+  for (const f of files) {
+    const abs = path.join(runsDir, f);
+    try {
+      const run = JSON.parse(await fs.readFile(abs, 'utf8')) as RunLog;
+      if (run.status !== 'queued') continue;
+      const exp = run.claimExpiresAt ? Date.parse(String(run.claimExpiresAt)) : 0;
+      const claimed = !!run.claimedBy && exp > now;
+      if (claimed) continue;
+      candidates.push({ file: abs, run });
+    } catch {
+      // ignore parse errors
+    }
+  }
+
+  if (!candidates.length) {
+    return { ok: true as const, teamId, claimed: 0, message: 'No queued runs available.' };
+  }
+
+  candidates.sort((a, b) => {
+    const pa = typeof a.run.priority === 'number' ? a.run.priority : 0;
+    const pb = typeof b.run.priority === 'number' ? b.run.priority : 0;
+    if (pa != pb) return pb - pa;
+    return String(a.run.createdAt).localeCompare(String(b.run.createdAt));
+  });
+
+  const chosen = candidates[0]!;
+  const runnerId = `workflow-runner:${process.pid}`;
+  const claimExpiresAt = new Date(Date.now() + leaseSeconds * 1000).toISOString();
+
+  await writeRunFile(chosen.file, (cur) => ({
+    ...cur,
+    updatedAt: new Date().toISOString(),
+    status: 'running',
+    claimedBy: runnerId,
+    claimExpiresAt,
+    events: [...cur.events, { ts: new Date().toISOString(), type: 'run.claimed', claimedBy: runnerId, claimExpiresAt }],
+  }));
+
+  const workflowFile = String(chosen.run.workflow.file);
+  const workflowPath = path.join(workflowsDir, workflowFile);
+  const workflowRaw = await fs.readFile(workflowPath, 'utf8');
+  const workflow = JSON.parse(workflowRaw) as WorkflowV1;
+
+  const ticketPath = path.join(teamDir, chosen.run.ticket.file);
+  const laneRaw = String(chosen.run.ticket.lane);
+  assertLane(laneRaw);
+  const initialLane = laneRaw as WorkflowLane;
+
+  let execRes: { ticketPath: string; lane: WorkflowLane; status: 'completed' | 'awaiting_approval' | 'rejected' };
+  try {
+    execRes = await executeWorkflowNodes({
+      api,
+      teamId,
+      teamDir,
+      workflow,
+      workflowPath,
+      workflowFile,
+      runId: chosen.run.runId,
+      runLogPath: chosen.file,
+      ticketPath,
+      initialLane,
+      startNodeIndex: typeof chosen.run.nextNodeIndex === 'number' ? chosen.run.nextNodeIndex : 0,
+    });
+  } catch (e) {
+    await writeRunFile(chosen.file, (cur) => ({
+      ...cur,
+      updatedAt: new Date().toISOString(),
+      status: 'error',
+      claimedBy: null,
+      claimExpiresAt: null,
+      events: [...cur.events, { ts: new Date().toISOString(), type: 'run.error', message: (e as Error).message }],
+    }));
+    throw e
+  }
+
+  await writeRunFile(chosen.file, (cur) => ({
+    ...cur,
+    updatedAt: new Date().toISOString(),
+    status: execRes.status === 'awaiting_approval' ? 'awaiting_approval' : execRes.status,
+    claimedBy: null,
+    claimExpiresAt: null,
+    nextNodeIndex: execRes.status === 'awaiting_approval' ? cur.nextNodeIndex : (workflow.nodes?.length ?? cur.nextNodeIndex ?? 0),
+  }));
+
+  return { ok: true as const, teamId, claimed: 1, runId: chosen.run.runId, status: execRes.status };
+}
+
+
+export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
+  teamId: string;
+  concurrency?: number;
+  leaseSeconds?: number;
+}) {
+  const teamId = String(opts.teamId);
+  const workspaceRoot = resolveWorkspaceRoot(api);
+  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const sharedContextDir = path.join(teamDir, 'shared-context');
+  const runsDir = path.join(sharedContextDir, 'workflow-runs');
+  const workflowsDir = path.join(sharedContextDir, 'workflows');
+
+  if (!(await fileExists(runsDir))) {
+    return { ok: true as const, teamId, claimed: 0, message: 'No workflow-runs directory present.' };
+  }
+
+  const concurrency = typeof opts.concurrency === 'number' && opts.concurrency > 0 ? Math.floor(opts.concurrency) : 1;
+  const leaseSeconds = typeof opts.leaseSeconds === 'number' && opts.leaseSeconds > 0 ? opts.leaseSeconds : 300;
+  const now = Date.now();
+
+  const files = (await fs.readdir(runsDir)).filter((f) => f.endsWith('.run.json'));
+  const candidates: Array<{ file: string; run: RunLog }> = [];
+
+  for (const f of files) {
+    const abs = path.join(runsDir, f);
+    try {
+      const run = JSON.parse(await fs.readFile(abs, 'utf8')) as RunLog;
+      if (run.status !== 'queued') continue;
+      const exp = run.claimExpiresAt ? Date.parse(String(run.claimExpiresAt)) : 0;
+      const claimed = !!run.claimedBy && exp > now;
+      if (claimed) continue;
+      candidates.push({ file: abs, run });
+    } catch {
+      // ignore parse errors
+    }
+  }
+
+  if (!candidates.length) {
+    return { ok: true as const, teamId, claimed: 0, message: 'No queued runs available.' };
+  }
+
+  candidates.sort((a, b) => {
+    const pa = typeof a.run.priority === 'number' ? a.run.priority : 0;
+    const pb = typeof b.run.priority === 'number' ? b.run.priority : 0;
+    if (pa !== pb) return pb - pa;
+    return String(a.run.createdAt).localeCompare(String(b.run.createdAt));
+  });
+
+  const runnerIdBase = `workflow-runner:${process.pid}`;
+
+  async function tryClaim(runPath: string): Promise<RunLog | null> {
+    const raw = await fs.readFile(runPath, 'utf8');
+    const cur = JSON.parse(raw) as RunLog;
+    if (cur.status !== 'queued') return null;
+    const exp = cur.claimExpiresAt ? Date.parse(String(cur.claimExpiresAt)) : 0;
+    const claimed = !!cur.claimedBy && exp > Date.now();
+    if (claimed) return null;
+
+    const claimExpiresAt = new Date(Date.now() + leaseSeconds * 1000).toISOString();
+    const claimedBy = `${runnerIdBase}:${crypto.randomBytes(3).toString('hex')}`;
+
+    const next: RunLog = {
+      ...cur,
+      updatedAt: new Date().toISOString(),
+      status: 'running',
+      claimedBy,
+      claimExpiresAt,
+      events: [...(cur.events ?? []), { ts: new Date().toISOString(), type: 'run.claimed', claimedBy, claimExpiresAt }],
+    };
+
+    await fs.writeFile(runPath, JSON.stringify(next, null, 2), 'utf8');
+    return next;
+  }
+
+  const claimed: Array<{ file: string; run: RunLog }> = [];
+  for (const c of candidates) {
+    if (claimed.length >= concurrency) break;
+    const run = await tryClaim(c.file);
+    if (run) claimed.push({ file: c.file, run });
+  }
+
+  if (!claimed.length) {
+    return { ok: true as const, teamId, claimed: 0, message: 'No queued runs available (raced on claim).' };
+  }
+
+  async function execClaimed(runPath: string, run: RunLog) {
+    const workflowFile = String(run.workflow.file);
+    const workflowPath = path.join(workflowsDir, workflowFile);
+    const workflowRaw = await fs.readFile(workflowPath, 'utf8');
+    const workflow = JSON.parse(workflowRaw) as WorkflowV1;
+
+    const ticketPath = path.join(teamDir, run.ticket.file);
+    const laneRaw = String(run.ticket.lane);
+    assertLane(laneRaw);
+    const initialLane = laneRaw as WorkflowLane;
+
+    try {
+      const execRes = await executeWorkflowNodes({
+        api,
+        teamId,
+        teamDir,
+        workflow,
+        workflowPath,
+        workflowFile,
+        runId: run.runId,
+        runLogPath: runPath,
+        ticketPath,
+        initialLane,
+        startNodeIndex: typeof run.nextNodeIndex === 'number' ? run.nextNodeIndex : 0,
+      });
+
+      await writeRunFile(runPath, (cur) => ({
+        ...cur,
+        updatedAt: new Date().toISOString(),
+        status: execRes.status === 'awaiting_approval' ? 'awaiting_approval' : execRes.status,
+        claimedBy: null,
+        claimExpiresAt: null,
+        nextNodeIndex: execRes.status === 'awaiting_approval' ? (cur.nextNodeIndex ?? 0) : (workflow.nodes?.length ?? cur.nextNodeIndex ?? 0),
+      }));
+
+      return { runId: run.runId, status: execRes.status };
+    } catch (e) {
+      await writeRunFile(runPath, (cur) => ({
+        ...cur,
+        updatedAt: new Date().toISOString(),
+        status: 'error',
+        claimedBy: null,
+        claimExpiresAt: null,
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'run.error', message: (e as Error).message }],
+      }));
+      return { runId: run.runId, status: 'error', error: (e as Error).message };
+    }
+  }
+
+  const results = await Promise.all(claimed.map((c) => execClaimed(c.file, c.run)));
+  return { ok: true as const, teamId, claimed: claimed.length, results };
 }
 
 // eslint-disable-next-line complexity, max-lines-per-function
@@ -555,10 +928,9 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
   const runsDir = path.join(sharedContextDir, 'workflow-runs');
   const workflowsDir = path.join(sharedContextDir, 'workflows');
 
-  const runLogPath = path.join(runsDir, `${runId}.json`);
-  if (!(await fileExists(runLogPath))) throw new Error(`Run log not found: ${path.relative(teamDir, runLogPath)}`);
-  const runRaw = await fs.readFile(runLogPath, 'utf8');
-  const runLog = JSON.parse(runRaw) as RunLog;
+  const loaded = await loadRunFile(teamDir, runsDir, runId);
+  const runLogPath = loaded.path;
+  const runLog = loaded.run;
 
   if (runLog.status === 'completed' || runLog.status === 'rejected') {
     return { ok: true as const, runId, status: runLog.status, message: 'No-op; run already finished.' };

@@ -1,5 +1,5 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-import { approveWorkflowRun, pollWorkflowApprovals, resumeWorkflowRun, runWorkflowOnce } from '../lib/workflows/workflow-runner';
+import { approveWorkflowRun, enqueueWorkflowRun, pollWorkflowApprovals, resumeWorkflowRun, runWorkflowRunnerOnce, runWorkflowRunnerTick } from '../lib/workflows/workflow-runner';
 
 export async function handleWorkflowsRun(api: OpenClawPluginApi, opts: {
   teamId: string;
@@ -7,11 +7,31 @@ export async function handleWorkflowsRun(api: OpenClawPluginApi, opts: {
 }) {
   if (!opts.teamId) throw new Error('--team-id is required');
   if (!opts.workflowFile) throw new Error('--workflow-file is required');
-  return runWorkflowOnce(api, {
+  return enqueueWorkflowRun(api, {
     teamId: opts.teamId,
     workflowFile: opts.workflowFile,
     trigger: { kind: 'manual', at: new Date().toISOString() },
   });
+}
+
+export async function handleWorkflowsRunnerOnce(api: OpenClawPluginApi, opts: {
+  teamId: string;
+  leaseSeconds?: number;
+}) {
+  if (!opts.teamId) throw new Error('--team-id is required');
+  return runWorkflowRunnerOnce(api, { teamId: opts.teamId, leaseSeconds: opts.leaseSeconds });
+}
+
+
+
+
+export async function handleWorkflowsRunnerTick(api: OpenClawPluginApi, opts: {
+  teamId: string;
+  concurrency?: number;
+  leaseSeconds?: number;
+}) {
+  if (!opts.teamId) throw new Error('--team-id is required');
+  return runWorkflowRunnerTick(api, { teamId: opts.teamId, concurrency: opts.concurrency, leaseSeconds: opts.leaseSeconds });
 }
 
 
