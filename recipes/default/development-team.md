@@ -53,7 +53,7 @@ cronJobs:
       Command:
         openclaw recipes workflows runner-tick --team-id {{teamId}} --concurrency 2 --lease-seconds 45
 
-    enabledByDefault: false
+    enabledByDefault: true
 
   - id: pr-watcher
     name: "PR watcher (ticket-linked)"
@@ -110,7 +110,7 @@ agents:
     tools:
       profile: "coding"
       allow: ["group:fs", "group:runtime", "group:automation"]
-      deny: []
+      deny: ["runtime.exec"]
 
 templates:
   sharedContext.ticketFlow: |
