@@ -15,7 +15,10 @@ export type WorkflowNodeConfig = {
 
 export type WorkflowNode = {
   id: string;
-  kind: WorkflowNodeKind;
+  // New runner schema uses `kind`; ClawKitchen workflow.v1 uses `type` (start/end/tool/etc).
+  // We accept both and normalize at runtime.
+  kind?: WorkflowNodeKind;
+  type?: string;
   name?: string;
   config?: WorkflowNodeConfig;
   [k: string]: unknown;
