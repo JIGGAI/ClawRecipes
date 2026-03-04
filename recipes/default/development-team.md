@@ -1,7 +1,7 @@
 ---
 id: development-team
 name: Development Team
-version: 0.2.0
+version: 0.2.1
 description: A small engineering team with a shared workspace (lead, dev, devops, test) using file-first tickets.
 kind: team
 cronJobs:
@@ -34,6 +34,24 @@ cronJobs:
       before any relative-path commands (e.g. work/, notes/, scripts/).
 
       Guardrail: run ./scripts/ticket-hygiene-dev.sh each loop; if it fails, fix lane/status/owner mismatches before proceeding (assignment stubs are deprecated).
+
+    enabledByDefault: false
+
+  - id: workflow-runner-loop
+    name: "Workflow runner loop (runs queue)"
+    # 6-field cron with seconds; runs every 15s
+    schedule: "*/15 * * * * *"
+    timezone: "UTC"
+    agentId: "{{teamId}}-workflow-runner"
+    message: |
+      Workflow runner loop: claim + execute queued workflow runs for this team.
+
+      Guardrails:
+      - This loop should be safe to run frequently; keep it short and idempotent.
+      - Do NOT execute runs without a valid lease/claim.
+
+      Command:
+        openclaw recipes workflows runner-tick --team-id {{teamId}} --concurrency 2 --lease-seconds 45
 
     enabledByDefault: false
 
@@ -85,6 +103,13 @@ agents:
     tools:
       profile: "coding"
       allow: ["group:fs", "group:web", "group:runtime"]
+      deny: []
+
+  - role: workflow-runner
+    name: Workflow Runner
+    tools:
+      profile: "coding"
+      allow: ["group:fs", "group:runtime", "group:automation"]
       deny: []
 
 templates:
@@ -382,6 +407,21 @@ templates:
 
     # Keep the most recent 60 backups (~7.5 days at 1 per 3h). Adjust as needed.
     ls -1t "$OUTDIR"/workspace-{{teamId}}-*.tgz 2>/dev/null | tail -n +61 | xargs -r rm -f
+
+  workflow-runner.ticketHygiene: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+  workflow-runner.ticketHygieneDevShim: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # Compatibility shim: automation expects ticket-hygiene-dev.sh
+    DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    exec "$DIR/ticket-hygiene.sh" "$@"
+
+  workflow-runner.backupWork: |
+    #!/usr/bin/env bash
+    set -euo pipefail
 
   devops.ticketHygiene: |
     #!/usr/bin/env bash
@@ -857,6 +897,44 @@ templates:
     - (empty)
 
   devops.notes: |
+    # NOTES.md
+
+    - (empty)
+
+  workflow-runner.soul: |
+    # SOUL.md
+
+    You are the Workflow Runner for {{teamId}}.
+    Your job is to reliably execute queued workflow runs (file-first) and persist progress after each node.
+
+  workflow-runner.agents: |
+    # AGENTS.md
+
+    Shared workspace: {{teamDir}}
+
+    ## Primary responsibility
+    Drain queued workflow runs without duplicating work:
+    - Claim runs with a short lease
+    - Execute up to the configured concurrency
+    - Persist progress after each node
+    - Skip runs awaiting approval (they do not consume execution capacity)
+
+    ## How to operate
+    - Prefer the CLI runner tick:
+      `openclaw recipes workflows runner-tick --team-id {{teamId}} --concurrency 2 --lease-seconds 45`
+    - If anything looks wrong (schema mismatch, repeated failures), STOP and write a note to notes/status.md.
+
+  workflow-runner.tools: |
+    # TOOLS.md
+
+    # Agent-local notes for workflow-runner.
+
+  workflow-runner.status: |
+    # STATUS.md
+
+    - (empty)
+
+  workflow-runner.notes: |
     # NOTES.md
 
     - (empty)
