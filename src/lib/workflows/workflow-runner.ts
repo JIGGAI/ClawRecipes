@@ -360,7 +360,8 @@ async function executeWorkflowNodes(opts: {
       const toolArgs = ((node as any)?.config?.args ?? {}) as Record<string, unknown>;
       if (!toolName) throw new Error(`Node ${nodeLabel(node)} missing config.tool`);
 
-      const runDir = path.dirname(runLogPath);
+      const runsRoot = path.dirname(runLogPath);
+      const runDir = path.join(runsRoot, runId);
       const artifactsDir = path.join(runDir, 'artifacts');
       await ensureDir(artifactsDir);
       const artifactPath = path.join(artifactsDir, `${String(i).padStart(3, '0')}-${node.id}.tool.json`);
