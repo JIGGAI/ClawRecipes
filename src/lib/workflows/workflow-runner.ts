@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import { resolveWorkspaceRoot } from '../workspace';
 import type { ToolTextResult } from '../../toolsInvoke';
@@ -79,6 +80,14 @@ function laneToStatus(lane: WorkflowLane) {
 function toolText(result: ToolTextResult | null | undefined): string {
   const text = result?.content?.find((c) => c.type === 'text')?.text;
   return String(text ?? '').trim();
+}
+
+function templateReplace(input: string, vars: Record<string, string>) {
+  let out = String(input ?? '');
+  for (const [k, v] of Object.entries(vars)) {
+    out = out.replaceAll(`{{${k}}}`, v);
+  }
+  return out;
 }
 
 async function moveRunTicket(opts: {
@@ -351,20 +360,124 @@ async function executeWorkflowNodes(opts: {
       const toolArgs = ((node as any)?.config?.args ?? {}) as Record<string, unknown>;
       if (!toolName) throw new Error(`Node ${nodeLabel(node)} missing config.tool`);
 
-      // Strict-by-default: allow runtime.exec only when explicitly allowlisted by workflow meta.
-      if (toolName === 'runtime.exec') {
-        const allow = Array.isArray((workflow as any)?.meta?.execAllowBins) ? (workflow as any).meta.execAllowBins : null;
-        if (!allow) {
-          throw new Error(`runtime.exec denied: workflow meta.execAllowBins[] not set (${nodeLabel(node)})`);
-        }
-      }
-
       const runDir = path.dirname(runLogPath);
       const artifactsDir = path.join(runDir, 'artifacts');
       await ensureDir(artifactsDir);
       const artifactPath = path.join(artifactsDir, `${String(i).padStart(3, '0')}-${node.id}.tool.json`);
 
+      const vars = {
+        date: new Date().toISOString(),
+        'run.id': runId,
+        'workflow.id': String(workflow.id ?? ''),
+        'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
+      };
+
       try {
+        // Runner-native tools (preferred): do NOT depend on gateway tool exposure.
+        if (toolName === 'fs.append') {
+          const relPath = String(toolArgs.path ?? '').trim();
+          const contentRaw = String(toolArgs.content ?? '');
+          if (!relPath) throw new Error('fs.append requires args.path');
+          if (!contentRaw) throw new Error('fs.append requires args.content');
+
+          const abs = path.resolve(teamDir, relPath);
+          if (!abs.startsWith(teamDir + path.sep) && abs !== teamDir) {
+            throw new Error('fs.append path must be within the team workspace');
+          }
+
+          await ensureDir(path.dirname(abs));
+          const content = templateReplace(contentRaw, vars);
+          await fs.appendFile(abs, content, 'utf8');
+
+          const result = { appendedTo: path.relative(teamDir, abs), bytes: Buffer.byteLength(content, 'utf8') };
+          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2), 'utf8');
+
+          await appendRunLog(runLogPath, (cur) => ({
+            ...cur,
+            nextNodeIndex: i + 1,
+            events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
+            nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
+          }));
+
+          continue;
+        }
+
+        if (toolName === 'runtime.exec') {
+          // Extra safety gate: runtime.exec must be explicitly enabled (dev/testing only).
+          if (process.env.OPENCLAW_WORKFLOW_RUNNER_ENABLE_RUNTIME_EXEC !== '1') {
+            throw new Error('runtime.exec denied: OPENCLAW_WORKFLOW_RUNNER_ENABLE_RUNTIME_EXEC!=1');
+          }
+
+          const meta = (workflow as any)?.meta ?? {};
+          const allowBins = new Set<string>(Array.isArray(meta.execAllowBins) ? meta.execAllowBins.map(String) : []);
+          const allowCommands = new Set<string>(Array.isArray(meta.execAllowCommands) ? meta.execAllowCommands.map(String) : []);
+          if (allowBins.size === 0 && allowCommands.size === 0) {
+            throw new Error(`runtime.exec denied: set workflow meta.execAllowBins[] or meta.execAllowCommands[] (${nodeLabel(node)})`);
+          }
+
+          const cmdArray = Array.isArray(toolArgs.commandArray)
+            ? toolArgs.commandArray
+            : Array.isArray(toolArgs.command)
+              ? toolArgs.command
+              : null;
+          const cmdStr = typeof toolArgs.command === 'string' ? toolArgs.command : '';
+
+          const parts = (cmdArray ? cmdArray.map(String) : cmdStr.split(/\s+/)).map((s) => s.trim()).filter(Boolean);
+          if (!parts.length) throw new Error('runtime.exec requires args.command or args.commandArray');
+
+          const bin = path.basename(parts[0]!);
+          const fullCommand = cmdArray ? parts.join(' ') : String(cmdStr).trim();
+
+          if (allowCommands.size && !allowCommands.has(fullCommand)) {
+            throw new Error(`runtime.exec command not allowlisted: ${fullCommand}`);
+          }
+          if (!allowCommands.size && !allowBins.has(bin)) {
+            throw new Error(`runtime.exec bin not allowlisted: ${bin}`);
+          }
+
+          const cwdRel = typeof toolArgs.cwd === 'string' ? toolArgs.cwd : typeof toolArgs.workdir === 'string' ? toolArgs.workdir : '';
+          const cwdAbs = cwdRel ? path.resolve(teamDir, cwdRel) : teamDir;
+          if (!cwdAbs.startsWith(teamDir + path.sep) && cwdAbs !== teamDir) {
+            throw new Error('runtime.exec cwd must be within the team workspace');
+          }
+
+          const timeoutMs = Math.max(0, Number(meta.execTimeoutSeconds ?? 60)) * 1000;
+
+          const result = await new Promise<{ stdout: string; stderr: string; exitCode: number | null; signal: string | null }>((resolve, reject) => {
+            const child = spawn(parts[0]!, parts.slice(1), { cwd: cwdAbs, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+            let stdout = '';
+            let stderr = '';
+            const maxBytes = 64 * 1024;
+            child.stdout?.on('data', (b: Buffer) => {
+              if (stdout.length < maxBytes) stdout += b.toString('utf8').slice(0, maxBytes - stdout.length);
+            });
+            child.stderr?.on('data', (b: Buffer) => {
+              if (stderr.length < maxBytes) stderr += b.toString('utf8').slice(0, maxBytes - stderr.length);
+            });
+
+            const t = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+            child.on('error', (e) => {
+              clearTimeout(t);
+              reject(e);
+            });
+            child.on('close', (code, signal) => {
+              clearTimeout(t);
+              resolve({ stdout, stderr, exitCode: code, signal });
+            });
+          });
+
+          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2), 'utf8');
+          await appendRunLog(runLogPath, (cur) => ({
+            ...cur,
+            nextNodeIndex: i + 1,
+            events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
+            nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
+          }));
+
+          continue;
+        }
+
+        // Fallback: attempt to invoke a gateway tool by name.
         const result = await toolsInvoke(api, { tool: toolName, args: toolArgs } as any);
         await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2), 'utf8');
 
