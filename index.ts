@@ -44,7 +44,7 @@ import {
 } from "./src/handlers/team";
 import { handleScaffold, scaffoldAgentFromRecipe } from "./src/handlers/scaffold";
 import { reconcileRecipeCronJobs } from "./src/handlers/cron";
-import { handleWorkflowsApprove, handleWorkflowsPollApprovals, handleWorkflowsResume, handleWorkflowsRun } from "./src/handlers/workflows";
+import { handleWorkflowsApprove, handleWorkflowsPollApprovals, handleWorkflowsResume, handleWorkflowsRun, handleWorkflowsRunnerOnce, handleWorkflowsRunnerTick } from "./src/handlers/workflows";
 import { listRecipeFiles, loadRecipeById, workspacePath } from "./src/lib/recipes";
 import {
   executeWorkspaceCleanup,
@@ -464,7 +464,37 @@ const recipesPlugin = {
             console.log(JSON.stringify(res, null, 2));
           });
 
+        
+
         workflows
+          .command("runner-once")
+          .description("Claim and execute a single queued workflow run (intended for cron-driven runner)")
+          .requiredOption("--team-id <teamId>", "Team id (workspace-<teamId>)")
+          .option("--lease-seconds <n>", "Lease duration in seconds", (v: string) => Number(v))
+          .action(async (options: { teamId?: string; leaseSeconds?: number }) => {
+            const res = await handleWorkflowsRunnerOnce(api, {
+              teamId: String(options.teamId ?? ""),
+              leaseSeconds: typeof options.leaseSeconds === "number" ? options.leaseSeconds : undefined,
+            });
+            console.log(JSON.stringify(res, null, 2));
+          });
+
+        workflows
+          .command("runner-tick")
+          .description("Claim and execute up to N queued workflow runs in parallel (cron-friendly)")
+          .requiredOption("--team-id <teamId>", "Team id (workspace-<teamId>)")
+          .option("--concurrency <n>", "Max parallel active executions", (v: string) => Number(v))
+          .option("--lease-seconds <n>", "Lease duration in seconds", (v: string) => Number(v))
+          .action(async (options: { teamId?: string; concurrency?: number; leaseSeconds?: number }) => {
+            const res = await handleWorkflowsRunnerTick(api, {
+              teamId: String(options.teamId ?? ""),
+              concurrency: typeof options.concurrency === "number" ? options.concurrency : undefined,
+              leaseSeconds: typeof options.leaseSeconds === "number" ? options.leaseSeconds : undefined,
+            });
+            console.log(JSON.stringify(res, null, 2));
+          });
+
+workflows
           .command("approve")
           .description("Record an approval decision for an awaiting workflow run")
           .requiredOption("--team-id <teamId>", "Team id (workspace-<teamId>)")
