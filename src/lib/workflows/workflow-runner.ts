@@ -389,18 +389,32 @@ async function executeWorkflowNodes(opts: {
         `Return ONLY the final content (the runner will store it as JSON).`,
       ].join('\n');
 
-      const result = await toolsInvoke<ToolTextResult>(api, {
-        tool: 'sessions_spawn',
-        args: {
-          agentId,
-          task,
-          label: `workflow:${teamId}:${workflow.id ?? 'workflow'}:${runId}:${node.id}`,
-          cleanup: 'delete',
-          runTimeoutSeconds: 300,
-        },
-      });
+      // Prefer llm-task (no sessions/tool spawning required). Falls back to sessions_spawn if llm-task isn't available.
+      let text = '';
+      try {
+        const llmRes = await toolsInvoke<any>(api, {
+          tool: 'llm-task',
+          args: {
+            prompt: task,
+            // Keep input minimal for now (file-first). Future: load inputFrom outputs.
+            input: { teamId, runId, nodeId: node.id, agentId },
+          },
+        });
+        text = JSON.stringify((llmRes as any)?.details?.json ?? (llmRes as any)?.details ?? llmRes ?? null, null, 2);
+      } catch {
+        const result = await toolsInvoke<ToolTextResult>(api, {
+          tool: 'sessions_spawn',
+          args: {
+            agentId,
+            task,
+            label: `workflow:${teamId}:${workflow.id ?? 'workflow'}:${runId}:${node.id}`,
+            cleanup: 'delete',
+            runTimeoutSeconds: 300,
+          },
+        });
+        text = toolText(result) || '[no output]';
+      }
 
-      const text = toolText(result) || '[no output]';
       const outputObj = {
         runId,
         teamId,
@@ -1573,18 +1587,30 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         `Return ONLY the final content (the worker will store it as JSON).`,
       ].join('\n');
 
-      const result = await toolsInvoke<ToolTextResult>(api, {
-        tool: 'sessions_spawn',
-        args: {
-          agentId: agentIdExec,
-          task: taskText,
-          label: `workflow:${teamId}:${workflow.id ?? 'workflow'}:${runId}:${node.id}`,
-          cleanup: 'delete',
-          runTimeoutSeconds: 300,
-        },
-      });
+      let text = '';
+      try {
+        const llmRes = await toolsInvoke<any>(api, {
+          tool: 'llm-task',
+          args: {
+            prompt: taskText,
+            input: { teamId, runId, nodeId: node.id, agentId: agentIdExec },
+          },
+        });
+        text = JSON.stringify((llmRes as any)?.details?.json ?? (llmRes as any)?.details ?? llmRes ?? null, null, 2);
+      } catch {
+        const result = await toolsInvoke<ToolTextResult>(api, {
+          tool: 'sessions_spawn',
+          args: {
+            agentId: agentIdExec,
+            task: taskText,
+            label: `workflow:${teamId}:${workflow.id ?? 'workflow'}:${runId}:${node.id}`,
+            cleanup: 'delete',
+            runTimeoutSeconds: 300,
+          },
+        });
+        text = toolText(result) || '[no output]';
+      }
 
-      const text = toolText(result) || '[no output]';
       const outputObj = {
         runId,
         teamId,
