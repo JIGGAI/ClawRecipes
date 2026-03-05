@@ -664,7 +664,7 @@ async function executeWorkflowNodes(opts: {
 
       const vars = {
         date: new Date().toISOString(),
-        'run.id': runId,
+        'run.id': task.runId,
         'workflow.id': String(workflow.id ?? ''),
         'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
       };
@@ -1890,9 +1890,17 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         // Runner-native tools (preferred): do NOT depend on gateway tool exposure.
         if (toolName === 'fs.append') {
           const relPath = String(toolArgs.path ?? '').trim();
-          const content = String(toolArgs.content ?? '');
+          const contentRaw = String(toolArgs.content ?? '');
           if (!relPath) throw new Error('fs.append requires args.path');
-          if (!content) throw new Error('fs.append requires args.content');
+          if (!contentRaw) throw new Error('fs.append requires args.content');
+
+          const vars = {
+            date: new Date().toISOString(),
+            'run.id': task.runId,
+            'workflow.id': String(workflow.id ?? ''),
+            'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
+          };
+          const content = templateReplace(contentRaw, vars);
 
           const abs = path.resolve(teamDir, relPath);
           if (!abs.startsWith(teamDir + path.sep) && abs !== teamDir) {
