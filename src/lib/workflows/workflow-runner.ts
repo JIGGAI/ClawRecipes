@@ -1945,11 +1945,23 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           let parsed: any = null;
           try { parsed = JSON.parse(String(stdout || '{}')); } catch { parsed = { raw: String(stdout || '') }; }
 
+          // Persist artifact.
           await fs.writeFile(
             artifactPath,
             JSON.stringify({ ok: true, tool: toolName, args: { platforms: ['x'], draftsFromNode }, result: parsed }, null, 2) + '\n',
             'utf8'
           );
+
+          // Always append real post URL to the team post log (no templated placeholders).
+          const tweetId = String(parsed?.data?.id ?? '').trim();
+          if (tweetId) {
+            const handle = 'rjxdetroit';
+            const url = `https://x.com/${handle}/status/${tweetId}`;
+            const day = new Date().toISOString().slice(0, 10);
+            const postLogAbs = path.join(teamDir, 'shared-context', 'marketing', 'POST_LOG.md');
+            await ensureDir(path.dirname(postLogAbs));
+            await fs.appendFile(postLogAbs, `- ${day} posted on X: ${url} (run=${runId})\n`, 'utf8');
+          }
         } else {
           const toolRes = await toolsInvoke<unknown>(api, {
             tool: toolName,
