@@ -1493,7 +1493,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
   const results: Array<{ taskId: string; runId: string; nodeId: string; status: string }> = [];
 
   for (let i = 0; i < limit; i++) {
-    const dq = await dequeueNextTask(teamDir, agentId, { workerId });
+    const dq = await dequeueNextTask(teamDir, agentId, { workerId, leaseSeconds: 120 });
     if (!dq.ok || !dq.task) break;
 
     const { task } = dq.task;
