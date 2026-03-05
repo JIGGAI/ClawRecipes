@@ -1642,6 +1642,12 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       let target = String(targetRaw ?? '');
       let accountId = accountIdRaw ? String(accountIdRaw) : undefined;
 
+      // ClawKitchen UI sometimes stores placeholder targets like "(set in UI)".
+      // Treat these as unset.
+      if (target && /^\(set in ui\)$/i.test(target.trim())) {
+        target = '';
+      }
+
       if (approvalBindingId) {
         try {
           const resolved = await resolveApprovalBindingTarget(api, approvalBindingId);
