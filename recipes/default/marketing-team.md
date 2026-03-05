@@ -134,6 +134,20 @@ templates:
     Put raw logs, command output, and investigation notes here.
     Prefer filenames like: `YYYY-MM-DD-topic.md`.
 
+  sharedContext.postLog: |
+    # Post Log
+
+    Append-only record of what was posted, when, and links.
+
+    Format:
+    - YYYY-MM-DD posted on X: https://x.com/<handle>/status/<tweetId> (run=<runId>)
+
+  sharedContext.marketingLearnings: |
+    # Marketing learnings (JSONL)
+
+    Append-only JSONL. Each line is a JSON object with fields like:
+    {"ts":"2026-03-05","runId":"...","notes":["..."]}
+
   tickets: |
     # Tickets — {{teamId}}
 
@@ -2123,6 +2137,14 @@ files:
     mode: createOnly
   - path: shared-context/agent-outputs/README.md
     template: sharedContext.agentOutputsReadme
+    mode: createOnly
+
+  # Marketing workflow logs
+  - path: shared-context/marketing/POST_LOG.md
+    template: sharedContext.postLog
+    mode: createOnly
+  - path: shared-context/memory/marketing_learnings.jsonl
+    template: sharedContext.marketingLearnings
     mode: createOnly
 
 
