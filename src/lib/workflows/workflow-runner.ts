@@ -1390,7 +1390,7 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
   if (runLog.status === 'completed' || runLog.status === 'rejected') {
     return { ok: true as const, runId, status: runLog.status, message: 'No-op; run already finished.' };
   }
-  if (runLog.status !== 'awaiting_approval') {
+  if (runLog.status !== 'awaiting_approval' && runLog.status !== 'running') {
     throw new Error(`Run is not awaiting approval (status=${runLog.status}).`);
   }
 
@@ -1426,15 +1426,16 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
     return { ok: true as const, runId, status: 'rejected' as const, ticketPath: moved.ticketPath, runLogPath };
   }
 
+  // Mark node approved if not already recorded.
   const approvedTs = new Date().toISOString();
   await appendRunLog(runLogPath, (cur) => ({
     ...cur,
     status: 'running',
     nodeStates: { ...(cur as any).nodeStates, [approval.nodeId]: { status: 'success', ts: approvedTs } },
-    events: [...cur.events, { ts: approvedTs, type: 'node.approved', nodeId: approval.nodeId }],
+    events: cur.events?.some((e: any) => e?.type === 'node.approved' && String(e?.nodeId) === String(approval.nodeId))
+      ? cur.events
+      : [...cur.events, { ts: approvedTs, type: 'node.approved', nodeId: approval.nodeId }],
   }));
-
-  // Determine current lane from run log.
 
   // Pull-based execution: enqueue the next node and return.
   const idx0 = Math.max(0, Number(startNodeIndex ?? 0));
@@ -1732,6 +1733,54 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
       results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'awaiting_approval' });
       continue;
+    } else if (kind === 'tool') {
+      const toolName = String((node as any)?.action?.tool ?? '').trim();
+      const toolArgs = ((node as any)?.action?.args ?? {}) as Record<string, unknown>;
+      if (!toolName) throw new Error(`Node ${nodeLabel(node)} missing action.tool`);
+
+      const artifactsDir = path.join(runDir, 'artifacts');
+      await ensureDir(artifactsDir);
+      const artifactPath = path.join(artifactsDir, `${String(nodeIdx).padStart(3, '0')}-${node.id}.tool.json`);
+
+      try {
+        const toolRes = await toolsInvoke<any>(api, {
+          tool: toolName,
+          args: toolArgs,
+        });
+
+        await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, result: toolRes }, null, 2) + '\n', 'utf8');
+
+        const defaultNodeOutputRel = path.join('node-outputs', `${String(nodeIdx).padStart(3, '0')}-${node.id}.json`);
+        const nodeOutputRel = String(node?.output?.path ?? '').trim() || defaultNodeOutputRel;
+        const nodeOutputAbs = path.resolve(runDir, nodeOutputRel);
+        await ensureDir(path.dirname(nodeOutputAbs));
+        await fs.writeFile(nodeOutputAbs, JSON.stringify({
+          runId: task.runId,
+          teamId,
+          nodeId: node.id,
+          kind: node.kind,
+          completedAt: new Date().toISOString(),
+          tool: toolName,
+          artifactPath: path.relative(teamDir, artifactPath),
+        }, null, 2) + '\n', 'utf8');
+
+        await appendRunLog(runPath, (cur) => ({
+          ...cur,
+          nextNodeIndex: nodeIdx + 1,
+          events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind: node.kind, artifactPath: path.relative(teamDir, artifactPath), nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
+          nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath), nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
+        }));
+      } catch (e) {
+        await fs.writeFile(artifactPath, JSON.stringify({ ok: false, tool: toolName, error: (e as Error).message }, null, 2) + '\n', 'utf8');
+        await appendRunLog(runPath, (cur) => ({
+          ...cur,
+          status: 'error',
+          events: [...cur.events, { ts: new Date().toISOString(), type: 'node.error', nodeId: node.id, kind: node.kind, tool: toolName, message: (e as Error).message, artifactPath: path.relative(teamDir, artifactPath) }],
+          nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, tool: toolName, error: (e as Error).message, artifactPath: path.relative(teamDir, artifactPath) }],
+        }));
+        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'error', error: (e as Error).message });
+        continue;
+      }
     } else {
       throw new Error(`Worker does not yet support node kind: ${kind}`);
     }
