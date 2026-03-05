@@ -1,5 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import path from "node:path";
+import fs from "node:fs/promises";
 import JSON5 from "json5";
 import {
   applyAgentSnippetsToOpenClawConfig,
@@ -76,18 +77,54 @@ const recipesPlugin = {
           // Only enable for Telegram for now (matches RJ's request).
           if (channel !== "telegram") return;
 
-          const m = text.match(/^(approve|decline)\s+([0-9]{4}-[0-9]{2}-[0-9]{2}t[0-9a-z-]+)$/i);
+          const m = text.match(/^(approve|decline)\s+([A-Z0-9]{4,8})\s*$/i);
           if (!m) return;
           const verb = String(m[1] ?? "").toLowerCase();
-          const runId = String(m[2] ?? "");
+          const code = String(m[2] ?? "").toUpperCase();
           const approved = verb === "approve";
 
-          // Team id must be explicit in the command for safety.
-          const teamMatch = text.match(/--team-id\s+(\S+)/i);
-          const teamId = teamMatch ? String(teamMatch[1]) : "claw-marketing-team";
+          const workspaceRoot = resolveWorkspaceRoot(api);
+          const parent = path.resolve(workspaceRoot, "..");
 
-          await handleWorkflowsApprove(api, { teamId, runId, approved, note: `via telegram reply (${verb})` });
-          await handleWorkflowsResume(api, { teamId, runId });
+          // Scan workspace-*/shared-context/workflow-runs/*/approvals/approval.json for a matching code.
+          const teamDirs = (await fs.readdir(parent, { withFileTypes: true }))
+            .filter((d) => d.isDirectory() && d.name.startsWith("workspace-"))
+            .map((d) => path.join(parent, d.name));
+
+          let found: { teamId: string; runId: string } | null = null;
+
+          for (const teamDir of teamDirs) {
+            const teamId = path.basename(teamDir).replace(/^workspace-/, "");
+            const runsDir = path.join(teamDir, "shared-context", "workflow-runs");
+            let runIds: string[] = [];
+            try {
+              runIds = (await fs.readdir(runsDir, { withFileTypes: true }))
+                .filter((d) => d.isDirectory())
+                .map((d) => d.name);
+            } catch {
+              continue;
+            }
+
+            for (const runId of runIds) {
+              const approvalPath = path.join(runsDir, runId, "approvals", "approval.json");
+              try {
+                const raw = await fs.readFile(approvalPath, "utf8");
+                const a = JSON.parse(raw) as { code?: string; status?: string; runId?: string; teamId?: string };
+                if (String(a?.code ?? "").toUpperCase() === code && String(a?.status ?? "") === "pending") {
+                  found = { teamId: String(a?.teamId ?? teamId), runId: String(a?.runId ?? runId) };
+                  break;
+                }
+              } catch {
+                // ignore
+              }
+            }
+            if (found) break;
+          }
+
+          if (!found) return;
+
+          await handleWorkflowsApprove(api, { teamId: found.teamId, runId: found.runId, approved, note: `via telegram reply (${verb}) code=${code}` });
+          await handleWorkflowsResume(api, { teamId: found.teamId, runId: found.runId });
         } catch (e) {
           console.error(`[recipes] approval reply handler error: ${(e as Error).message}`);
         }
