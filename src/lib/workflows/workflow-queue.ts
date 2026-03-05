@@ -43,6 +43,7 @@ function claimPathFor(teamDir: string, agentId: string, taskId: string) {
   return path.join(claimsDir(teamDir), `${agentId}.${taskId}.json`);
 }
 
+
 export function queuePathFor(teamDir: string, agentId: string) {
   return path.join(queueDir(teamDir), `${agentId}.jsonl`);
 }
@@ -192,19 +193,34 @@ export async function dequeueNextTask(
 
       await ensureDir(claimsDir(teamDir));
       const claimPath = claimPathFor(teamDir, agentId, t.id);
+
+      // Claim behavior:
+      // - If unclaimed: create claim file.
+      // - If already claimed by *this* workerId: allow re-processing (idempotent recovery).
+      // - If claimed by another workerId: skip.
+      const workerId = String(opts?.workerId ?? `worker:${process.pid}`);
       try {
         const claim = {
           taskId: t.id,
           agentId,
-          workerId: String(opts?.workerId ?? `worker:${process.pid}`),
+          workerId,
           claimedAt: new Date().toISOString(),
           leaseSeconds: typeof opts?.leaseSeconds === 'number' ? opts.leaseSeconds : undefined,
         };
         await fs.writeFile(claimPath, JSON.stringify(claim, null, 2), { encoding: 'utf8', flag: 'wx' });
       } catch {
-        // Already claimed: skip it.
-        await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
-        continue;
+        // Already claimed: only proceed if the existing claim matches this worker.
+        try {
+          const raw = await fs.readFile(claimPath, 'utf8');
+          const existing = JSON.parse(raw) as { workerId?: string };
+          if (String(existing?.workerId ?? '') !== workerId) {
+            await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
+            continue;
+          }
+        } catch {
+          await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
+          continue;
+        }
       }
 
       await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
