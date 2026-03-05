@@ -394,6 +394,7 @@ async function executeWorkflowNodes(opts: {
       try {
         const llmRes = await toolsInvoke<any>(api, {
           tool: 'llm-task',
+          action: 'json',
           args: {
             prompt: task,
             // Keep input minimal for now (file-first). Future: load inputFrom outputs.
@@ -1591,6 +1592,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       try {
         const llmRes = await toolsInvoke<any>(api, {
           tool: 'llm-task',
+          action: 'json',
           args: {
             prompt: taskText,
             input: { teamId, runId, nodeId: node.id, agentId: agentIdExec },
