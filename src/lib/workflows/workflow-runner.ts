@@ -8,6 +8,7 @@ import type { ToolTextResult } from '../../toolsInvoke';
 import { toolsInvoke } from '../../toolsInvoke';
 import { loadOpenClawConfig } from '../recipes-config';
 import type { Workflow, WorkflowEdge, WorkflowLane, WorkflowNode } from './workflow-types';
+import { dequeueNextTask, enqueueTask } from './workflow-queue';
 import { enqueueTask } from './workflow-queue';
 
 function normalizeWorkflow(raw: unknown): Workflow {
@@ -295,7 +296,6 @@ async function executeWorkflowNodes(opts: {
 
     const laneRaw = node?.lane ? String(node.lane) : null;
     if (laneRaw) {
-      assertLane(laneRaw);
       if (laneRaw !== curLane) {
         const moved = await moveRunTicket({ teamDir, ticketPath: curTicketPath, toLane: laneRaw });
         curLane = laneRaw;
@@ -851,26 +851,59 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
   const workflowRaw = await fs.readFile(workflowPath, 'utf8');
   const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
 
-  const ticketPath = path.join(teamDir, chosen.run.ticket.file);
-  const laneRaw = String(chosen.run.ticket.lane);
-  assertLane(laneRaw);
-  const initialLane = laneRaw as WorkflowLane;
 
-  let execRes: { ticketPath: string; lane: WorkflowLane; status: 'completed' | 'awaiting_approval' | 'rejected' };
   try {
-    execRes = await executeWorkflowNodes({
-      api,
+    // Scheduler-only: enqueue the next runnable node onto the assigned agent's pull queue.
+    let idx = typeof chosen.run.nextNodeIndex === 'number' ? chosen.run.nextNodeIndex : 0;
+
+    while (idx < (workflow.nodes?.length ?? 0)) {
+      const n = workflow.nodes[idx]!;
+      const k = String(n.kind ?? '');
+      if (k !== 'start' && k !== 'end') break;
+      await appendRunLog(chosen.file, (cur) => ({
+        ...cur,
+        nextNodeIndex: idx + 1,
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: n.id, kind: k, noop: true }],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: n.id, kind: k, noop: true }],
+      }));
+      idx += 1;
+    }
+
+    if (idx >= (workflow.nodes?.length ?? 0)) {
+      await writeRunFile(chosen.file, (cur) => ({
+        ...cur,
+        updatedAt: new Date().toISOString(),
+        status: 'completed',
+        claimedBy: null,
+        claimExpiresAt: null,
+        nextNodeIndex: idx,
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'run.completed' }],
+      }));
+      return { ok: true as const, teamId, claimed: 1, runId: chosen.run.runId, status: 'completed' as const };
+    }
+
+    const node = workflow.nodes[idx]!;
+    const assignedAgentId = String(node?.assignedTo?.agentId ?? '').trim();
+    if (!assignedAgentId) throw new Error(`Node ${node.id} missing assignedTo.agentId (required for pull-based execution)`);
+
+    await enqueueTask(teamDir, assignedAgentId, {
       teamId,
-      teamDir,
-      workflow,
-      workflowPath,
-      workflowFile,
       runId: chosen.run.runId,
-      runLogPath: chosen.file,
-      ticketPath,
-      initialLane,
-      startNodeIndex: typeof chosen.run.nextNodeIndex === 'number' ? chosen.run.nextNodeIndex : 0,
+      nodeId: node.id,
+      kind: 'execute_node',
     });
+
+    await writeRunFile(chosen.file, (cur) => ({
+      ...cur,
+      updatedAt: new Date().toISOString(),
+      status: 'waiting_workers',
+      claimedBy: null,
+      claimExpiresAt: null,
+      nextNodeIndex: idx,
+      events: [...cur.events, { ts: new Date().toISOString(), type: 'node.enqueued', nodeId: node.id, agentId: assignedAgentId }],
+    }));
+
+    return { ok: true as const, teamId, claimed: 1, runId: chosen.run.runId, status: 'waiting_workers' as const };
   } catch (e) {
     await writeRunFile(chosen.file, (cur) => ({
       ...cur,
@@ -880,19 +913,8 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
       claimExpiresAt: null,
       events: [...cur.events, { ts: new Date().toISOString(), type: 'run.error', message: (e as Error).message }],
     }));
-    throw e
+    throw e;
   }
-
-  await writeRunFile(chosen.file, (cur) => ({
-    ...cur,
-    updatedAt: new Date().toISOString(),
-    status: execRes.status === 'awaiting_approval' ? 'awaiting_approval' : execRes.status,
-    claimedBy: null,
-    claimExpiresAt: null,
-    nextNodeIndex: execRes.status === 'awaiting_approval' ? cur.nextNodeIndex : (workflow.nodes?.length ?? cur.nextNodeIndex ?? 0),
-  }));
-
-  return { ok: true as const, teamId, claimed: 1, runId: chosen.run.runId, status: execRes.status };
 }
 
 
@@ -1001,8 +1023,6 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
     const workflowRaw = await fs.readFile(workflowPath, 'utf8');
     const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
 
-    const laneRaw = String(run.ticket.lane);
-    assertLane(laneRaw);
     try {
       // Scheduler-only: do NOT execute nodes directly here.
       // Instead, enqueue the next runnable node onto the assigned agent's pull queue.
@@ -1363,25 +1383,39 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
   }));
 
   // Determine current lane from run log.
-  const laneRaw = String(runLog.ticket.lane);
-  assertLane(laneRaw);
-  const initialLane = laneRaw as WorkflowLane;
 
-  const execRes = await executeWorkflowNodes({
-    api,
+  // Pull-based execution: enqueue the next node and return.
+  const idx0 = Math.max(0, Number(startNodeIndex ?? 0));
+  if (idx0 >= (workflow.nodes?.length ?? 0)) {
+    await writeRunFile(runLogPath, (cur) => ({
+      ...cur,
+      updatedAt: new Date().toISOString(),
+      status: 'completed',
+      events: [...cur.events, { ts: new Date().toISOString(), type: 'run.completed' }],
+    }));
+    return { ok: true as const, runId, status: 'completed' as const, ticketPath, runLogPath };
+  }
+
+  const node = workflow.nodes[idx0]!;
+  const nextAgentId = String(node?.assignedTo?.agentId ?? '').trim();
+  if (!nextAgentId) throw new Error(`Node ${node.id} missing assignedTo.agentId (required for pull-based execution)`);
+
+  await enqueueTask(teamDir, nextAgentId, {
     teamId,
-    teamDir,
-    workflow,
-    workflowPath,
-    workflowFile,
     runId,
-    runLogPath,
-    ticketPath,
-    initialLane,
-    startNodeIndex,
+    nodeId: node.id,
+    kind: 'execute_node',
   });
 
-  return { ok: true as const, runId, status: execRes.status, ticketPath: execRes.ticketPath, runLogPath };
+  await writeRunFile(runLogPath, (cur) => ({
+    ...cur,
+    updatedAt: new Date().toISOString(),
+    status: 'waiting_workers',
+    nextNodeIndex: idx0,
+    events: [...cur.events, { ts: new Date().toISOString(), type: 'node.enqueued', nodeId: node.id, agentId: nextAgentId }],
+  }));
+
+  return { ok: true as const, runId, status: 'waiting_workers' as const, ticketPath, runLogPath };
 }
 
 export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
@@ -1423,7 +1457,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     try {
       await fs.writeFile(lockPath, JSON.stringify({ workerId, taskId: task.id, claimedAt: new Date().toISOString() }, null, 2), { encoding: 'utf8', flag: 'wx' });
     } catch {
-      results.append({ 'taskId': task.id, 'runId': task.runId, 'nodeId': task.nodeId, 'status': 'skipped_locked' })
+      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_locked' });
       continue;
     }
 
@@ -1438,8 +1472,6 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     const node = workflow.nodes[nodeIdx]!;
 
     // Determine current lane + ticket path.
-    const laneRaw = String(run.ticket.lane);
-    assertLane(laneRaw);
     let curLane: WorkflowLane = laneRaw as WorkflowLane;
     let curTicketPath = path.join(teamDir, run.ticket.file);
 
