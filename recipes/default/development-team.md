@@ -59,7 +59,17 @@ cronJobs:
     name: "PR watcher (ticket-linked)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "PR watcher (ticket-linked): scan active in-progress/testing tickets for GitHub PR URLs; summarize checks/review/mergeable; auto-complete tickets when PRs merge."
+    message: |
+      PR watcher (ticket-linked): scan active in-progress/testing tickets for GitHub PR URLs.
+
+      Do:
+      - Summarize checks/review/mergeable status in the ticket comments.
+      - If a PR is merged, comment "PR merged" + link.
+      - Optionally move ticket to TESTING if verification remains.
+
+      Do NOT:
+      - Do NOT move any ticket to DONE automatically.
+      - Only the team lead should move to DONE after all tasks are complete, tested, and merged.
     enabledByDefault: false
 
   - id: testing-lane-loop
