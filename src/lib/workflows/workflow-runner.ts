@@ -1634,38 +1634,50 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       // For now, approval nodes are executed by workers (message send + awaiting state).
       // Note: approval files live inside the run folder.
       const approvalBindingId = String(node?.action?.approvalBindingId ?? '');
-      if (!approvalBindingId) throw new Error(`Node ${nodeLabel(node)} missing action.approvalBindingId`);
+      const provider = String((node as any)?.config?.provider ?? (node as any)?.action?.provider ?? '');
+      const targetRaw = (node as any)?.config?.target ?? (node as any)?.action?.target;
+      const accountIdRaw = (node as any)?.config?.accountId ?? (node as any)?.action?.accountId;
 
-      const { channel, target, accountId } = await resolveApprovalBindingTarget(api, approvalBindingId);
+      const { channel, target, accountId } = approvalBindingId
+        ? await resolveApprovalBindingTarget(api, approvalBindingId)
+        : {
+            channel: provider || 'telegram',
+            target: String(targetRaw ?? ''),
+            accountId: accountIdRaw ? String(accountIdRaw) : undefined,
+          };
+
+      if (!approvalBindingId && !target) {
+        throw new Error(`Node ${nodeLabel(node)} missing approvalBindingId OR config.target for approval message`);
+      }
 
       const approvalsDir = path.join(runDir, 'approvals');
       await ensureDir(approvalsDir);
       const approvalPath = path.join(approvalsDir, 'approval.json');
+
+      const code = Math.random().toString(36).slice(2, 8).toUpperCase();
+
       const approvalObj = {
         runId: task.runId,
         teamId,
         workflowFile,
         nodeId: node.id,
-        bindingId: approvalBindingId,
+        bindingId: approvalBindingId || undefined,
         requestedAt: new Date().toISOString(),
         status: 'pending',
+        code,
         ticket: path.relative(teamDir, curTicketPath),
         runLog: path.relative(teamDir, runPath),
       };
       await fs.writeFile(approvalPath, JSON.stringify(approvalObj, null, 2), 'utf8');
 
       const msg = [
-        `Approval requested for workflow run: ${workflow.name ?? workflow.id ?? workflowFile}`,
-        `RunId: ${task.runId}`,
-        `Node: ${node.name ?? node.id}`,
+        `Approval requested: ${workflow.name ?? workflow.id ?? workflowFile}`,
         `Ticket: ${path.relative(teamDir, curTicketPath)}`,
-        `Run log: ${path.relative(teamDir, runPath)}`,
-        `Approval file: ${path.relative(teamDir, approvalPath)}`,
-        `\nTo approve/reject:`,
-        `- openclaw recipes workflows approve --team-id ${teamId} --run-id ${task.runId} --approved true`,
-        `- openclaw recipes workflows approve --team-id ${teamId} --run-id ${task.runId} --approved false`,
-        `Then resume:`,
-        `- openclaw recipes workflows resume --team-id ${teamId} --run-id ${task.runId}`,
+        `Code: ${code}`,
+        `\nReply with:`,
+        `- approve ${code}`,
+        `- decline ${code}`,
+        `\n(You can also review in Kitchen: http://100.103.210.102:7777/teams/${teamId}/workflows/${workflow.id ?? ''})`,
       ].join('\n');
 
       await toolsInvoke<ToolTextResult>(api, {
