@@ -229,17 +229,24 @@ async function executeWorkflowNodes(opts: {
 
     if (kind === 'llm') {
       const agentId = String(node?.config?.agentId ?? '');
-      const promptTemplatePath = String(node?.config?.promptTemplatePath ?? '');
-      const outputPath = String(node?.config?.outputPath ?? '');
+      const promptTemplatePath = String((node as any)?.config?.promptTemplatePath ?? '');
+      const promptTemplateInline = (node as any)?.config?.promptTemplate;
+      const outputPath = String((node as any)?.config?.outputPath ?? '');
       if (!agentId) throw new Error(`Node ${nodeLabel(node)} missing config.agentId`);
-      if (!promptTemplatePath) throw new Error(`Node ${nodeLabel(node)} missing config.promptTemplatePath`);
       if (!outputPath) throw new Error(`Node ${nodeLabel(node)} missing config.outputPath`);
 
-      const promptPathAbs = path.resolve(teamDir, promptTemplatePath);
       const outPathAbs = path.resolve(teamDir, outputPath);
       await ensureDir(path.dirname(outPathAbs));
 
-      const prompt = await fs.readFile(promptPathAbs, 'utf8');
+      let prompt = '';
+      if (promptTemplatePath) {
+        const promptPathAbs = path.resolve(teamDir, promptTemplatePath);
+        prompt = await fs.readFile(promptPathAbs, 'utf8');
+      } else if (typeof promptTemplateInline === 'string' && promptTemplateInline.trim()) {
+        prompt = promptTemplateInline;
+      } else {
+        throw new Error(`Node ${nodeLabel(node)} missing config.promptTemplatePath or config.promptTemplate`);
+      }
       const task = [
         `You are executing a workflow run for teamId=${teamId}.`,
         `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,
