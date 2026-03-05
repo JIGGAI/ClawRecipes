@@ -1930,7 +1930,18 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           if (!text) throw new Error('No X draft text found in qc output (platforms.x.hook/body)');
 
           // Post via xurl.
-          const { stdout } = await execFileAsync('xurl', ['post', text], { timeout: 60_000, maxBuffer: 1024 * 1024 });
+          let stdout = '';
+          let stderr = '';
+          try {
+            const res = await execFileAsync('xurl', ['post', text], { timeout: 60_000, maxBuffer: 1024 * 1024 });
+            stdout = String((res as any).stdout ?? '');
+            stderr = String((res as any).stderr ?? '');
+          } catch (e) {
+            const err = e as any;
+            stdout = String(err?.stdout ?? '');
+            stderr = String(err?.stderr ?? err?.message ?? '');
+            throw new Error(`xurl post failed: ${stderr || stdout || err?.message || 'unknown error'}`);
+          }
           let parsed: any = null;
           try { parsed = JSON.parse(String(stdout || '{}')); } catch { parsed = { raw: String(stdout || '') }; }
 
