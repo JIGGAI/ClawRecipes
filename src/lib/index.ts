@@ -5,3 +5,4 @@ export * from './recipe-frontmatter';
 export * from './shared-context';
 export * from './workflows/workflow-runner';
 export * from './workflows/workflow-types';
+export * from './workflows/workflow-queue';
