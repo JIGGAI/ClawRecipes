@@ -1883,14 +1883,32 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       const artifactsDir = path.join(runDir, 'artifacts');
       await ensureDir(artifactsDir);
       const artifactPath = path.join(artifactsDir, `${String(nodeIdx).padStart(3, '0')}-${node.id}.tool.json`);
-
       try {
-        const toolRes = await toolsInvoke<unknown>(api, {
-          tool: toolName,
-          args: toolArgs,
-        });
+        // Runner-native tools (preferred): do NOT depend on gateway tool exposure.
+        if (toolName === 'fs.append') {
+          const relPath = String(toolArgs.path ?? '').trim();
+          const content = String(toolArgs.content ?? '');
+          if (!relPath) throw new Error('fs.append requires args.path');
+          if (!content) throw new Error('fs.append requires args.content');
 
-        await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, result: toolRes }, null, 2) + '\n', 'utf8');
+          const abs = path.resolve(teamDir, relPath);
+          if (!abs.startsWith(teamDir + path.sep) && abs !== teamDir) {
+            throw new Error('fs.append path must be within the team workspace');
+          }
+
+          await ensureDir(path.dirname(abs));
+          await fs.appendFile(abs, content, 'utf8');
+
+          const result = { appendedTo: path.relative(teamDir, abs), bytes: Buffer.byteLength(content, 'utf8') };
+          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
+        } else {
+          const toolRes = await toolsInvoke<unknown>(api, {
+            tool: toolName,
+            args: toolArgs,
+          });
+
+          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, result: toolRes }, null, 2) + '\n', 'utf8');
+        }
 
         const defaultNodeOutputRel = path.join('node-outputs', `${String(nodeIdx).padStart(3, '0')}-${node.id}.json`);
         const nodeOutputRel = String(node?.output?.path ?? '').trim() || defaultNodeOutputRel;
