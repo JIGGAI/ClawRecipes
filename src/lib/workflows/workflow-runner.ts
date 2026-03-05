@@ -1920,7 +1920,8 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             throw new Error('marketing.post_all currently supports only platforms=["x"]');
           }
 
-          const draftsFromNode = String((toolArgs as any).draftsFromNode ?? '').trim();
+          const argsObj = (toolArgs ?? {}) as Record<string, unknown>;
+          const draftsFromNode = typeof argsObj.draftsFromNode === 'string' ? argsObj.draftsFromNode.trim() : '';
           if (!draftsFromNode) throw new Error('marketing.post_all requires args.draftsFromNode');
 
           // Load prior node output JSON (from qc_brand) and extract platforms.x.{hook,body}
@@ -1930,10 +1931,13 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           if (!match) throw new Error(`Could not find node output for draftsFromNode=${draftsFromNode}`);
           const outRaw = await fs.readFile(path.join(nodeOutputsDir, match), 'utf8');
           const outObj = JSON.parse(outRaw) as { text?: string };
-          const packet = JSON.parse(String(outObj.text ?? '{}')) as any;
+          const packet = JSON.parse(String(outObj.text ?? '{}')) as unknown;
+          const packetObj = (packet && typeof packet === 'object') ? (packet as Record<string, unknown>) : {};
+          const platformsObj = (packetObj.platforms && typeof packetObj.platforms === 'object') ? (packetObj.platforms as Record<string, unknown>) : {};
+          const xObj = (platformsObj.x && typeof platformsObj.x === 'object') ? (platformsObj.x as Record<string, unknown>) : {};
 
-          const xHook = String(packet?.platforms?.x?.hook ?? '').trim();
-          const xBody = String(packet?.platforms?.x?.body ?? '').trim();
+          const xHook = typeof xObj.hook === 'string' ? xObj.hook.trim() : '';
+          const xBody = typeof xObj.body === 'string' ? xObj.body.trim() : '';
           const text = [xHook, xBody].filter(Boolean).join('\n\n').trim();
           if (!text) throw new Error('No X draft text found in qc output (platforms.x.hook/body)');
 
@@ -1942,16 +1946,20 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           let stderr = '';
           try {
             const res = await execFileAsync('xurl', ['post', text], { timeout: 60_000, maxBuffer: 1024 * 1024 });
-            stdout = String((res as any).stdout ?? '');
-            stderr = String((res as any).stderr ?? '');
+            stdout = typeof (res as { stdout?: unknown }).stdout === 'string' ? (res as { stdout?: string }).stdout : '';
+            stderr = typeof (res as { stderr?: unknown }).stderr === 'string' ? (res as { stderr?: string }).stderr : '';
           } catch (e) {
-            const err = e as any;
-            stdout = String(err?.stdout ?? '');
-            stderr = String(err?.stderr ?? err?.message ?? '');
-            throw new Error(`xurl post failed: ${stderr || stdout || err?.message || 'unknown error'}`);
+            const err = e as unknown as { stdout?: unknown; stderr?: unknown; message?: unknown };
+            stdout = typeof err.stdout === 'string' ? err.stdout : '';
+            stderr = typeof err.stderr === 'string' ? err.stderr : typeof err.message === 'string' ? err.message : '';
+            throw new Error(`xurl post failed: ${stderr || stdout || (typeof err.message === 'string' ? err.message : '') || 'unknown error'}`);
           }
-          let parsed: any = null;
-          try { parsed = JSON.parse(String(stdout || '{}')); } catch { parsed = { raw: String(stdout || '') }; }
+          let parsed: unknown = null;
+          try {
+            parsed = JSON.parse(String(stdout || '{}')) as unknown;
+          } catch {
+            parsed = { raw: String(stdout || '') };
+          }
 
           // Persist artifact.
           await fs.writeFile(
@@ -1961,7 +1969,9 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           );
 
           // Always append real post URL to the team post log (no templated placeholders).
-          const tweetId = String(parsed?.data?.id ?? '').trim();
+          const parsedObj = (parsed && typeof parsed === 'object') ? (parsed as Record<string, unknown>) : {};
+          const dataObj = (parsedObj.data && typeof parsedObj.data === 'object') ? (parsedObj.data as Record<string, unknown>) : {};
+          const tweetId = typeof dataObj.id === 'string' ? dataObj.id.trim() : '';
           if (tweetId) {
             const handle = 'rjxdetroit';
             const url = `https://x.com/${handle}/status/${tweetId}`;
