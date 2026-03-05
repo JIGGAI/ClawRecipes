@@ -8,7 +8,6 @@ import type { ToolTextResult } from '../../toolsInvoke';
 import { toolsInvoke } from '../../toolsInvoke';
 import { loadOpenClawConfig } from '../recipes-config';
 import type { Workflow, WorkflowEdge, WorkflowLane, WorkflowNode } from './workflow-types';
-import { dequeueNextTask, enqueueTask } from './workflow-queue';
 import { enqueueTask } from './workflow-queue';
 
 function normalizeWorkflow(raw: unknown): Workflow {
