@@ -197,25 +197,47 @@ export async function dequeueNextTask(
       // Claim behavior:
       // - If unclaimed: create claim file.
       // - If already claimed by *this* workerId: allow re-processing (idempotent recovery).
-      // - If claimed by another workerId: skip.
+      // - If claimed by another workerId:
+      //    - if lease is expired: allow this worker to steal the claim
+      //    - otherwise: skip
       const workerId = String(opts?.workerId ?? `worker:${process.pid}`);
-      try {
+      const leaseSeconds = typeof opts?.leaseSeconds === 'number' ? opts.leaseSeconds : undefined;
+      const now = Date.now();
+
+      async function writeClaim(overwrite: boolean) {
         const claim = {
-          taskId: t.id,
+          taskId: t!.id,
           agentId,
           workerId,
           claimedAt: new Date().toISOString(),
-          leaseSeconds: typeof opts?.leaseSeconds === 'number' ? opts.leaseSeconds : undefined,
+          leaseSeconds,
         };
-        await fs.writeFile(claimPath, JSON.stringify(claim, null, 2), { encoding: 'utf8', flag: 'wx' });
+        await fs.writeFile(claimPath, JSON.stringify(claim, null, 2), { encoding: 'utf8', flag: overwrite ? 'w' : 'wx' });
+      }
+
+      try {
+        await writeClaim(false);
       } catch {
-        // Already claimed: only proceed if the existing claim matches this worker.
         try {
           const raw = await fs.readFile(claimPath, 'utf8');
-          const existing = JSON.parse(raw) as { workerId?: string };
-          if (String(existing?.workerId ?? '') !== workerId) {
-            await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
-            continue;
+          const existing = JSON.parse(raw) as { workerId?: string; claimedAt?: string; leaseSeconds?: number };
+
+          // Same worker: allow idempotent re-processing.
+          if (String(existing?.workerId ?? '') === workerId) {
+            // proceed
+          } else {
+            const existingLease = typeof existing?.leaseSeconds === 'number' ? existing.leaseSeconds : undefined;
+            const effectiveLease = typeof leaseSeconds === 'number' ? leaseSeconds : existingLease;
+            const claimedAtMs = existing?.claimedAt ? Date.parse(String(existing.claimedAt)) : NaN;
+            const expired = typeof effectiveLease === 'number' && Number.isFinite(claimedAtMs) && now - claimedAtMs > effectiveLease * 1000;
+
+            if (!expired) {
+              await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
+              continue;
+            }
+
+            // Lease expired: steal.
+            await writeClaim(true);
           }
         } catch {
           await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
