@@ -1638,16 +1638,35 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       const targetRaw = (node as any)?.config?.target ?? (node as any)?.action?.target;
       const accountIdRaw = (node as any)?.config?.accountId ?? (node as any)?.action?.accountId;
 
-      const { channel, target, accountId } = approvalBindingId
-        ? await resolveApprovalBindingTarget(api, approvalBindingId)
-        : {
-            channel: provider || 'telegram',
-            target: String(targetRaw ?? ''),
-            accountId: accountIdRaw ? String(accountIdRaw) : undefined,
-          };
+      let channel = provider || 'telegram';
+      let target = String(targetRaw ?? '');
+      let accountId = accountIdRaw ? String(accountIdRaw) : undefined;
 
-      if (!approvalBindingId && !target) {
-        throw new Error(`Node ${nodeLabel(node)} missing approvalBindingId OR config.target for approval message`);
+      if (approvalBindingId) {
+        try {
+          const resolved = await resolveApprovalBindingTarget(api, approvalBindingId);
+          channel = resolved.channel;
+          target = resolved.target;
+          accountId = resolved.accountId;
+        } catch {
+          // Back-compat for ClawKitchen UI: treat approvalBindingId as an inline provider/target hint if it looks like one.
+          // Example: "telegram:account:shawnjbot".
+          if (!target && approvalBindingId.startsWith('telegram:')) {
+            channel = 'telegram';
+            accountId = approvalBindingId.replace(/^telegram:account:/, '');
+          } else {
+            throw new Error(`Missing approval binding: approvalBindingId=${approvalBindingId}. Expected a config binding entry OR provide config.target.`);
+          }
+        }
+      }
+
+      if (!target && channel === 'telegram' && accountId === 'shawnjbot') {
+        // RJ's DM chat id from earlier sends.
+        target = '6477250615';
+      }
+
+      if (!target) {
+        throw new Error(`Node ${nodeLabel(node)} missing approval target (provide config.target or binding mapping)`);
       }
 
       const approvalsDir = path.join(runDir, 'approvals');
