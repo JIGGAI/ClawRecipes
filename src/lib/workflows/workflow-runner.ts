@@ -175,7 +175,7 @@ async function executeWorkflowNodes(opts: {
   api: OpenClawPluginApi;
   teamId: string;
   teamDir: string;
-  workflow: WorkflowV1;
+  workflow: Workflow;
   workflowPath: string;
   workflowFile: string;
   runId: string;
@@ -194,7 +194,7 @@ async function executeWorkflowNodes(opts: {
     if (i < (opts.startNodeIndex ?? 0)) continue;
     const node = workflow.nodes[i]!;
     const ts = new Date().toISOString();
-    const laneRaw = node?.config?.lane ? String(node.config.lane) : null;
+    const laneRaw = node?.lane ? String(node.lane) : null;
     if (laneRaw) {
       assertLane(laneRaw);
       if (laneRaw !== curLane) {
@@ -209,7 +209,7 @@ async function executeWorkflowNodes(opts: {
       }
     }
 
-    const kind = String((node as any).kind ?? '');
+    const kind = String(node.kind ?? '');
 
     // ClawKitchen workflows include explicit start/end nodes; treat them as no-op.
     if (kind === 'start' || kind === 'end') {
@@ -224,16 +224,20 @@ async function executeWorkflowNodes(opts: {
 
 
     if (kind === 'llm') {
-      const agentId = String(node?.config?.agentId ?? '');
-      const promptTemplatePath = String(node?.config?.promptTemplatePath ?? '');
-      const outputPath = String(node?.config?.outputPath ?? '');
-      if (!agentId) throw new Error(`Node ${nodeLabel(node)} missing config.agentId`);
-      if (!promptTemplatePath) throw new Error(`Node ${nodeLabel(node)} missing config.promptTemplatePath`);
-      if (!outputPath) throw new Error(`Node ${nodeLabel(node)} missing config.outputPath`);
+      const agentId = String(node?.assignedTo?.agentId ?? '');
+      const promptTemplatePath = String(node?.action?.promptTemplatePath ?? '');
+      if (!agentId) throw new Error(`Node ${nodeLabel(node)} missing assignedTo.agentId`);
+      if (!promptTemplatePath) throw new Error(`Node ${nodeLabel(node)} missing action.promptTemplatePath`);
 
       const promptPathAbs = path.resolve(teamDir, promptTemplatePath);
-      const outPathAbs = path.resolve(teamDir, outputPath);
-      await ensureDir(path.dirname(outPathAbs));
+      const runDir = path.dirname(runLogPath);
+      const defaultNodeOutputRel = path.join('node-outputs', `${String(i).padStart(3, '0')}-${node.id}.json`);
+      const nodeOutputRel = String(node?.output?.path ?? '').trim() || defaultNodeOutputRel;
+      const nodeOutputAbs = path.resolve(runDir, nodeOutputRel);
+      if (!nodeOutputAbs.startsWith(runDir + path.sep) && nodeOutputAbs !== runDir) {
+        throw new Error(`Node output.path must be within the run directory: ${nodeOutputRel}`);
+      }
+      await ensureDir(path.dirname(nodeOutputAbs));
 
       const prompt = await fs.readFile(promptPathAbs, 'utf8');
       const task = [
@@ -244,7 +248,7 @@ async function executeWorkflowNodes(opts: {
         `\n---\nPROMPT TEMPLATE\n---\n`,
         prompt.trim(),
         `\n---\nOUTPUT FORMAT\n---\n`,
-        `Return ONLY the final content to be written to: ${outputPath}`,
+        `Return ONLY the final content (the runner will store it as JSON).`,
       ].join('\n');
 
       const result = await toolsInvoke<ToolTextResult>(api, {
@@ -259,23 +263,32 @@ async function executeWorkflowNodes(opts: {
       });
 
       const text = toolText(result) || '[no output]';
-      await fs.writeFile(outPathAbs, text + (text.endsWith('\n') ? '' : '\n'), 'utf8');
+      const outputObj = {
+        runId,
+        teamId,
+        nodeId: node.id,
+        kind: node.kind,
+        agentId,
+        completedAt: new Date().toISOString(),
+        text,
+      };
+      await fs.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + '\n', 'utf8');
 
       await appendRunLog(runLogPath, (cur) => ({
         ...cur,
         nextNodeIndex: i + 1,
-        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind: node.kind, outputPath }],
-        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, agentId, outputPath, bytes: text.length }],
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind: node.kind, nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, agentId, nodeOutputPath: path.relative(teamDir, nodeOutputAbs), bytes: Buffer.byteLength(text, 'utf8') }],
       }));
 
       continue;
     }
 
     if (kind === 'human_approval') {
-      const agentId = String(node?.config?.agentId ?? '');
-      const approvalBindingId = String(node?.config?.approvalBindingId ?? '');
-      if (!agentId) throw new Error(`Node ${nodeLabel(node)} missing config.agentId`);
-      if (!approvalBindingId) throw new Error(`Node ${nodeLabel(node)} missing config.approvalBindingId`);
+      const agentId = String(node?.assignedTo?.agentId ?? '');
+      const approvalBindingId = String(node?.action?.approvalBindingId ?? '');
+      if (!agentId) throw new Error(`Node ${nodeLabel(node)} missing assignedTo.agentId`);
+      if (!approvalBindingId) throw new Error(`Node ${nodeLabel(node)} missing action.approvalBindingId`);
 
       const { channel, target, accountId } = await resolveApprovalBindingTarget(api, approvalBindingId);
 
@@ -335,10 +348,10 @@ async function executeWorkflowNodes(opts: {
     }
 
     if (kind === 'writeback') {
-      const agentId = String(node?.config?.agentId ?? '');
-      const writebackPaths = Array.isArray(node?.config?.writebackPaths) ? node.config.writebackPaths.map(String) : [];
-      if (!agentId) throw new Error(`Node ${nodeLabel(node)} missing config.agentId`);
-      if (!writebackPaths.length) throw new Error(`Node ${nodeLabel(node)} missing config.writebackPaths[]`);
+      const agentId = String(node?.assignedTo?.agentId ?? '');
+      const writebackPaths = Array.isArray(node?.action?.writebackPaths) ? node.action.writebackPaths.map(String) : [];
+      if (!agentId) throw new Error(`Node ${nodeLabel(node)} missing assignedTo.agentId`);
+      if (!writebackPaths.length) throw new Error(`Node ${nodeLabel(node)} missing action.writebackPaths[]`);
 
       const stamp = `\n\n---\nWorkflow writeback (${runId}) @ ${new Date().toISOString()}\n---\n`;
       const content = `${stamp}Run log: ${path.relative(teamDir, runLogPath)}\nTicket: ${path.relative(teamDir, curTicketPath)}\n`;
@@ -361,9 +374,9 @@ async function executeWorkflowNodes(opts: {
     }
 
     if (kind === 'tool') {
-      const toolName = String((node as any)?.config?.tool ?? '');
-      const toolArgs = ((node as any)?.config?.args ?? {}) as Record<string, unknown>;
-      if (!toolName) throw new Error(`Node ${nodeLabel(node)} missing config.tool`);
+      const toolName = String(node?.action?.tool ?? '');
+      const toolArgs = (node?.action?.args ?? {}) as Record<string, unknown>;
+      if (!toolName) throw new Error(`Node ${nodeLabel(node)} missing action.tool`);
 
       const runDir = path.dirname(runLogPath);
       const artifactsDir = path.join(runDir, 'artifacts');
@@ -713,7 +726,7 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
   const workflowFile = String(chosen.run.workflow.file);
   const workflowPath = path.join(workflowsDir, workflowFile);
   const workflowRaw = await fs.readFile(workflowPath, 'utf8');
-  const workflow = normalizeWorkflowV1(JSON.parse(workflowRaw));
+  const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
 
   const ticketPath = path.join(teamDir, chosen.run.ticket.file);
   const laneRaw = String(chosen.run.ticket.lane);
@@ -863,7 +876,7 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
     const workflowFile = String(run.workflow.file);
     const workflowPath = path.join(workflowsDir, workflowFile);
     const workflowRaw = await fs.readFile(workflowPath, 'utf8');
-    const workflow = normalizeWorkflowV1(JSON.parse(workflowRaw));
+    const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
 
     const ticketPath = path.join(teamDir, run.ticket.file);
     const laneRaw = String(run.ticket.lane);
@@ -1162,7 +1175,7 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
   const workflowFile = String(runLog.workflow.file);
   const workflowPath = path.join(workflowsDir, workflowFile);
   const workflowRaw = await fs.readFile(workflowPath, 'utf8');
-  const workflow = normalizeWorkflowV1(JSON.parse(workflowRaw));
+  const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
 
   const approvalPath = await approvalsPathFor(teamDir, runId);
   if (!(await fileExists(approvalPath))) throw new Error(`Missing approval file: ${path.relative(teamDir, approvalPath)}`);
