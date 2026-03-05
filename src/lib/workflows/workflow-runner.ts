@@ -1740,6 +1740,31 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     }
 
     const nextNode = workflow.nodes[enqueueIdx]!;
+
+    // Some nodes (human approval) may not have an assigned agent; they are executed
+    // by the runner/worker loop itself (they send a message + set awaiting state).
+    const nextKind = String(nextNode.kind ?? '');
+    if (nextKind === 'human_approval' || nextKind === 'start' || nextKind === 'end') {
+      // Re-enqueue onto the same agent so it can execute the next node deterministically.
+      await enqueueTask(teamDir, agentId, {
+        teamId,
+        runId: task.runId,
+        nodeId: nextNode.id,
+        kind: 'execute_node',
+      });
+
+      await writeRunFile(runPath, (cur) => ({
+        ...cur,
+        updatedAt: new Date().toISOString(),
+        status: 'waiting_workers',
+        nextNodeIndex: enqueueIdx,
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.enqueued', nodeId: nextNode.id, agentId }],
+      }));
+
+      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'ok' });
+      continue;
+    }
+
     const nextAgentId = String(nextNode?.assignedTo?.agentId ?? '').trim();
     if (!nextAgentId) throw new Error(`Next node ${nextNode.id} missing assignedTo.agentId`);
 
