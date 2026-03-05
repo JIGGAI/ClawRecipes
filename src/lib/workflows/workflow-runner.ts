@@ -7,20 +7,16 @@ import { resolveWorkspaceRoot } from '../workspace';
 import type { ToolTextResult } from '../../toolsInvoke';
 import { toolsInvoke } from '../../toolsInvoke';
 import { loadOpenClawConfig } from '../recipes-config';
-import type { WorkflowLane, WorkflowNode, WorkflowV1 } from './workflow-types';
+import type { Workflow, WorkflowLane, WorkflowNode } from './workflow-types';
 
-function normalizeWorkflowV1(raw: unknown): WorkflowV1 {
+function normalizeWorkflow(raw: unknown): Workflow {
   const w = (raw ?? {}) as any;
+  if (!w?.id) {
+    throw new Error('Workflow missing required field: id');
+  }
   const nodes = Array.isArray(w.nodes) ? w.nodes : [];
-
-  // Normalize ClawKitchen workflow schema: nodes[].type -> nodes[].kind
-  // Also treat start/end as no-op nodes the runner can skip.
-  w.nodes = nodes.map((n: any) => {
-    const kind = n?.kind ?? n?.type;
-    return { ...n, kind };
-  });
-
-  return w as WorkflowV1;
+  w.nodes = nodes.map((n: any) => ({ ...n, kind: String(n?.kind ?? '') }));
+  return w as Workflow;
 }
 
 function isoCompact(ts = new Date()) {
@@ -556,7 +552,7 @@ export async function enqueueWorkflowRun(api: OpenClawPluginApi, opts: {
 
   const workflowPath = path.join(workflowsDir, opts.workflowFile);
   const raw = await fs.readFile(workflowPath, 'utf8');
-  const workflow = normalizeWorkflowV1(JSON.parse(raw));
+  const workflow = normalizeWorkflow(JSON.parse(raw));
 
   if (!workflow.nodes?.length) throw new Error('Workflow has no nodes');
 
@@ -931,7 +927,7 @@ export async function runWorkflowOnce(api: OpenClawPluginApi, opts: {
 
   const workflowPath = path.join(workflowsDir, opts.workflowFile);
   const raw = await fs.readFile(workflowPath, 'utf8');
-  const workflow = normalizeWorkflowV1(JSON.parse(raw));
+  const workflow = normalizeWorkflow(JSON.parse(raw));
 
   if (!workflow.nodes?.length) throw new Error('Workflow has no nodes');
 
