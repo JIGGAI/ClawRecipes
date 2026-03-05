@@ -524,29 +524,15 @@ async function executeWorkflowNodes(opts: {
 
 
 function runFilePathFor(runsDir: string, runId: string) {
-  // Preferred (n8n-ish, file-first): one directory per run.
-  const runDir = path.join(runsDir, runId);
-
-  // Back-compat:
-  // - older runner used a flat file: <runId>.run.json
-  // - oldest used: <runId>.json
-  return {
-    primary: path.join(runDir, 'run.json'),
-    legacyFlat: path.join(runsDir, `${runId}.run.json`),
-    legacyOld: path.join(runsDir, `${runId}.json`),
-  };
+  // File-first: one directory per run.
+  return path.join(runsDir, runId, 'run.json');
 }
 
 async function loadRunFile(teamDir: string, runsDir: string, runId: string): Promise<{ path: string; run: RunLog }> {
-  const p = runFilePathFor(runsDir, runId);
-  const chosen = (await fileExists(p.primary))
-    ? p.primary
-    : (await fileExists(p.legacyFlat))
-      ? p.legacyFlat
-      : p.legacyOld;
-  if (!(await fileExists(chosen))) throw new Error(`Run file not found: ${path.relative(teamDir, chosen)}`);
-  const raw = await fs.readFile(chosen, 'utf8');
-  return { path: chosen, run: JSON.parse(raw) as RunLog };
+  const runPath = runFilePathFor(runsDir, runId);
+  if (!(await fileExists(runPath))) throw new Error(`Run file not found: ${path.relative(teamDir, runPath)}`);
+  const raw = await fs.readFile(runPath, 'utf8');
+  return { path: runPath, run: JSON.parse(raw) as RunLog };
 }
 
 async function writeRunFile(runPath: string, fn: (cur: RunLog) => RunLog) {
@@ -677,8 +663,6 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
   const candidates: Array<{ file: string; run: RunLog }> = [];
 
   for (const e of entries) {
-    // Preferred: workflow-runs/<runId>/run.json
-    // Legacy: workflow-runs/<runId>.run.json
     const abs = path.join(runsDir, e);
 
     let runPath: string | null = null;
@@ -687,8 +671,6 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
       if (st.isDirectory()) {
         const p = path.join(abs, 'run.json');
         if (await fileExists(p)) runPath = p;
-      } else if (st.isFile() && e.endsWith('.run.json')) {
-        runPath = abs;
       }
     } catch {
       // ignore
@@ -814,8 +796,6 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
       if (st.isDirectory()) {
         const p = path.join(abs, 'run.json');
         if (await fileExists(p)) runPath = p;
-      } else if (st.isFile() && e.endsWith('.run.json')) {
-        runPath = abs;
       }
     } catch {
       // ignore
@@ -1052,13 +1032,8 @@ type ApprovalRecord = {
 };
 
 async function approvalsPathFor(teamDir: string, runId: string) {
-  // Preferred location (n8n-inspired): inside the run folder.
   const runsDir = path.join(teamDir, 'shared-context', 'workflow-runs');
-  const primary = path.join(runsDir, runId, 'approvals', 'approval.json');
-  if (await fileExists(primary)) return primary;
-
-  // Back-compat: shared approvals directory.
-  return path.join(teamDir, 'shared-context', 'workflow-approvals', `${runId}.json`);
+  return path.join(runsDir, runId, 'approvals', 'approval.json');
 }
 
 export async function pollWorkflowApprovals(api: OpenClawPluginApi, opts: {
@@ -1068,25 +1043,17 @@ export async function pollWorkflowApprovals(api: OpenClawPluginApi, opts: {
   const teamId = String(opts.teamId);
   const workspaceRoot = resolveWorkspaceRoot(api);
   const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
-  const legacyApprovalsDir = path.join(teamDir, 'shared-context', 'workflow-approvals');
   const runsDir = path.join(teamDir, 'shared-context', 'workflow-runs');
 
-  // We support both:
-  // - legacy: shared-context/workflow-approvals/<runId>.json
-  // - preferred: shared-context/workflow-runs/<runId>/approvals/approval.json
-  const approvalPaths: string[] = [];
-
-  if (await fileExists(legacyApprovalsDir)) {
-    const legacyFiles = (await fs.readdir(legacyApprovalsDir)).filter((f) => f.endsWith('.json'));
-    for (const f of legacyFiles) approvalPaths.push(path.join(legacyApprovalsDir, f));
+  if (!(await fileExists(runsDir))) {
+    return { ok: true as const, teamId, polled: 0, resumed: 0, skipped: 0, message: 'No workflow-runs directory present.' };
   }
 
-  if (await fileExists(runsDir)) {
-    const entries = await fs.readdir(runsDir);
-    for (const e of entries) {
-      const p = path.join(runsDir, e, 'approvals', 'approval.json');
-      if (await fileExists(p)) approvalPaths.push(p);
-    }
+  const approvalPaths: string[] = [];
+  const entries = await fs.readdir(runsDir);
+  for (const e of entries) {
+    const p = path.join(runsDir, e, 'approvals', 'approval.json');
+    if (await fileExists(p)) approvalPaths.push(p);
   }
 
   const limitedPaths = approvalPaths.slice(0, typeof opts.limit === 'number' && opts.limit > 0 ? opts.limit : undefined);
@@ -1104,10 +1071,7 @@ export async function pollWorkflowApprovals(api: OpenClawPluginApi, opts: {
       approval = JSON.parse(await fs.readFile(approvalPath, 'utf8')) as ApprovalRecord;
     } catch (e) {
       skipped++;
-      const guessedRunId = approvalPath.endsWith(`${path.sep}approval.json`)
-        ? path.basename(path.dirname(path.dirname(approvalPath)))
-        : path.basename(approvalPath, '.json');
-      results.push({ runId: guessedRunId, status: 'unknown', action: 'error', message: `Failed to parse: ${(e as Error).message}` });
+      results.push({ runId: path.basename(path.dirname(path.dirname(approvalPath))), status: 'unknown', action: 'error', message: `Failed to parse: ${(e as Error).message}` });
       continue;
     }
 
