@@ -248,15 +248,26 @@ function buildHeartbeatCronJobsFromTeamRecipe(opts: {
   if (hasAnyExplicitHeartbeatBlock) {
     // Explicit mode: ONLY roles with heartbeat.enabled truthy get a heartbeat cron.
     for (const a of agents) {
-      const role = String((a as any)?.role ?? "").trim();
-      if (!role) continue;
-      const hb = (a as any)?.heartbeat;
-      if (!hb || typeof hb !== "object") continue;
-      if (!(hb as any).enabled) continue;
+      if (!a || typeof a !== "object") continue;
+      const obj = a as Record<string, unknown>;
 
-      const agentId = String((a as any)?.agentId ?? `${teamId}-${role}`);
-      const schedule = String((hb as any).schedule ?? defaultLeadSchedule).trim() || defaultLeadSchedule;
-      const channel = (hb as any).channel != null ? String((hb as any).channel) : role === "lead" ? "last" : undefined;
+      const role = typeof obj.role === "string" ? obj.role.trim() : "";
+      if (!role) continue;
+
+      const hbRaw = obj.heartbeat;
+      if (!hbRaw || typeof hbRaw !== "object") continue;
+      const hb = hbRaw as Record<string, unknown>;
+
+      if (!hb.enabled) continue;
+
+      const agentId = typeof obj.agentId === "string" && obj.agentId.trim() ? obj.agentId.trim() : `${teamId}-${role}`;
+      const schedule = typeof hb.schedule === "string" && hb.schedule.trim() ? hb.schedule.trim() : defaultLeadSchedule;
+      const channel =
+        hb.channel != null
+          ? String(hb.channel)
+          : role === "lead"
+            ? "last"
+            : undefined;
 
       enabledRoles.add(role);
       cronJobs.push({
