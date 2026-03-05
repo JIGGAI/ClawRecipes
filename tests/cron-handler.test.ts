@@ -183,6 +183,36 @@ describe("cron handler", () => {
       }
     });
 
+
+    test("team scope defaults cron target to <teamId>-lead when agentId omitted", async () => {
+      const seen: string[][] = [];
+      setupCronCliMock((argv) => {
+        seen.push(argv);
+        const cmd = argv.slice(0, 3).join(" ");
+        if (cmd === "openclaw cron list") return makeCmdResult({ jobs: [] });
+        if (cmd === "openclaw cron add") return makeCmdResult({ id: "cron-new-team" });
+        return makeCmdResult({}, 1, `unexpected argv: ${argv.join(" ")}`);
+      });
+
+      const recipe = {
+        id: "test",
+        kind: "team" as const,
+        cronJobs: [{ id: "j1", schedule: "0 9 * * *", message: "run" }],
+      };
+      const result = await reconcileRecipeCronJobs({
+        api,
+        recipe: recipe as any,
+        scope: { kind: "team", teamId: "claw-marketing-team", recipeId: "test", stateDir },
+        cronInstallation: "on",
+      });
+      expect(result.ok).toBe(true);
+      const add = seen.find((a) => a.slice(0, 3).join(" ") === "openclaw cron add");
+      expect(add).toBeDefined();
+      expect(add).toEqual(expect.arrayContaining(["--agent", "claw-marketing-team-lead"]));
+      expect(add).toEqual(expect.arrayContaining(["--session", "isolated"]));
+      expect(add).toEqual(expect.arrayContaining(["--message", "run"]));
+      expect(add).not.toEqual(expect.arrayContaining(["--system-event"]));
+    });
     test("creates job with agentId, timezone, channel, to (delivery block)", async () => {
             const recipe = {
         id: "test",

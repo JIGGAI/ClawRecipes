@@ -69,18 +69,27 @@ function buildCronJobForCreate(
 ): Record<string, unknown> {
   const name =
     j.name ?? `${scope.kind === "team" ? scope.teamId : scope.agentId} • ${scope.recipeId} • ${j.id}`;
-  const sessionTarget = j.agentId ? "isolated" : "main";
+
+  // Default cron agent targeting:
+  // - Team scaffolds should wake the team lead by default (otherwise jobs run as systemEvent in main).
+  // - Agent scaffolds keep legacy behavior (no implicit agent) unless the recipe explicitly sets agentId.
+  const effectiveAgentId =
+    typeof j.agentId === "string" && j.agentId.trim()
+      ? j.agentId.trim()
+      : scope.kind === "team"
+        ? `${scope.teamId}-lead`
+        : undefined;
+
+  const sessionTarget = effectiveAgentId ? "isolated" : "main";
   return {
     name,
-    agentId: j.agentId ?? null,
+    agentId: effectiveAgentId ?? null,
     description: j.description ?? "",
     enabled: wantEnabled,
     wakeMode: "next-heartbeat",
     sessionTarget,
     schedule: { kind: "cron", expr: j.schedule, ...(j.timezone ? { tz: j.timezone } : {}) },
-    payload: j.agentId
-      ? { kind: "agentTurn", message: j.message }
-      : { kind: "systemEvent", text: j.message },
+    payload: effectiveAgentId ? { kind: "agentTurn", message: j.message } : { kind: "systemEvent", text: j.message },
     ...(j.channel || j.to
       ? {
           delivery: {
@@ -98,14 +107,16 @@ function buildCronJobPatch(
   j: { name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string },
   name: string
 ): CronJobPatch {
+  const effectiveAgentId = typeof j.agentId === "string" && j.agentId.trim() ? j.agentId.trim() : undefined;
+
   const patch: CronJobPatch = {
     name,
-    agentId: j.agentId ?? null,
+    agentId: effectiveAgentId ?? null,
     description: j.description ?? "",
-    sessionTarget: j.agentId ? "isolated" : "main",
+    sessionTarget: effectiveAgentId ? "isolated" : "main",
     wakeMode: "next-heartbeat",
     schedule: { kind: "cron", expr: j.schedule, ...(j.timezone ? { tz: j.timezone } : {}) },
-    payload: j.agentId ? { kind: "agentTurn", message: j.message } : { kind: "systemEvent", text: j.message },
+    payload: effectiveAgentId ? { kind: "agentTurn", message: j.message } : { kind: "systemEvent", text: j.message },
   };
   if (j.channel || j.to) {
     patch.delivery = {
