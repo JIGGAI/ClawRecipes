@@ -62,6 +62,39 @@ const recipesPlugin = {
     properties: {},
   },
   register(api: OpenClawPluginApi) {
+    // Auto-approval via chat reply (MVP):
+    // If a human replies `approve <runId>` or `decline <runId>` in the bound channel,
+    // record the decision and resume the run.
+    api.on(
+      "message_received" as any,
+      async (evt: any) => {
+        try {
+          const channel = String(evt?.messageProvider ?? evt?.channelId ?? evt?.channel ?? "");
+          const text = String(evt?.text ?? evt?.message ?? evt?.body ?? "").trim();
+          if (!text) return;
+
+          // Only enable for Telegram for now (matches RJ's request).
+          if (channel !== "telegram") return;
+
+          const m = text.match(/^(approve|decline)\s+([0-9]{4}-[0-9]{2}-[0-9]{2}t[0-9a-z-]+)$/i);
+          if (!m) return;
+          const verb = String(m[1] ?? "").toLowerCase();
+          const runId = String(m[2] ?? "");
+          const approved = verb === "approve";
+
+          // Team id must be explicit in the command for safety.
+          const teamMatch = text.match(/--team-id\s+(\S+)/i);
+          const teamId = teamMatch ? String(teamMatch[1]) : "claw-marketing-team";
+
+          await handleWorkflowsApprove(api, { teamId, runId, approved, note: `via telegram reply (${verb})` });
+          await handleWorkflowsResume(api, { teamId, runId });
+        } catch (e) {
+          console.error(`[recipes] approval reply handler error: ${(e as Error).message}`);
+        }
+      },
+      { priority: 50 } as any
+    );
+
     // On plugin load, ensure multi-agent config has an explicit agents.list with main at top.
     // This is idempotent and only writes if a change is required.
     (async () => {
