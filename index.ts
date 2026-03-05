@@ -123,8 +123,13 @@ const recipesPlugin = {
 
           if (!found) return;
 
-          await handleWorkflowsApprove(api, { teamId: found.teamId, runId: found.runId, approved, note: `via telegram reply (${verb}) code=${code}` });
-          await handleWorkflowsResume(api, { teamId: found.teamId, runId: found.runId });
+          await handleWorkflowsApprove(api, { teamId: found.teamId, runId: found.runId, approved, note: `Approved via Telegram (${code})` });
+          // Resume is best-effort: the worker may have already flipped the run status.
+          try {
+            await handleWorkflowsResume(api, { teamId: found.teamId, runId: found.runId });
+          } catch {
+            // ignore
+          }
         } catch (e) {
           console.error(`[recipes] approval reply handler error: ${(e as Error).message}`);
         }
