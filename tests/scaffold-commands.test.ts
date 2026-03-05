@@ -399,6 +399,13 @@ files: []
         expect(await fs.readFile(path.join(res.teamDir, "shared-context", "memory", "team.jsonl"), "utf8")).toBeDefined();
         expect(await fs.readFile(path.join(res.teamDir, "shared-context", "DECISIONS.md"), "utf8")).toContain("# Decisions");
         expect(await fs.readFile(path.join(res.teamDir, "shared-context", "GLOSSARY.md"), "utf8")).toContain("# Glossary");
+
+        // Continuity / memory hardening starter files (ticket 0145)
+        expect(await fs.readFile(path.join(res.teamDir, "notes", "memory-policy.md"), "utf8")).toContain("Memory Policy");
+        expect(await fs.readFile(path.join(res.teamDir, "notes", "plan.md"), "utf8")).toContain("# Plan");
+        expect(await fs.readFile(path.join(res.teamDir, "notes", "status.md"), "utf8")).toContain("# Status");
+        expect(await fs.readFile(path.join(res.teamDir, "shared-context", "priorities.md"), "utf8")).toContain("# Priorities");
+        expect(await fs.readFile(path.join(res.teamDir, "shared-context", "agent-outputs", "README.md"), "utf8")).toContain("Agent outputs");
       }
     } finally {
       await fs.rm(base, { recursive: true, force: true });
