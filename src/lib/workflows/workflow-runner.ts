@@ -15,8 +15,45 @@ function normalizeWorkflow(raw: unknown): Workflow {
   if (!w?.id) {
     throw new Error('Workflow missing required field: id');
   }
+
+  // Accept both canonical schema (node.kind/assignedTo/action/output) and ClawKitchen UI schema
+  // (node.type + node.config). Normalize into the canonical in-memory shape.
   const nodes = Array.isArray(w.nodes) ? w.nodes : [];
-  w.nodes = nodes.map((n: any) => ({ ...n, kind: String(n?.kind ?? '') }));
+  w.nodes = nodes.map((n: any) => {
+    const kind = String(n?.kind ?? n?.type ?? '');
+    const config = (n?.config && typeof n.config === 'object') ? n.config : {};
+
+    const assignedTo = n?.assignedTo ?? (config?.agentId ? { agentId: String(config.agentId) } : undefined);
+
+    const action = {
+      ...(n?.action ?? {}),
+      // LLM: allow either promptTemplatePath (preferred) or inline promptTemplate string
+      ...(config?.promptTemplate ? { promptTemplate: String(config.promptTemplate) } : {}),
+      ...(config?.promptTemplatePath ? { promptTemplatePath: String(config.promptTemplatePath) } : {}),
+
+      // Tool
+      ...(config?.tool ? { tool: String(config.tool) } : {}),
+      ...(config?.args && typeof config.args === 'object' ? { args: config.args as Record<string, unknown> } : {}),
+
+      // Human approval
+      ...(config?.approvalBindingId ? { approvalBindingId: String(config.approvalBindingId) } : {}),
+    };
+
+    // Prefer explicit per-node approval binding, else fall back to workflow meta.approvalBindingId.
+    if (kind === 'human_approval' && !action.approvalBindingId && w?.meta?.approvalBindingId) {
+      action.approvalBindingId = String(w.meta.approvalBindingId);
+    }
+
+    return {
+      ...n,
+      kind,
+      assignedTo,
+      action,
+      // Keep config around for debugging/back-compat, but don't depend on it.
+      config,
+    };
+  });
+
   return w as Workflow;
 }
 
@@ -325,11 +362,12 @@ async function executeWorkflowNodes(opts: {
 
     if (kind === 'llm') {
       const agentId = String(node?.assignedTo?.agentId ?? '');
-      const promptTemplatePath = String(node?.action?.promptTemplatePath ?? '');
+      const promptTemplatePath = String((node as any)?.action?.promptTemplatePath ?? '');
+      const promptTemplateInline = String((node as any)?.action?.promptTemplate ?? '');
       if (!agentId) throw new Error(`Node ${nodeLabel(node)} missing assignedTo.agentId`);
-      if (!promptTemplatePath) throw new Error(`Node ${nodeLabel(node)} missing action.promptTemplatePath`);
+      if (!promptTemplatePath && !promptTemplateInline) throw new Error(`Node ${nodeLabel(node)} missing action.promptTemplatePath or action.promptTemplate`);
 
-      const promptPathAbs = path.resolve(teamDir, promptTemplatePath);
+      const promptPathAbs = promptTemplatePath ? path.resolve(teamDir, promptTemplatePath) : '';
       const runDir = path.dirname(runLogPath);
       const defaultNodeOutputRel = path.join('node-outputs', `${String(i).padStart(3, '0')}-${node.id}.json`);
       const nodeOutputRel = String(node?.output?.path ?? '').trim() || defaultNodeOutputRel;
@@ -339,7 +377,7 @@ async function executeWorkflowNodes(opts: {
       }
       await ensureDir(path.dirname(nodeOutputAbs));
 
-      const prompt = await fs.readFile(promptPathAbs, 'utf8');
+      const prompt = promptTemplateInline ? promptTemplateInline : await fs.readFile(promptPathAbs, 'utf8');
       const task = [
         `You are executing a workflow run for teamId=${teamId}.`,
         `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,
