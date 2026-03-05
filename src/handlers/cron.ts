@@ -71,14 +71,15 @@ function buildCronJobForCreate(
     j.name ?? `${scope.kind === "team" ? scope.teamId : scope.agentId} • ${scope.recipeId} • ${j.id}`;
 
   // Default cron agent targeting:
-  // - Team scaffolds should wake the team lead by default (otherwise jobs run as systemEvent in main).
-  // - Agent scaffolds keep legacy behavior (no implicit agent) unless the recipe explicitly sets agentId.
+  // - Team scaffolds should wake the team lead by default.
+  // - Agent scaffolds should wake the agent being installed by default.
+  // - Recipe can override with an explicit agentId.
   const effectiveAgentId =
     typeof j.agentId === "string" && j.agentId.trim()
       ? j.agentId.trim()
       : scope.kind === "team"
         ? `${scope.teamId}-lead`
-        : undefined;
+        : scope.agentId;
 
   const sessionTarget = effectiveAgentId ? "isolated" : "main";
   return {
