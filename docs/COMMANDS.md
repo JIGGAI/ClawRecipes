@@ -320,3 +320,32 @@ Shortcut: move to done + ensure `Status: done` + add `Completed:` timestamp. No 
 ```bash
 openclaw recipes complete --team-id <teamId> --ticket 0007
 ```
+
+## `workflows <subcommand>`
+
+Workflow runner utilities (file-first runs, runner/worker model).
+
+```bash
+openclaw recipes workflows --help
+```
+
+Common commands:
+
+```bash
+# Run a workflow once (manual trigger)
+openclaw recipes workflows run --team-id <teamId> --workflow-file <file.workflow.json>
+
+# Runner (scheduler)
+openclaw recipes workflows runner-once --team-id <teamId>
+openclaw recipes workflows runner-tick --team-id <teamId>
+
+# Worker (executor) — pull-based per-agent queue
+openclaw recipes workflows worker-tick --team-id <teamId> --agent-id <agentId>
+
+# Approval gating
+openclaw recipes workflows approve --team-id <teamId> --run-id <runId> --decision approve
+openclaw recipes workflows resume --team-id <teamId> --run-id <runId>
+openclaw recipes workflows poll-approvals --team-id <teamId>
+```
+
+See: `docs/WORKFLOW_RUNS_FILE_FIRST.md`
