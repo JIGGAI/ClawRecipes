@@ -1,5 +1,17 @@
 # ClawRecipes (OpenClaw Recipes Plugin)
 
+> **Note:** **Workflows are experimental** and the schema/runner behavior may change. If you rely on workflows in production, pin versions and expect breaking changes.
+
+> **OpenClaw bug / temporary fix:** OpenClaw currently has an upstream issue affecting the `llm-task` tool on some installs. The fix is in-flight here: https://github.com/openclaw/openclaw/pull/36591
+>
+> Until that merges and is released, install our bridge plugin:
+>
+> ```bash
+> openclaw plugins install llm-task-fixed
+> openclaw plugins enable llm-task-fixed
+> openclaw gateway restart
+> ```
+
 <p align="center">
   <img src="https://github.com/JIGGAI/ClawRecipes/blob/main/clawcipes_cook.jpg" alt="ClawRecipes logo" width="240" />
 </p>
