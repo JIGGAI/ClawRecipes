@@ -1509,6 +1509,8 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     const node = workflow.nodes[nodeIdx]!;
 
     // Determine current lane + ticket path.
+    const laneRaw = String(run.ticket.lane);
+    assertLane(laneRaw);
     let curLane: WorkflowLane = laneRaw as WorkflowLane;
     let curTicketPath = path.join(teamDir, run.ticket.file);
 
@@ -1545,11 +1547,12 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       const runId = task.runId;
 
       const agentIdExec = String(node?.assignedTo?.agentId ?? '');
-      const promptTemplatePath = String(node?.action?.promptTemplatePath ?? '');
+      const promptTemplatePath = String((node as any)?.action?.promptTemplatePath ?? '');
+      const promptTemplateInline = String((node as any)?.action?.promptTemplate ?? '');
       if (!agentIdExec) throw new Error(`Node ${nodeLabel(node)} missing assignedTo.agentId`);
-      if (!promptTemplatePath) throw new Error(`Node ${nodeLabel(node)} missing action.promptTemplatePath`);
+      if (!promptTemplatePath && !promptTemplateInline) throw new Error(`Node ${nodeLabel(node)} missing action.promptTemplatePath or action.promptTemplate`);
 
-      const promptPathAbs = path.resolve(teamDir, promptTemplatePath);
+      const promptPathAbs = promptTemplatePath ? path.resolve(teamDir, promptTemplatePath) : '';
       const defaultNodeOutputRel = path.join('node-outputs', `${String(nodeIdx).padStart(3, '0')}-${node.id}.json`);
       const nodeOutputRel = String(node?.output?.path ?? '').trim() || defaultNodeOutputRel;
       const nodeOutputAbs = path.resolve(runDir, nodeOutputRel);
@@ -1558,7 +1561,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       }
       await ensureDir(path.dirname(nodeOutputAbs));
 
-      const prompt = await fs.readFile(promptPathAbs, 'utf8');
+      const prompt = promptTemplateInline ? promptTemplateInline : await fs.readFile(promptPathAbs, 'utf8');
       const taskText = [
         `You are executing a workflow run for teamId=${teamId}.`,
         `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,

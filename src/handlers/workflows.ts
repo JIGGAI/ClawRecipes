@@ -1,5 +1,5 @@
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-import { approveWorkflowRun, enqueueWorkflowRun, pollWorkflowApprovals, resumeWorkflowRun, runWorkflowRunnerOnce, runWorkflowRunnerTick } from '../lib/workflows/workflow-runner';
+import { approveWorkflowRun, enqueueWorkflowRun, pollWorkflowApprovals, resumeWorkflowRun, runWorkflowRunnerOnce, runWorkflowRunnerTick, runWorkflowWorkerTick } from '../lib/workflows/workflow-runner';
 
 export async function handleWorkflowsRun(api: OpenClawPluginApi, opts: {
   teamId: string;
@@ -32,6 +32,17 @@ export async function handleWorkflowsRunnerTick(api: OpenClawPluginApi, opts: {
 }) {
   if (!opts.teamId) throw new Error('--team-id is required');
   return runWorkflowRunnerTick(api, { teamId: opts.teamId, concurrency: opts.concurrency, leaseSeconds: opts.leaseSeconds });
+}
+
+export async function handleWorkflowsWorkerTick(api: OpenClawPluginApi, opts: {
+  teamId: string;
+  agentId: string;
+  limit?: number;
+  workerId?: string;
+}) {
+  if (!opts.teamId) throw new Error('--team-id is required');
+  if (!opts.agentId) throw new Error('--agent-id is required');
+  return runWorkflowWorkerTick(api, { teamId: opts.teamId, agentId: opts.agentId, limit: opts.limit, workerId: opts.workerId });
 }
 
 

@@ -44,7 +44,7 @@ import {
 } from "./src/handlers/team";
 import { handleScaffold, scaffoldAgentFromRecipe } from "./src/handlers/scaffold";
 import { reconcileRecipeCronJobs } from "./src/handlers/cron";
-import { handleWorkflowsApprove, handleWorkflowsPollApprovals, handleWorkflowsResume, handleWorkflowsRun, handleWorkflowsRunnerOnce, handleWorkflowsRunnerTick } from "./src/handlers/workflows";
+import { handleWorkflowsApprove, handleWorkflowsPollApprovals, handleWorkflowsResume, handleWorkflowsRun, handleWorkflowsRunnerOnce, handleWorkflowsRunnerTick, handleWorkflowsWorkerTick } from "./src/handlers/workflows";
 import { listRecipeFiles, loadRecipeById, workspacePath } from "./src/lib/recipes";
 import {
   executeWorkspaceCleanup,
@@ -490,6 +490,23 @@ const recipesPlugin = {
               teamId: String(options.teamId ?? ""),
               concurrency: typeof options.concurrency === "number" ? options.concurrency : undefined,
               leaseSeconds: typeof options.leaseSeconds === "number" ? options.leaseSeconds : undefined,
+            });
+            console.log(JSON.stringify(res, null, 2));
+          });
+
+        workflows
+          .command("worker-tick")
+          .description("Dequeue and execute up to N per-agent workflow tasks (pull-based worker)")
+          .requiredOption("--team-id <teamId>", "Team id (workspace-<teamId>)")
+          .requiredOption("--agent-id <agentId>", "Agent id (queue file name under shared-context/workflow-queues)")
+          .option("--limit <n>", "Max tasks to execute", (v: string) => Number(v))
+          .option("--worker-id <id>", "Worker id (for claim/lock attribution)")
+          .action(async (options: { teamId?: string; agentId?: string; limit?: number; workerId?: string }) => {
+            const res = await handleWorkflowsWorkerTick(api, {
+              teamId: String(options.teamId ?? ""),
+              agentId: String(options.agentId ?? ""),
+              limit: typeof options.limit === "number" ? options.limit : undefined,
+              workerId: typeof options.workerId === "string" ? options.workerId : undefined,
             });
             console.log(JSON.stringify(res, null, 2));
           });
