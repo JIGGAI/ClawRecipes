@@ -79,6 +79,19 @@ async function writeTeamBootstrapFiles(opts: {
   await writeFileSafely(path.join(notesDir, "plan.md"), `# Plan — ${teamId}\n\n- (empty)\n`, mode);
   await writeFileSafely(path.join(notesDir, "status.md"), `# Status — ${teamId}\n\n- (empty)\n`, mode);
   await writeFileSafely(
+    path.join(notesDir, "memory-policy.md"),
+    `# Memory Policy — ${teamId}\n\nThis workspace is file-first.\n\n## Where things go\n- **Ticket comments**: decisions/notes specific to a ticket (append under "## Comments").\n- **notes/status.md**: append-only status log for the team.\n- **notes/plan.md**: lead-curated plan + priorities for the team.\n- **shared-context/priorities.md**: lead-curated top priorities.\n- **shared-context/agent-outputs/**: append-only artifacts + logs produced by agents.\n\n## End-of-session checklist (everyone)\n- [ ] Update ticket "## Comments" with what changed + next step\n- [ ] Append a dated entry to notes/status.md\n- [ ] Save any artifacts to shared-context/agent-outputs/\n`,
+    mode
+  );
+
+  // Append-only artifacts produced by agents
+  await ensureDir(path.join(sharedContextDir, "agent-outputs"));
+  await writeFileSafely(
+    path.join(sharedContextDir, "agent-outputs", "README.md"),
+    `# Agent outputs — ${teamId}\n\nDrop append-only artifacts/logs here.\n\nRecommended:\n- One file per day per role (e.g. "2026-03-05-dev.md")\n- Or one file per ticket (e.g. "0145-memory-policy.md")\n`,
+    mode
+  );
+  await writeFileSafely(
     path.join(notesDir, "GOALS.md"),
     `# Goals — ${teamId}\n\nThis folder is the canonical home for goals.\n\n## How to use\n- Create one markdown file per goal under: notes/goals/\n- Add a link here for discoverability\n\n## Goals\n- (empty)\n`,
     mode

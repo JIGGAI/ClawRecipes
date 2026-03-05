@@ -125,6 +125,45 @@ templates:
       "defaultLane": "in-progress"
     }
 
+  sharedContext.memoryPolicy: |
+    # Team Memory Policy (File-first)
+
+    This team is run **file-first**. Chat is not the system of record.
+
+    ## Where to write things
+    - Ticket = source of truth for a unit of work.
+    - `notes/plan.md` + `shared-context/priorities.md` are **lead-curated**.
+    - `notes/status.md` is **append-only** and updated after each work session (3–5 bullets).
+    - `shared-context/agent-outputs/` is **append-only** logs/output.
+
+    ## End-of-session checklist (everyone)
+    After meaningful work:
+    1) Update the ticket with what changed + how to verify + rollback.
+    2) Add a dated note in the ticket `## Comments`.
+    3) Append 3–5 bullets to `notes/status.md`.
+    4) Append logs/output to `shared-context/agent-outputs/`.
+
+  sharedContext.plan: |
+    # Plan (lead-curated)
+
+    - (empty)
+
+  sharedContext.status: |
+    # Status (append-only)
+
+    - (empty)
+
+  sharedContext.priorities: |
+    # Priorities (lead-curated)
+
+    - (empty)
+
+  sharedContext.agentOutputsReadme: |
+    # Agent Outputs (append-only)
+
+    Put raw logs, command output, and investigation notes here.
+    Prefer filenames like: `YYYY-MM-DD-topic.md`.
+
 
   sharedContext.teamRootScript: |
     #!/usr/bin/env bash
@@ -1047,6 +1086,23 @@ files:
     mode: createOnly
   - path: shared-context/ticket-flow.json
     template: sharedContext.ticketFlow
+    mode: createOnly
+
+  # Memory / continuity (team-level)
+  - path: notes/memory-policy.md
+    template: sharedContext.memoryPolicy
+    mode: createOnly
+  - path: notes/plan.md
+    template: sharedContext.plan
+    mode: createOnly
+  - path: notes/status.md
+    template: sharedContext.status
+    mode: createOnly
+  - path: shared-context/priorities.md
+    template: sharedContext.priorities
+    mode: createOnly
+  - path: shared-context/agent-outputs/README.md
+    template: sharedContext.agentOutputsReadme
     mode: createOnly
 
 
