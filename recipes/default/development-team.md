@@ -60,36 +60,16 @@ cronJobs:
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     message: |
-      PR watcher (ticket-linked). Goal: keep tickets moving based on PR state.
+      PR watcher (ticket-linked): scan active in-progress/testing tickets for GitHub PR URLs.
 
-      Hard rule: PR merge ≠ ticket DONE.
+      Do:
+      - Summarize checks/review/mergeable status in the ticket comments.
+      - If a PR is merged, comment "PR merged" + link.
+      - Optionally move ticket to TESTING if verification remains.
 
-      Steps:
-      1) List active tickets:
-         - `openclaw recipes tickets --team-id {{teamId}} --json`
-      2) For each in-progress/testing ticket file, scan for a GitHub PR URL (https://github.com/.../pull/<n>).
-         - If no PR URL found, skip.
-      3) For each PR URL found, fetch state via gh:
-         - `gh pr view <url> --json state,mergeable,reviewDecision,statusCheckRollup,headRefName,baseRefName,url,title,mergeCommit`
-
-      Behavior (default):
-      - If PR state == OPEN:
-        - Comment/update notes with: reviewDecision, checks (pass/fail), mergeable.
-        - If checks failing, summarize failures and (optionally) reassign to dev.
-      - If PR state == MERGED:
-        - Write a ticket comment with PR link + mergeCommit SHA.
-        - Move ticket to TESTING (preferred) OR leave lane unchanged if ticket contains marker: `pr-watcher:on-merge=comment-only`.
-        - Do NOT move to DONE automatically.
-
-      DONE guardrail (explicit close required):
-      - Only move a ticket to DONE if BOTH are true:
-        1) ticket contains explicit marker: `pr-watcher:on-merge=close-ticket`
-        2) all tasks are checked (or a DoD marker exists, e.g. `DoD: complete`)
-      - Otherwise: keep in TESTING (or unchanged) and explain why in the ticket comment.
-
-      Output:
-      - Send a concise Telegram update ONLY if there was a state change (merged, checks start failing/passing, review needed).
-      - If nothing changed, output exactly: NO_REPLY.
+      Do NOT:
+      - Do NOT move any ticket to DONE automatically.
+      - Only the team lead should move to DONE after all tasks are complete, tested, and merged.
     enabledByDefault: false
 
   - id: testing-lane-loop
