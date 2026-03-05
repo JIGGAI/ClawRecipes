@@ -155,7 +155,8 @@ async function scaffoldTeamAgents(
   teamId: string,
   teamDir: string,
   rolesDir: string,
-  overwrite: boolean
+  overwrite: boolean,
+  heartbeatEnabledRoles: Set<string>
 ): Promise<AgentScaffoldResult[]> {
   const agents = recipe.agents ?? [];
   if (!agents.length) throw new Error("Team recipe must include agents[]");
@@ -200,9 +201,87 @@ async function scaffoldTeamAgents(
       workspaceRootDir: roleDir,
       vars: { teamId, teamDir, role, agentId, agentName, roleDir },
     });
+
+
+    // Heartbeat scaffold (opt-in): drop a minimal HEARTBEAT.md in the role workspace.
+    // This file is intentionally tiny; it is read on every heartbeat turn.
+    if (heartbeatEnabledRoles.has(String(role))) {
+      const mode = overwrite ? "overwrite" : "createOnly";
+      const hb = `# HEARTBEAT — ${teamId} (${role})
+
+Keep this file small. It is loaded frequently.
+
+## Checklist
+- [ ] Check \`inbox/\` for new requests
+- [ ] Check \`work/in-progress/\` for stuck tickets (blocked? needs review?)
+- [ ] Append any material updates to \`notes/status.md\` (append-only)
+- [ ] If nothing changed, stay quiet (no message)
+`;
+      await writeFileSafely(path.join(roleDir, "HEARTBEAT.md"), hb, mode);
+    }
     results.push({ role, agentId, ...r });
   }
   return results;
+}
+
+function buildHeartbeatCronJobsFromTeamRecipe(opts: {
+  teamId: string;
+  recipe: RecipeFrontmatter;
+  enableHeartbeat: boolean;
+}): {
+  cronJobs: NonNullable<RecipeFrontmatter["cronJobs"]>;
+  enabledRoles: Set<string>;
+  note: "disabled" | "defaults" | "explicit";
+} {
+  const { teamId, recipe, enableHeartbeat } = opts;
+  const agents = (recipe.agents ?? []) as Array<Record<string, unknown>>;
+  const enabledRoles = new Set<string>();
+  if (!enableHeartbeat) return { cronJobs: [], enabledRoles, note: "disabled" };
+
+  const heartbeatPrompt =
+    "Read HEARTBEAT.md if it exists (workspace context). Follow it strictly. Do not infer or repeat old tasks from prior chats. If nothing needs attention, reply HEARTBEAT_OK.";
+  const defaultLeadSchedule = "*/30 * * * *";
+
+  const hasAnyExplicitHeartbeatBlock = agents.some((a) => a && typeof a === "object" && "heartbeat" in a);
+
+  const cronJobs: NonNullable<RecipeFrontmatter["cronJobs"]> = [];
+  if (hasAnyExplicitHeartbeatBlock) {
+    // Explicit mode: ONLY roles with heartbeat.enabled truthy get a heartbeat cron.
+    for (const a of agents) {
+      const role = String((a as any)?.role ?? "").trim();
+      if (!role) continue;
+      const hb = (a as any)?.heartbeat;
+      if (!hb || typeof hb !== "object") continue;
+      if (!(hb as any).enabled) continue;
+
+      const agentId = String((a as any)?.agentId ?? `${teamId}-${role}`);
+      const schedule = String((hb as any).schedule ?? defaultLeadSchedule).trim() || defaultLeadSchedule;
+      const channel = (hb as any).channel != null ? String((hb as any).channel) : role === "lead" ? "last" : undefined;
+
+      enabledRoles.add(role);
+      cronJobs.push({
+        id: `heartbeat-${role}`,
+        name: `{{teamId}} • heartbeat • ${role}`,
+        schedule,
+        message: heartbeatPrompt,
+        agentId,
+        ...(channel ? { channel } : {}),
+      });
+    }
+    return { cronJobs, enabledRoles, note: "explicit" };
+  }
+
+  // Default mode: lead only.
+  enabledRoles.add("lead");
+  cronJobs.push({
+    id: "heartbeat-lead",
+    name: "{{teamId}} • heartbeat",
+    schedule: defaultLeadSchedule,
+    message: heartbeatPrompt,
+    agentId: `${teamId}-lead`,
+    channel: "last",
+  });
+  return { cronJobs, enabledRoles, note: "defaults" };
 }
 
 /**
@@ -222,6 +301,7 @@ export async function handleScaffoldTeam(
     overwriteRecipe?: boolean;
     autoIncrement?: boolean;
     applyConfig?: boolean;
+    enableHeartbeat?: boolean;
   },
 ) {
   const validation = await validateRecipeAndSkills(api, options.recipeId, "team");
@@ -282,12 +362,28 @@ export async function handleScaffoldTeam(
     overwrite,
     qaChecklist,
   });
-  const results = await scaffoldTeamAgents(api, recipe, teamId, teamDir, rolesDir, overwrite);
+  const heartbeat = buildHeartbeatCronJobsFromTeamRecipe({
+    teamId,
+    recipe,
+    enableHeartbeat: Boolean(options.enableHeartbeat),
+  });
+
+  const results = await scaffoldTeamAgents(api, recipe, teamId, teamDir, rolesDir, overwrite, heartbeat.enabledRoles);
   await writeTeamMetadataAndConfig({ api, teamId, teamDir, recipe, results, applyConfig: !!options.applyConfig, overwrite });
 
+
+
+  // When heartbeat opt-in is enabled, we synthesize cronJobs into the reconciled recipe.
+  // This keeps the behavior portable for arbitrary teamIds without modifying the upstream recipe file.
+  const recipeForCron: RecipeFrontmatter = heartbeat.cronJobs.length
+    ? {
+        ...recipe,
+        cronJobs: [...(recipe.cronJobs ?? []), ...heartbeat.cronJobs],
+      }
+    : recipe;
   const cron = await reconcileRecipeCronJobs({
     api,
-    recipe,
+    recipe: recipeForCron,
     scope: { kind: "team", teamId, recipeId: recipe.id, stateDir: teamDir },
     cronInstallation: cfg.cronInstallation,
   });

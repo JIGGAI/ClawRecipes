@@ -411,6 +411,67 @@ files: []
       await fs.rm(base, { recursive: true, force: true });
     }
   });
+
+  test("scaffold-team --enable-heartbeat synthesizes lead heartbeat cron + scaffolds HEARTBEAT.md", async () => {
+    const { base, workspaceRoot } = await setupWorkspace();
+    const api = mockApi(workspaceRoot);
+    await fs.mkdir(path.join(workspaceRoot, "skills"), { recursive: true });
+    await fs.mkdir(path.join(workspaceRoot, "recipes"), { recursive: true });
+
+    // Minimal custom team recipe (no hard-coded team ids).
+    await fs.writeFile(
+      path.join(workspaceRoot, "recipes", "custom-hb-team.md"),
+      `---
+id: custom-hb-team
+kind: team
+agents:
+  - role: lead
+  - role: dev
+templates:
+   common.soul: "# SOUL"
+   common.agents: "# AGENTS"
+   common.tools: "# TOOLS"
+   common.status: "# STATUS"
+   common.notes: "# NOTES"
+files:
+   - path: SOUL.md
+     template: common.soul
+   - path: AGENTS.md
+     template: common.agents
+   - path: TOOLS.md
+     template: common.tools
+   - path: STATUS.md
+     template: common.status
+   - path: NOTES.md
+     template: common.notes
+---
+# Custom HB team
+`,
+      "utf8",
+    );
+
+    try {
+      const res = await __internal.handleScaffoldTeam(api, {
+        recipeId: "custom-hb-team",
+        teamId: "hb-test-team",
+        overwrite: true,
+        enableHeartbeat: true,
+      });
+      expect(res.ok).toBe(true);
+      if (res.ok) {
+        // cronInstallation is off in tests; reconciliation returns desiredCount.
+        expect((res as any).cron.desiredCount).toBe(1);
+
+        const leadDir = path.join(res.teamDir, "roles", "lead");
+        const devDir = path.join(res.teamDir, "roles", "dev");
+        expect(await fs.readFile(path.join(leadDir, "HEARTBEAT.md"), "utf8")).toContain("Checklist");
+        await expect(fs.readFile(path.join(devDir, "HEARTBEAT.md"), "utf8")).rejects.toThrow();
+      }
+    } finally {
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
 });
 
 describe("migrate-team integration", () => {

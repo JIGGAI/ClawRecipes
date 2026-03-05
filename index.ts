@@ -885,7 +885,8 @@ workflows
           .option("--overwrite-recipe", "Overwrite the generated workspace recipe file (workspace/recipes/<teamId>.md) if it already exists")
           .option("--auto-increment", "If the workspace recipe id is taken, pick the next available <teamId>-2/-3/...")
           .option("--apply-config", "Write all team agents into openclaw config (agents.list)")
-          .action(async (recipeId: string, options: { teamId: string; recipeId?: string; overwrite?: boolean; overwriteRecipe?: boolean; autoIncrement?: boolean; applyConfig?: boolean }) => {
+          .option("--enable-heartbeat", "Opt-in: install a default heartbeat cron for the team lead (and scaffold HEARTBEAT.md)")
+          .action(async (recipeId: string, options: { teamId: string; recipeId?: string; overwrite?: boolean; overwriteRecipe?: boolean; autoIncrement?: boolean; applyConfig?: boolean; enableHeartbeat?: boolean }) => {
             const res = await handleScaffoldTeam(api, {
               recipeId,
               teamId: String(options.teamId),
@@ -894,6 +895,7 @@ workflows
               overwriteRecipe: !!options.overwriteRecipe,
               autoIncrement: !!options.autoIncrement,
               applyConfig: !!options.applyConfig,
+              enableHeartbeat: !!options.enableHeartbeat,
             });
             logScaffoldResult(res, recipeId);
           });
