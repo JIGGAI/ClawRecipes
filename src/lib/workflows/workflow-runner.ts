@@ -1655,14 +1655,20 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             channel = 'telegram';
             accountId = approvalBindingId.replace(/^telegram:account:/, '');
           } else {
-            throw new Error(`Missing approval binding: approvalBindingId=${approvalBindingId}. Expected a config binding entry OR provide config.target.`);
+            // If it's a telegram account hint, we can still proceed as long as we can derive a target.
+            // Otherwise, fail loudly.
+            throw new Error(
+              `Missing approval binding: approvalBindingId=${approvalBindingId}. Expected a config binding entry OR provide config.target.`
+            );
           }
         }
       }
 
-      if (!target && channel === 'telegram' && accountId === 'shawnjbot') {
-        // RJ's DM chat id from earlier sends.
-        target = '6477250615';
+      if (!target && channel === 'telegram') {
+        // Back-compat shims (dev/testing):
+        // - If Kitchen stored a telegram account hint (telegram:account:<id>) without a full binding,
+        //   use known chat ids for local testing.
+        if (accountId === 'shawnjbot') target = '6477250615';
       }
 
       if (!target) {
