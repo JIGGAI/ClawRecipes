@@ -284,9 +284,11 @@ async function executeWorkflowNodes(opts: {
       const { channel, target, accountId } = await resolveApprovalBindingTarget(api, approvalBindingId);
 
       // Write a durable approval request file (runner can resume later via CLI).
-      const approvalsDir = path.join(teamDir, 'shared-context', 'workflow-approvals');
+          // n8n-inspired: approvals live inside the run folder.
+      const runDir = path.dirname(runLogPath);
+      const approvalsDir = path.join(runDir, 'approvals');
       await ensureDir(approvalsDir);
-      const approvalPath = path.join(approvalsDir, `${runId}.json`);
+      const approvalPath = path.join(approvalsDir, 'approval.json');
       const approvalObj = {
         runId,
         teamId,
@@ -367,8 +369,7 @@ async function executeWorkflowNodes(opts: {
       const toolArgs = ((node as any)?.config?.args ?? {}) as Record<string, unknown>;
       if (!toolName) throw new Error(`Node ${nodeLabel(node)} missing config.tool`);
 
-      const runsRoot = path.dirname(runLogPath);
-      const runDir = path.join(runsRoot, runId);
+      const runDir = path.dirname(runLogPath);
       const artifactsDir = path.join(runDir, 'artifacts');
       await ensureDir(artifactsDir);
       const artifactPath = path.join(artifactsDir, `${String(i).padStart(3, '0')}-${node.id}.tool.json`);
@@ -523,16 +524,26 @@ async function executeWorkflowNodes(opts: {
 
 
 function runFilePathFor(runsDir: string, runId: string) {
-  // Back-compat: prefer new extension, but fall back to old .json if present.
+  // Preferred (n8n-ish, file-first): one directory per run.
+  const runDir = path.join(runsDir, runId);
+
+  // Back-compat:
+  // - older runner used a flat file: <runId>.run.json
+  // - oldest used: <runId>.json
   return {
-    primary: path.join(runsDir, `${runId}.run.json`),
-    legacy: path.join(runsDir, `${runId}.json`),
+    primary: path.join(runDir, 'run.json'),
+    legacyFlat: path.join(runsDir, `${runId}.run.json`),
+    legacyOld: path.join(runsDir, `${runId}.json`),
   };
 }
 
 async function loadRunFile(teamDir: string, runsDir: string, runId: string): Promise<{ path: string; run: RunLog }> {
   const p = runFilePathFor(runsDir, runId);
-  const chosen = (await fileExists(p.primary)) ? p.primary : p.legacy;
+  const chosen = (await fileExists(p.primary))
+    ? p.primary
+    : (await fileExists(p.legacyFlat))
+      ? p.legacyFlat
+      : p.legacyOld;
   if (!(await fileExists(chosen))) throw new Error(`Run file not found: ${path.relative(teamDir, chosen)}`);
   const raw = await fs.readFile(chosen, 'utf8');
   return { path: chosen, run: JSON.parse(raw) as RunLog };
@@ -570,7 +581,17 @@ export async function enqueueWorkflowRun(api: OpenClawPluginApi, opts: {
 
   const runId = `${isoCompact()}-${crypto.randomBytes(4).toString('hex')}`;
   await ensureDir(runsDir);
-  const runLogPath = path.join(runsDir, `${runId}.run.json`);
+
+  // n8n-inspired: one folder per run.
+  const runDir = path.join(runsDir, runId);
+  await ensureDir(runDir);
+  await Promise.all([
+    ensureDir(path.join(runDir, 'node-outputs')),
+    ensureDir(path.join(runDir, 'artifacts')),
+    ensureDir(path.join(runDir, 'approvals')),
+  ]);
+
+  const runLogPath = path.join(runDir, 'run.json');
 
   const ticketNum = await nextTicketNumber(teamDir);
   const slug = `workflow-run-${(workflow.id ?? path.basename(opts.workflowFile, path.extname(opts.workflowFile))).replace(/[^a-z0-9-]+/gi, '-').toLowerCase()}`;
@@ -587,6 +608,7 @@ export async function enqueueWorkflowRun(api: OpenClawPluginApi, opts: {
     `Status: ${laneToStatus(initialLane)}`,
     `\n## Run`,
     `- workflow: ${path.relative(teamDir, workflowPath)}`,
+    `- run dir: ${path.relative(teamDir, path.dirname(runLogPath))}`,
     `- run file: ${path.relative(teamDir, runLogPath)}`,
     `- trigger: ${opts.trigger?.kind ?? 'manual'}${opts.trigger?.at ? ` @ ${opts.trigger.at}` : ''}`,
     `- runId: ${runId}`,
@@ -651,18 +673,36 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
   const leaseSeconds = typeof opts.leaseSeconds === 'number' && opts.leaseSeconds > 0 ? opts.leaseSeconds : 60;
   const now = Date.now();
 
-  const files = (await fs.readdir(runsDir)).filter((f) => f.endsWith('.run.json'));
+  const entries = await fs.readdir(runsDir);
   const candidates: Array<{ file: string; run: RunLog }> = [];
 
-  for (const f of files) {
-    const abs = path.join(runsDir, f);
+  for (const e of entries) {
+    // Preferred: workflow-runs/<runId>/run.json
+    // Legacy: workflow-runs/<runId>.run.json
+    const abs = path.join(runsDir, e);
+
+    let runPath: string | null = null;
     try {
-      const run = JSON.parse(await fs.readFile(abs, 'utf8')) as RunLog;
+      const st = await fs.stat(abs);
+      if (st.isDirectory()) {
+        const p = path.join(abs, 'run.json');
+        if (await fileExists(p)) runPath = p;
+      } else if (st.isFile() && e.endsWith('.run.json')) {
+        runPath = abs;
+      }
+    } catch {
+      // ignore
+    }
+
+    if (!runPath) continue;
+
+    try {
+      const run = JSON.parse(await fs.readFile(runPath, 'utf8')) as RunLog;
       if (run.status !== 'queued') continue;
       const exp = run.claimExpiresAt ? Date.parse(String(run.claimExpiresAt)) : 0;
       const claimed = !!run.claimedBy && exp > now;
       if (claimed) continue;
-      candidates.push({ file: abs, run });
+      candidates.push({ file: runPath, run });
     } catch {
       // ignore parse errors
     }
@@ -762,18 +802,34 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
   const leaseSeconds = typeof opts.leaseSeconds === 'number' && opts.leaseSeconds > 0 ? opts.leaseSeconds : 300;
   const now = Date.now();
 
-  const files = (await fs.readdir(runsDir)).filter((f) => f.endsWith('.run.json'));
+  const entries = await fs.readdir(runsDir);
   const candidates: Array<{ file: string; run: RunLog }> = [];
 
-  for (const f of files) {
-    const abs = path.join(runsDir, f);
+  for (const e of entries) {
+    const abs = path.join(runsDir, e);
+
+    let runPath: string | null = null;
     try {
-      const run = JSON.parse(await fs.readFile(abs, 'utf8')) as RunLog;
+      const st = await fs.stat(abs);
+      if (st.isDirectory()) {
+        const p = path.join(abs, 'run.json');
+        if (await fileExists(p)) runPath = p;
+      } else if (st.isFile() && e.endsWith('.run.json')) {
+        runPath = abs;
+      }
+    } catch {
+      // ignore
+    }
+
+    if (!runPath) continue;
+
+    try {
+      const run = JSON.parse(await fs.readFile(runPath, 'utf8')) as RunLog;
       if (run.status !== 'queued') continue;
       const exp = run.claimExpiresAt ? Date.parse(String(run.claimExpiresAt)) : 0;
       const claimed = !!run.claimedBy && exp > now;
       if (claimed) continue;
-      candidates.push({ file: abs, run });
+      candidates.push({ file: runPath, run });
     } catch {
       // ignore parse errors
     }
@@ -996,6 +1052,12 @@ type ApprovalRecord = {
 };
 
 async function approvalsPathFor(teamDir: string, runId: string) {
+  // Preferred location (n8n-inspired): inside the run folder.
+  const runsDir = path.join(teamDir, 'shared-context', 'workflow-runs');
+  const primary = path.join(runsDir, runId, 'approvals', 'approval.json');
+  if (await fileExists(primary)) return primary;
+
+  // Back-compat: shared approvals directory.
   return path.join(teamDir, 'shared-context', 'workflow-approvals', `${runId}.json`);
 }
 
@@ -1006,28 +1068,46 @@ export async function pollWorkflowApprovals(api: OpenClawPluginApi, opts: {
   const teamId = String(opts.teamId);
   const workspaceRoot = resolveWorkspaceRoot(api);
   const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
-  const approvalsDir = path.join(teamDir, 'shared-context', 'workflow-approvals');
+  const legacyApprovalsDir = path.join(teamDir, 'shared-context', 'workflow-approvals');
+  const runsDir = path.join(teamDir, 'shared-context', 'workflow-runs');
 
-  if (!(await fileExists(approvalsDir))) {
-    return { ok: true as const, teamId, polled: 0, resumed: 0, skipped: 0, message: 'No approvals directory present.' };
+  // We support both:
+  // - legacy: shared-context/workflow-approvals/<runId>.json
+  // - preferred: shared-context/workflow-runs/<runId>/approvals/approval.json
+  const approvalPaths: string[] = [];
+
+  if (await fileExists(legacyApprovalsDir)) {
+    const legacyFiles = (await fs.readdir(legacyApprovalsDir)).filter((f) => f.endsWith('.json'));
+    for (const f of legacyFiles) approvalPaths.push(path.join(legacyApprovalsDir, f));
   }
 
-  const files = (await fs.readdir(approvalsDir))
-    .filter((f) => f.endsWith('.json'))
-    .slice(0, typeof opts.limit === 'number' && opts.limit > 0 ? opts.limit : undefined);
+  if (await fileExists(runsDir)) {
+    const entries = await fs.readdir(runsDir);
+    for (const e of entries) {
+      const p = path.join(runsDir, e, 'approvals', 'approval.json');
+      if (await fileExists(p)) approvalPaths.push(p);
+    }
+  }
+
+  const limitedPaths = approvalPaths.slice(0, typeof opts.limit === 'number' && opts.limit > 0 ? opts.limit : undefined);
+  if (!limitedPaths.length) {
+    return { ok: true as const, teamId, polled: 0, resumed: 0, skipped: 0, message: 'No approval records present.' };
+  }
 
   let resumed = 0;
   let skipped = 0;
   const results: Array<{ runId: string; status: string; action: 'resumed' | 'skipped' | 'error'; message?: string }> = [];
 
-  for (const f of files) {
-    const approvalPath = path.join(approvalsDir, f);
+  for (const approvalPath of limitedPaths) {
     let approval: ApprovalRecord;
     try {
       approval = JSON.parse(await fs.readFile(approvalPath, 'utf8')) as ApprovalRecord;
     } catch (e) {
       skipped++;
-      results.push({ runId: path.basename(f, '.json'), status: 'unknown', action: 'error', message: `Failed to parse: ${(e as Error).message}` });
+      const guessedRunId = approvalPath.endsWith(`${path.sep}approval.json`)
+        ? path.basename(path.dirname(path.dirname(approvalPath)))
+        : path.basename(approvalPath, '.json');
+      results.push({ runId: guessedRunId, status: 'unknown', action: 'error', message: `Failed to parse: ${(e as Error).message}` });
       continue;
     }
 
@@ -1065,7 +1145,7 @@ export async function pollWorkflowApprovals(api: OpenClawPluginApi, opts: {
     }
   }
 
-  return { ok: true as const, teamId, polled: files.length, resumed, skipped, results };
+  return { ok: true as const, teamId, polled: limitedPaths.length, resumed, skipped, results };
 }
 
 export async function approveWorkflowRun(api: OpenClawPluginApi, opts: {
