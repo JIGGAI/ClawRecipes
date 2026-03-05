@@ -24,7 +24,14 @@ function normalizeWorkflowV1(raw: unknown): WorkflowV1 {
 }
 
 function isoCompact(ts = new Date()) {
-  return ts.toISOString().replace(/[:.]/g, '-');
+  // Runner runIds appear in filenames + URLs. Keep them conservative + URL-safe.
+  // - lowercase
+  // - no ':' or '.'
+  // - avoid 'T'/'Z' uppercase markers from ISO strings
+  return ts
+    .toISOString()
+    .toLowerCase()
+    .replace(/[:.]/g, '-');
 }
 
 function assertLane(lane: string): asserts lane is WorkflowLane {
