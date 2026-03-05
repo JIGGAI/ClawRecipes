@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import { resolveWorkspaceRoot } from '../workspace';
 import type { ToolTextResult } from '../../toolsInvoke';
@@ -25,6 +26,8 @@ function asString(v: unknown, fallback = ''): string {
 function asArray(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
+
+const execFileAsync = promisify(execFile);
 
 function normalizeWorkflow(raw: unknown): Workflow {
   const w = asRecord(raw);
@@ -1901,6 +1904,41 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
           const result = { appendedTo: path.relative(teamDir, abs), bytes: Buffer.byteLength(content, 'utf8') };
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
+        } else if (toolName === 'marketing.post_all') {
+          // Real-world X posting (MVP): post a single X draft via the local `xurl` CLI.
+          // Assumes user has authenticated xurl (OAuth2) outside the agent.
+          const platforms = (toolArgs.platforms as unknown[] | undefined) ?? ['x'];
+          if (!platforms.map(String).includes('x')) {
+            throw new Error('marketing.post_all currently supports only platforms=["x"]');
+          }
+
+          const draftsFromNode = String((toolArgs as any).draftsFromNode ?? '').trim();
+          if (!draftsFromNode) throw new Error('marketing.post_all requires args.draftsFromNode');
+
+          // Load prior node output JSON (from qc_brand) and extract platforms.x.{hook,body}
+          const nodeOutputsDir = path.join(runDir, 'node-outputs');
+          const files = await fs.readdir(nodeOutputsDir);
+          const match = files.find((f) => f.endsWith(`-${draftsFromNode}.json`));
+          if (!match) throw new Error(`Could not find node output for draftsFromNode=${draftsFromNode}`);
+          const outRaw = await fs.readFile(path.join(nodeOutputsDir, match), 'utf8');
+          const outObj = JSON.parse(outRaw) as { text?: string };
+          const packet = JSON.parse(String(outObj.text ?? '{}')) as any;
+
+          const xHook = String(packet?.platforms?.x?.hook ?? '').trim();
+          const xBody = String(packet?.platforms?.x?.body ?? '').trim();
+          const text = [xHook, xBody].filter(Boolean).join('\n\n').trim();
+          if (!text) throw new Error('No X draft text found in qc output (platforms.x.hook/body)');
+
+          // Post via xurl.
+          const { stdout } = await execFileAsync('xurl', ['post', text], { timeout: 60_000, maxBuffer: 1024 * 1024 });
+          let parsed: any = null;
+          try { parsed = JSON.parse(String(stdout || '{}')); } catch { parsed = { raw: String(stdout || '') }; }
+
+          await fs.writeFile(
+            artifactPath,
+            JSON.stringify({ ok: true, tool: toolName, args: { platforms: ['x'], draftsFromNode }, result: parsed }, null, 2) + '\n',
+            'utf8'
+          );
         } else {
           const toolRes = await toolsInvoke<unknown>(api, {
             tool: toolName,
