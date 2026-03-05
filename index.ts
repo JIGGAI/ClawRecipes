@@ -53,6 +53,14 @@ import {
 } from "./src/lib/cleanup-workspaces";
 import { resolveWorkspaceRoot } from "./src/lib/workspace";
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+
+function asString(v: unknown, fallback = ''): string {
+  return typeof v === 'string' ? v : (v == null ? fallback : String(v));
+}
+
 const recipesPlugin = {
   id: "recipes",
   name: "Recipes",
@@ -67,11 +75,12 @@ const recipesPlugin = {
     // If a human replies `approve <runId>` or `decline <runId>` in the bound channel,
     // record the decision and resume the run.
     api.on(
-      "message_received" as any,
-      async (evt: any) => {
+      "message_received" as never,
+      async (evt: unknown) => {
         try {
-          const channel = String(evt?.messageProvider ?? evt?.channelId ?? evt?.channel ?? "");
-          const text = String(evt?.text ?? evt?.message ?? evt?.body ?? "").trim();
+          const e = isRecord(evt) ? evt : {};
+          const channel = asString(e["messageProvider"] ?? e["channelId"] ?? e["channel"]);
+          const text = asString(e["text"] ?? e["message"] ?? e["body"]).trim();
           if (!text) return;
 
           // Only enable for Telegram for now (matches RJ's request).
@@ -134,7 +143,7 @@ const recipesPlugin = {
           console.error(`[recipes] approval reply handler error: ${(e as Error).message}`);
         }
       },
-      { priority: 50 } as any
+      { priority: 50 } as unknown as { priority: number }
     );
 
     // On plugin load, ensure multi-agent config has an explicit agents.list with main at top.
