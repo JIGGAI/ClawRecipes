@@ -7,7 +7,8 @@ import { resolveWorkspaceRoot } from '../workspace';
 import type { ToolTextResult } from '../../toolsInvoke';
 import { toolsInvoke } from '../../toolsInvoke';
 import { loadOpenClawConfig } from '../recipes-config';
-import type { Workflow, WorkflowLane, WorkflowNode } from './workflow-types';
+import type { Workflow, WorkflowEdge, WorkflowLane, WorkflowNode } from './workflow-types';
+import { enqueueTask } from './workflow-queue';
 
 function normalizeWorkflow(raw: unknown): Workflow {
   const w = (raw ?? {}) as any;
@@ -186,14 +187,112 @@ async function executeWorkflowNodes(opts: {
 }): Promise<{ ticketPath: string; lane: WorkflowLane; status: 'completed' | 'awaiting_approval' | 'rejected' }> {
   const { api, teamId, teamDir, workflow, workflowFile, runId, runLogPath } = opts;
 
-  // MVP: execute nodes in declared order (ignore edges).
+  const hasEdges = Array.isArray(workflow.edges) && workflow.edges.length > 0;
+
   let curLane: WorkflowLane = opts.initialLane;
   let curTicketPath = opts.ticketPath;
 
-  for (let i = 0; i < workflow.nodes.length; i++) {
-    if (i < (opts.startNodeIndex ?? 0)) continue;
+  // Load the current run log so we can resume deterministically (approval resumes, partial runs, etc.).
+  const curRunRaw = await fs.readFile(runLogPath, 'utf8');
+  const curRun = JSON.parse(curRunRaw) as RunLog;
+
+  const nodeIndexById = new Map<string, number>();
+  for (let i = 0; i < workflow.nodes.length; i++) nodeIndexById.set(String(workflow.nodes[i]?.id ?? ''), i);
+
+  const nodeStates: Record<string, { status: 'success' | 'error' | 'waiting'; ts: string }> = {};
+
+  // Prefer explicit nodeStates (new), but also support deriving from events (older runs).
+  const curNodeStates = (curRun as any)?.nodeStates as Record<string, { status?: string; ts?: string }> | undefined;
+  if (curNodeStates && typeof curNodeStates === 'object') {
+    for (const [nodeId, st] of Object.entries(curNodeStates)) {
+      const s = String((st as any)?.status ?? '');
+      if (s === 'success' || s === 'error' || s === 'waiting') nodeStates[String(nodeId)] = { status: s, ts: String((st as any)?.ts ?? new Date().toISOString()) };
+    }
+  }
+
+  for (const ev of Array.isArray(curRun.events) ? curRun.events : []) {
+    const nodeId = String((ev as any)?.nodeId ?? '');
+    if (!nodeId) continue;
+    const ts = String((ev as any)?.ts ?? new Date().toISOString());
+    const type = String((ev as any)?.type ?? '');
+    if (type === 'node.completed') nodeStates[nodeId] = { status: 'success', ts };
+    if (type === 'node.error') nodeStates[nodeId] = { status: 'error', ts };
+    if (type === 'node.awaiting_approval') nodeStates[nodeId] = { status: 'waiting', ts };
+    if (type === 'node.approved') nodeStates[nodeId] = { status: 'success', ts };
+  }
+
+  const incomingEdgesByNodeId = new Map<string, WorkflowEdge[]>();
+  const edges = Array.isArray(workflow.edges) ? workflow.edges : [];
+  for (const e of edges) {
+    const to = String(e?.to ?? '');
+    if (!to) continue;
+    const list = incomingEdgesByNodeId.get(to) ?? [];
+    list.push(e as WorkflowEdge);
+    incomingEdgesByNodeId.set(to, list);
+  }
+
+  function edgeSatisfied(e: WorkflowEdge): boolean {
+    const fromId = String(e.from ?? '');
+    const from = nodeStates[fromId]?.status;
+    const on = String((e as any)?.on ?? 'success');
+    if (!from) return false;
+    if (on === 'always') return from === 'success' || from === 'error';
+    if (on === 'error') return from === 'error';
+    return from === 'success';
+  }
+
+  function nodeReady(node: WorkflowNode): boolean {
+    const nodeId = String(node?.id ?? '');
+    if (!nodeId) return false;
+    const st = nodeStates[nodeId]?.status;
+    if (st === 'success' || st === 'error' || st === 'waiting') return false;
+
+    // Explicit input dependencies are AND semantics.
+    const inputFrom = (node as any)?.input?.from;
+    if (Array.isArray(inputFrom) && inputFrom.length) {
+      return inputFrom.every((dep) => nodeStates[String(dep)]?.status === 'success');
+    }
+
+    if (!hasEdges) return true;
+
+    const incoming = incomingEdgesByNodeId.get(nodeId) ?? [];
+    if (!incoming.length) return true; // root
+
+    // Minimal semantics: OR. If any incoming edge condition is satisfied, the node can run.
+    return incoming.some(edgeSatisfied);
+  }
+
+  function pickNextIndex(): number | null {
+    if (!hasEdges) {
+      const start = opts.startNodeIndex ?? 0;
+      for (let i = start; i < workflow.nodes.length; i++) {
+        const nodeId = String(workflow.nodes[i]?.id ?? '');
+        if (!nodeId) continue;
+        const st = nodeStates[nodeId]?.status;
+        if (st === 'success' || st === 'error' || st === 'waiting') continue;
+        return i;
+      }
+      return null;
+    }
+
+    const ready: number[] = [];
+    for (let i = 0; i < workflow.nodes.length; i++) {
+      const n = workflow.nodes[i]!;
+      if (nodeReady(n)) ready.push(i);
+    }
+    if (!ready.length) return null;
+    ready.sort((a, b) => a - b);
+    return ready[0] ?? null;
+  }
+
+  // Execute until we either complete or hit a wait state.
+  while (true) {
+    const i = pickNextIndex();
+    if (i === null) break;
+
     const node = workflow.nodes[i]!;
     const ts = new Date().toISOString();
+
     const laneRaw = node?.lane ? String(node.lane) : null;
     if (laneRaw) {
       assertLane(laneRaw);
@@ -216,9 +315,11 @@ async function executeWorkflowNodes(opts: {
       await appendRunLog(runLogPath, (cur) => ({
         ...cur,
         nextNodeIndex: i + 1,
+        nodeStates: { ...(cur as any).nodeStates, [node.id]: { status: 'success', ts } },
         events: [...cur.events, { ts, type: 'node.completed', nodeId: node.id, kind }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, noop: true }],
       }));
+      nodeStates[String(node.id)] = { status: 'success', ts };
       continue;
     }
 
@@ -274,12 +375,15 @@ async function executeWorkflowNodes(opts: {
       };
       await fs.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + '\n', 'utf8');
 
+      const completedTs = new Date().toISOString();
       await appendRunLog(runLogPath, (cur) => ({
         ...cur,
         nextNodeIndex: i + 1,
-        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind: node.kind, nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
+        nodeStates: { ...(cur as any).nodeStates, [node.id]: { status: 'success', ts: completedTs } },
+        events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind: node.kind, nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, agentId, nodeOutputPath: path.relative(teamDir, nodeOutputAbs), bytes: Buffer.byteLength(text, 'utf8') }],
       }));
+      nodeStates[String(node.id)] = { status: 'success', ts: completedTs };
 
       continue;
     }
@@ -336,14 +440,17 @@ async function executeWorkflowNodes(opts: {
         },
       });
 
+      const waitingTs = new Date().toISOString();
       await appendRunLog(runLogPath, (cur) => ({
         ...cur,
         status: 'awaiting_approval',
         nextNodeIndex: i + 1,
-        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.awaiting_approval', nodeId: node.id, bindingId: approvalBindingId, approvalFile: path.relative(teamDir, approvalPath) }],
+        nodeStates: { ...(cur as any).nodeStates, [node.id]: { status: 'waiting', ts: waitingTs } },
+        events: [...cur.events, { ts: waitingTs, type: 'node.awaiting_approval', nodeId: node.id, bindingId: approvalBindingId, approvalFile: path.relative(teamDir, approvalPath) }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, approvalBindingId, approvalFile: path.relative(teamDir, approvalPath) }],
       }));
 
+      nodeStates[String(node.id)] = { status: 'waiting', ts: waitingTs };
       return { ticketPath: curTicketPath, lane: curLane, status: 'awaiting_approval' };
     }
 
@@ -363,12 +470,15 @@ async function executeWorkflowNodes(opts: {
         await fs.writeFile(abs, prev + content, 'utf8');
       }
 
+      const completedTs = new Date().toISOString();
       await appendRunLog(runLogPath, (cur) => ({
         ...cur,
         nextNodeIndex: i + 1,
-        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind: node.kind, writebackPaths }],
+        nodeStates: { ...(cur as any).nodeStates, [node.id]: { status: 'success', ts: completedTs } },
+        events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind: node.kind, writebackPaths }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, writebackPaths }],
       }));
+      nodeStates[String(node.id)] = { status: 'success', ts: completedTs };
 
       continue;
     }
@@ -410,12 +520,15 @@ async function executeWorkflowNodes(opts: {
           const result = { appendedTo: path.relative(teamDir, abs), bytes: Buffer.byteLength(content, 'utf8') };
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2), 'utf8');
 
+          const completedTs = new Date().toISOString();
           await appendRunLog(runLogPath, (cur) => ({
             ...cur,
             nextNodeIndex: i + 1,
-            events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
+            nodeStates: { ...(cur as any).nodeStates, [node.id]: { status: 'success', ts: completedTs } },
+            events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
             nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
           }));
+          nodeStates[String(node.id)] = { status: 'success', ts: completedTs };
 
           continue;
         }
@@ -485,12 +598,16 @@ async function executeWorkflowNodes(opts: {
           });
 
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2), 'utf8');
+
+          const completedTs = new Date().toISOString();
           await appendRunLog(runLogPath, (cur) => ({
             ...cur,
             nextNodeIndex: i + 1,
-            events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
+            nodeStates: { ...(cur as any).nodeStates, [node.id]: { status: 'success', ts: completedTs } },
+            events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
             nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
           }));
+          nodeStates[String(node.id)] = { status: 'success', ts: completedTs };
 
           continue;
         }
@@ -499,22 +616,28 @@ async function executeWorkflowNodes(opts: {
         const result = await toolsInvoke(api, { tool: toolName, args: toolArgs } as any);
         await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2), 'utf8');
 
+        const completedTs = new Date().toISOString();
         await appendRunLog(runLogPath, (cur) => ({
           ...cur,
           nextNodeIndex: i + 1,
-          events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
+          nodeStates: { ...(cur as any).nodeStates, [node.id]: { status: 'success', ts: completedTs } },
+          events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
           nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
         }));
+        nodeStates[String(node.id)] = { status: 'success', ts: completedTs };
 
         continue;
       } catch (e) {
         await fs.writeFile(artifactPath, JSON.stringify({ ok: false, tool: toolName, args: toolArgs, error: (e as Error).message }, null, 2), 'utf8');
+        const errTs = new Date().toISOString();
         await appendRunLog(runLogPath, (cur) => ({
           ...cur,
           nextNodeIndex: i + 1,
-          events: [...cur.events, { ts: new Date().toISOString(), type: 'node.error', nodeId: node.id, kind, tool: toolName, message: (e as Error).message, artifactPath: path.relative(teamDir, artifactPath) }],
+          nodeStates: { ...(cur as any).nodeStates, [node.id]: { status: 'error', ts: errTs, message: (e as Error).message } },
+          events: [...cur.events, { ts: errTs, type: 'node.error', nodeId: node.id, kind, tool: toolName, message: (e as Error).message, artifactPath: path.relative(teamDir, artifactPath) }],
           nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, tool: toolName, error: (e as Error).message, artifactPath: path.relative(teamDir, artifactPath) }],
         }));
+        nodeStates[String(node.id)] = { status: 'error', ts: errTs };
         throw e;
       }
     }
@@ -878,36 +1001,63 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
     const workflowRaw = await fs.readFile(workflowPath, 'utf8');
     const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
 
-    const ticketPath = path.join(teamDir, run.ticket.file);
     const laneRaw = String(run.ticket.lane);
     assertLane(laneRaw);
-    const initialLane = laneRaw as WorkflowLane;
-
     try {
-      const execRes = await executeWorkflowNodes({
-        api,
+      // Scheduler-only: do NOT execute nodes directly here.
+      // Instead, enqueue the next runnable node onto the assigned agent's pull queue.
+      let idx = typeof run.nextNodeIndex === 'number' ? run.nextNodeIndex : 0;
+
+      // Skip over start/end nodes immediately.
+      while (idx < (workflow.nodes?.length ?? 0)) {
+        const n = workflow.nodes[idx]!;
+        const k = String(n.kind ?? '');
+        if (k !== 'start' && k !== 'end') break;
+
+        await appendRunLog(runPath, (cur) => ({
+          ...cur,
+          nextNodeIndex: idx + 1,
+          events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: n.id, kind: k, noop: true }],
+          nodeResults: [...(cur.nodeResults ?? []), { nodeId: n.id, kind: k, noop: true }],
+        }));
+        idx += 1;
+      }
+
+      if (idx >= (workflow.nodes?.length ?? 0)) {
+        await writeRunFile(runPath, (cur) => ({
+          ...cur,
+          updatedAt: new Date().toISOString(),
+          status: 'completed',
+          claimedBy: null,
+          claimExpiresAt: null,
+          nextNodeIndex: idx,
+          events: [...cur.events, { ts: new Date().toISOString(), type: 'run.completed' }],
+        }));
+        return { runId: run.runId, status: 'completed' };
+      }
+
+      const node = workflow.nodes[idx]!;
+      const assignedAgentId = String(node?.assignedTo?.agentId ?? '').trim();
+      if (!assignedAgentId) throw new Error(`Node ${node.id} missing assignedTo.agentId (required for pull-based execution)`);
+
+      await enqueueTask(teamDir, assignedAgentId, {
         teamId,
-        teamDir,
-        workflow,
-        workflowPath,
-        workflowFile,
         runId: run.runId,
-        runLogPath: runPath,
-        ticketPath,
-        initialLane,
-        startNodeIndex: typeof run.nextNodeIndex === 'number' ? run.nextNodeIndex : 0,
+        nodeId: node.id,
+        kind: 'execute_node',
       });
 
       await writeRunFile(runPath, (cur) => ({
         ...cur,
         updatedAt: new Date().toISOString(),
-        status: execRes.status === 'awaiting_approval' ? 'awaiting_approval' : execRes.status,
+        status: 'waiting_workers',
         claimedBy: null,
         claimExpiresAt: null,
-        nextNodeIndex: execRes.status === 'awaiting_approval' ? (cur.nextNodeIndex ?? 0) : (workflow.nodes?.length ?? cur.nextNodeIndex ?? 0),
+        nextNodeIndex: idx,
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.enqueued', nodeId: node.id, agentId: assignedAgentId }],
       }));
 
-      return { runId: run.runId, status: execRes.status };
+      return { runId: run.runId, status: 'waiting_workers' };
     } catch (e) {
       await writeRunFile(runPath, (cur) => ({
         ...cur,
@@ -1204,10 +1354,12 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
     return { ok: true as const, runId, status: 'rejected' as const, ticketPath: moved.ticketPath, runLogPath };
   }
 
+  const approvedTs = new Date().toISOString();
   await appendRunLog(runLogPath, (cur) => ({
     ...cur,
     status: 'running',
-    events: [...cur.events, { ts: new Date().toISOString(), type: 'node.approved', nodeId: approval.nodeId }],
+    nodeStates: { ...(cur as any).nodeStates, [approval.nodeId]: { status: 'success', ts: approvedTs } },
+    events: [...cur.events, { ts: approvedTs, type: 'node.approved', nodeId: approval.nodeId }],
   }));
 
   // Determine current lane from run log.
@@ -1230,4 +1382,284 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
   });
 
   return { ok: true as const, runId, status: execRes.status, ticketPath: execRes.ticketPath, runLogPath };
+}
+
+export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
+  teamId: string;
+  agentId: string;
+  limit?: number;
+  workerId?: string;
+}) {
+  const teamId = String(opts.teamId);
+  const agentId = String(opts.agentId);
+  if (!teamId) throw new Error('--team-id is required');
+  if (!agentId) throw new Error('--agent-id is required');
+
+  const workspaceRoot = resolveWorkspaceRoot(api);
+  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const sharedContextDir = path.join(teamDir, 'shared-context');
+  const workflowsDir = path.join(sharedContextDir, 'workflows');
+  const runsDir = path.join(sharedContextDir, 'workflow-runs');
+
+  const workerId = String(opts.workerId ?? `workflow-worker:${process.pid}`);
+  const limit = typeof opts.limit === 'number' && opts.limit > 0 ? Math.floor(opts.limit) : 1;
+
+  const results: Array<{ taskId: string; runId: string; nodeId: string; status: string }> = [];
+
+  for (let i = 0; i < limit; i++) {
+    const dq = await dequeueNextTask(teamDir, agentId, { workerId });
+    if (!dq.ok || !dq.task) break;
+
+    const { task } = dq.task;
+    if (task.kind !== 'execute_node') continue;
+
+    const runPath = runFilePathFor(runsDir, task.runId);
+    const runDir = path.dirname(runPath);
+    const lockDir = path.join(runDir, 'locks');
+    await ensureDir(lockDir);
+
+    // Node-level lock to prevent double execution.
+    const lockPath = path.join(lockDir, `${task.nodeId}.lock`);
+    try {
+      await fs.writeFile(lockPath, JSON.stringify({ workerId, taskId: task.id, claimedAt: new Date().toISOString() }, null, 2), { encoding: 'utf8', flag: 'wx' });
+    } catch {
+      results.append({ 'taskId': task.id, 'runId': task.runId, 'nodeId': task.nodeId, 'status': 'skipped_locked' })
+      continue;
+    }
+
+    const { run } = await loadRunFile(teamDir, runsDir, task.runId);
+    const workflowFile = String(run.workflow.file);
+    const workflowPath = path.join(workflowsDir, workflowFile);
+    const workflowRaw = await fs.readFile(workflowPath, 'utf8');
+    const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
+
+    const nodeIdx = workflow.nodes.findIndex((n) => String(n.id) === String(task.nodeId));
+    if (nodeIdx < 0) throw new Error(`Node not found in workflow: ${task.nodeId}`);
+    const node = workflow.nodes[nodeIdx]!;
+
+    // Determine current lane + ticket path.
+    const laneRaw = String(run.ticket.lane);
+    assertLane(laneRaw);
+    let curLane: WorkflowLane = laneRaw as WorkflowLane;
+    let curTicketPath = path.join(teamDir, run.ticket.file);
+
+    // Lane transitions.
+    const laneNodeRaw = node?.lane ? String(node.lane) : null;
+    if (laneNodeRaw) {
+      assertLane(laneNodeRaw);
+      if (laneNodeRaw !== curLane) {
+        const moved = await moveRunTicket({ teamDir, ticketPath: curTicketPath, toLane: laneNodeRaw });
+        curLane = laneNodeRaw;
+        curTicketPath = moved.ticketPath;
+        await appendRunLog(runPath, (cur) => ({
+          ...cur,
+          ticket: { ...cur.ticket, file: path.relative(teamDir, curTicketPath), lane: curLane },
+          events: [...cur.events, { ts: new Date().toISOString(), type: 'ticket.moved', lane: curLane, nodeId: node.id }],
+        }));
+      }
+    }
+
+    const kind = String(node.kind ?? '');
+
+    // start/end are no-op.
+    if (kind === 'start' || kind === 'end') {
+      await appendRunLog(runPath, (cur) => ({
+        ...cur,
+        nextNodeIndex: nodeIdx + 1,
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind, noop: true }],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, noop: true }],
+      }));
+    } else if (kind === 'llm') {
+      // Reuse the existing runner logic by executing just this node (sequential model).
+      // This keeps the worker deterministic and file-first.
+      const runLogPath = runPath;
+      const runId = task.runId;
+
+      const agentIdExec = String(node?.assignedTo?.agentId ?? '');
+      const promptTemplatePath = String(node?.action?.promptTemplatePath ?? '');
+      if (!agentIdExec) throw new Error(`Node ${nodeLabel(node)} missing assignedTo.agentId`);
+      if (!promptTemplatePath) throw new Error(`Node ${nodeLabel(node)} missing action.promptTemplatePath`);
+
+      const promptPathAbs = path.resolve(teamDir, promptTemplatePath);
+      const defaultNodeOutputRel = path.join('node-outputs', `${String(nodeIdx).padStart(3, '0')}-${node.id}.json`);
+      const nodeOutputRel = String(node?.output?.path ?? '').trim() || defaultNodeOutputRel;
+      const nodeOutputAbs = path.resolve(runDir, nodeOutputRel);
+      if (!nodeOutputAbs.startsWith(runDir + path.sep) && nodeOutputAbs !== runDir) {
+        throw new Error(`Node output.path must be within the run directory: ${nodeOutputRel}`);
+      }
+      await ensureDir(path.dirname(nodeOutputAbs));
+
+      const prompt = await fs.readFile(promptPathAbs, 'utf8');
+      const taskText = [
+        `You are executing a workflow run for teamId=${teamId}.`,
+        `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,
+        `RunId: ${runId}`,
+        `Node: ${nodeLabel(node)}`,
+        `\n---\nPROMPT TEMPLATE\n---\n`,
+        prompt.trim(),
+        `\n---\nOUTPUT FORMAT\n---\n`,
+        `Return ONLY the final content (the worker will store it as JSON).`,
+      ].join('\n');
+
+      const result = await toolsInvoke<ToolTextResult>(api, {
+        tool: 'sessions_spawn',
+        args: {
+          agentId: agentIdExec,
+          task: taskText,
+          label: `workflow:${teamId}:${workflow.id ?? 'workflow'}:${runId}:${node.id}`,
+          cleanup: 'delete',
+          runTimeoutSeconds: 300,
+        },
+      });
+
+      const text = toolText(result) || '[no output]';
+      const outputObj = {
+        runId,
+        teamId,
+        nodeId: node.id,
+        kind: node.kind,
+        agentId: agentIdExec,
+        completedAt: new Date().toISOString(),
+        text,
+      };
+      await fs.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + '\n', 'utf8');
+
+      await appendRunLog(runLogPath, (cur) => ({
+        ...cur,
+        nextNodeIndex: nodeIdx + 1,
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind: node.kind, nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, agentId: agentIdExec, nodeOutputPath: path.relative(teamDir, nodeOutputAbs), bytes: Buffer.byteLength(text, 'utf8') }],
+      }));
+    } else if (kind === 'human_approval') {
+      // For now, approval nodes are executed by workers (message send + awaiting state).
+      // Note: approval files live inside the run folder.
+      const approvalBindingId = String(node?.action?.approvalBindingId ?? '');
+      if (!approvalBindingId) throw new Error(`Node ${nodeLabel(node)} missing action.approvalBindingId`);
+
+      const { channel, target, accountId } = await resolveApprovalBindingTarget(api, approvalBindingId);
+
+      const approvalsDir = path.join(runDir, 'approvals');
+      await ensureDir(approvalsDir);
+      const approvalPath = path.join(approvalsDir, 'approval.json');
+      const approvalObj = {
+        runId: task.runId,
+        teamId,
+        workflowFile,
+        nodeId: node.id,
+        bindingId: approvalBindingId,
+        requestedAt: new Date().toISOString(),
+        status: 'pending',
+        ticket: path.relative(teamDir, curTicketPath),
+        runLog: path.relative(teamDir, runPath),
+      };
+      await fs.writeFile(approvalPath, JSON.stringify(approvalObj, null, 2), 'utf8');
+
+      const msg = [
+        `Approval requested for workflow run: ${workflow.name ?? workflow.id ?? workflowFile}`,
+        `RunId: ${task.runId}`,
+        `Node: ${node.name ?? node.id}`,
+        `Ticket: ${path.relative(teamDir, curTicketPath)}`,
+        `Run log: ${path.relative(teamDir, runPath)}`,
+        `Approval file: ${path.relative(teamDir, approvalPath)}`,
+        `\nTo approve/reject:`,
+        `- openclaw recipes workflows approve --team-id ${teamId} --run-id ${task.runId} --approved true`,
+        `- openclaw recipes workflows approve --team-id ${teamId} --run-id ${task.runId} --approved false`,
+        `Then resume:`,
+        `- openclaw recipes workflows resume --team-id ${teamId} --run-id ${task.runId}`,
+      ].join('\n');
+
+      await toolsInvoke<ToolTextResult>(api, {
+        tool: 'message',
+        args: {
+          action: 'send',
+          channel,
+          target,
+          ...(accountId ? { accountId } : {}),
+          message: msg,
+        },
+      });
+
+      await appendRunLog(runPath, (cur) => ({
+        ...cur,
+        status: 'awaiting_approval',
+        nextNodeIndex: nodeIdx + 1,
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.awaiting_approval', nodeId: node.id, bindingId: approvalBindingId, approvalFile: path.relative(teamDir, approvalPath) }],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, approvalBindingId, approvalFile: path.relative(teamDir, approvalPath) }],
+      }));
+
+      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'awaiting_approval' });
+      continue;
+    } else {
+      throw new Error(`Worker does not yet support node kind: ${kind}`);
+    }
+
+    // After node completion, enqueue next node (sequential model).
+    const updated = (await loadRunFile(teamDir, runsDir, task.runId)).run;
+    const nextIdx = typeof updated.nextNodeIndex == 'number' ? updated.nextNodeIndex : nodeIdx + 1;
+
+    if (updated.status === 'awaiting_approval') {
+      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'awaiting_approval' });
+      continue;
+    }
+
+    if (nextIdx >= (workflow.nodes?.length ?? 0)) {
+      await writeRunFile(runPath, (cur) => ({
+        ...cur,
+        updatedAt: new Date().toISOString(),
+        status: 'completed',
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'run.completed' }],
+      }));
+      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'completed' });
+      continue;
+    }
+
+    // Skip start/end nodes.
+    let enqueueIdx = nextIdx;
+    while (enqueueIdx < (workflow.nodes?.length ?? 0)) {
+      const n = workflow.nodes[enqueueIdx]!;
+      const k = String(n.kind ?? '');
+      if (k !== 'start' && k !== 'end') break;
+      await appendRunLog(runPath, (cur) => ({
+        ...cur,
+        nextNodeIndex: enqueueIdx + 1,
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: n.id, kind: k, noop: true }],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: n.id, kind: k, noop: true }],
+      }));
+      enqueueIdx += 1;
+    }
+
+    if (enqueueIdx >= (workflow.nodes?.length ?? 0)) {
+      await writeRunFile(runPath, (cur) => ({
+        ...cur,
+        updatedAt: new Date().toISOString(),
+        status: 'completed',
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'run.completed' }],
+      }));
+      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'completed' });
+      continue;
+    }
+
+    const nextNode = workflow.nodes[enqueueIdx]!;
+    const nextAgentId = String(nextNode?.assignedTo?.agentId ?? '').trim();
+    if (!nextAgentId) throw new Error(`Next node ${nextNode.id} missing assignedTo.agentId`);
+
+    await enqueueTask(teamDir, nextAgentId, {
+      teamId,
+      runId: task.runId,
+      nodeId: nextNode.id,
+      kind: 'execute_node',
+    });
+
+    await writeRunFile(runPath, (cur) => ({
+      ...cur,
+      updatedAt: new Date().toISOString(),
+      status: 'waiting_workers',
+      nextNodeIndex: enqueueIdx,
+      events: [...cur.events, { ts: new Date().toISOString(), type: 'node.enqueued', nodeId: nextNode.id, agentId: nextAgentId }],
+    }));
+
+    results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'ok' });
+  }
+
+  return { ok: true as const, teamId, agentId, workerId, results };
 }

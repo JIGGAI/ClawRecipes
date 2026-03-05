@@ -11,6 +11,13 @@ export type QueueTask = {
   kind: 'execute_node';
 };
 
+export type DequeuedTask = {
+  task: QueueTask;
+  // Absolute byte offsets into the queue file.
+  startOffsetBytes: number;
+  endOffsetBytes: number;
+};
+
 async function ensureDir(p: string) {
   await fs.mkdir(p, { recursive: true });
 }
@@ -26,6 +33,14 @@ async function fileExists(p: string) {
 
 function queueDir(teamDir: string) {
   return path.join(teamDir, 'shared-context', 'workflow-queues');
+}
+
+function claimsDir(teamDir: string) {
+  return path.join(queueDir(teamDir), 'claims');
+}
+
+function claimPathFor(teamDir: string, agentId: string, taskId: string) {
+  return path.join(claimsDir(teamDir), `${agentId}.${taskId}.json`);
 }
 
 export function queuePathFor(teamDir: string, agentId: string) {
@@ -72,6 +87,10 @@ async function writeState(teamDir: string, agentId: string, st: QueueState) {
   await fs.writeFile(p, JSON.stringify(st, null, 2), 'utf8');
 }
 
+/**
+ * Peek-style read. Does NOT advance the queue cursor.
+ * Prefer dequeueNextTask() for worker execution.
+ */
 export async function readNextTasks(teamDir: string, agentId: string, opts?: { limit?: number }) {
   const limit = typeof opts?.limit === 'number' && opts.limit > 0 ? Math.floor(opts.limit) : 10;
   const qPath = queuePathFor(teamDir, agentId);
@@ -92,14 +111,12 @@ export async function readNextTasks(teamDir: string, agentId: string, opts?: { l
     const { bytesRead } = await fh.read(buf, 0, toRead, st.offsetBytes);
     const chunk = buf.subarray(0, bytesRead).toString('utf8');
 
-    // Only consume full lines.
+    // Only parse full lines.
     const lines = chunk.split('\n');
     const fullLines = lines.slice(0, -1);
     const tasks: QueueTask[] = [];
 
-    let consumedBytes = 0;
     for (const line of fullLines) {
-      consumedBytes += Buffer.byteLength(line + '\n');
       if (!line.trim()) continue;
       try {
         const t = JSON.parse(line) as QueueTask;
@@ -110,10 +127,94 @@ export async function readNextTasks(teamDir: string, agentId: string, opts?: { l
       if (tasks.length >= limit) break;
     }
 
-    const nextOffset = st.offsetBytes + consumedBytes;
-    await writeState(teamDir, agentId, { offsetBytes: nextOffset, updatedAt: new Date().toISOString() });
+    return { ok: true as const, tasks, consumed: tasks.length, offsetBytes: st.offsetBytes };
+  } finally {
+    await fh.close();
+  }
+}
 
-    return { ok: true as const, tasks, consumed: tasks.length };
+/**
+ * Dequeue exactly one task (advances cursor) and writes a best-effort claim file.
+ * This is deliberately simple (file-first); it prevents double-processing within
+ * the same per-agent queue when multiple workers accidentally run.
+ */
+export async function dequeueNextTask(
+  teamDir: string,
+  agentId: string,
+  opts?: { workerId?: string; leaseSeconds?: number }
+) {
+  const qPath = queuePathFor(teamDir, agentId);
+  if (!(await fileExists(qPath))) {
+    return { ok: true as const, task: null as DequeuedTask | null, message: 'Queue file not present.' };
+  }
+
+  const st = await loadState(teamDir, agentId);
+  const fh = await fs.open(qPath, 'r');
+  try {
+    const stat = await fh.stat();
+    if (st.offsetBytes >= stat.size) {
+      return { ok: true as const, task: null as DequeuedTask | null, message: 'No new tasks.' };
+    }
+
+    const toRead = Math.min(stat.size - st.offsetBytes, 256 * 1024);
+    const buf = Buffer.alloc(toRead);
+    const { bytesRead } = await fh.read(buf, 0, toRead, st.offsetBytes);
+    const chunk = buf.subarray(0, bytesRead).toString('utf8');
+
+    const lines = chunk.split('\n');
+    const fullLines = lines.slice(0, -1);
+    let cursor = st.offsetBytes;
+
+    for (const line of fullLines) {
+      const lineBytes = Buffer.byteLength(line + '\n');
+      const startOffsetBytes = cursor;
+      const endOffsetBytes = cursor + lineBytes;
+      cursor = endOffsetBytes;
+
+      if (!line.trim()) {
+        await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
+        continue;
+      }
+
+      let t: QueueTask | null = null;
+      try {
+        t = JSON.parse(line) as QueueTask;
+      } catch {
+        // Malformed: skip it so we don't get stuck.
+        await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
+        continue;
+      }
+
+      if (!t || !t.id || !t.runId || !t.nodeId) {
+        await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
+        continue;
+      }
+
+      await ensureDir(claimsDir(teamDir));
+      const claimPath = claimPathFor(teamDir, agentId, t.id);
+      try {
+        const claim = {
+          taskId: t.id,
+          agentId,
+          workerId: String(opts?.workerId ?? `worker:${process.pid}`),
+          claimedAt: new Date().toISOString(),
+          leaseSeconds: typeof opts?.leaseSeconds === 'number' ? opts.leaseSeconds : undefined,
+        };
+        await fs.writeFile(claimPath, JSON.stringify(claim, null, 2), { encoding: 'utf8', flag: 'wx' });
+      } catch {
+        // Already claimed: skip it.
+        await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
+        continue;
+      }
+
+      await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
+      return {
+        ok: true as const,
+        task: { task: t, startOffsetBytes, endOffsetBytes },
+      };
+    }
+
+    return { ok: true as const, task: null as DequeuedTask | null, message: 'No full line available yet.' };
   } finally {
     await fh.close();
   }
