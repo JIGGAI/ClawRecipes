@@ -175,9 +175,102 @@ type RunLog = {
   claimedBy?: string | null;
   claimExpiresAt?: string | null;
   nextNodeIndex?: number;
+  // File-first workflow run state (graph-friendly)
+  nodeStates?: Record<string, { status: 'success' | 'error' | 'waiting'; ts: string }>;
   events: RunEvent[];
   nodeResults?: Array<Record<string, unknown>>;
 };
+
+function loadNodeStatesFromRun(run: RunLog): Record<string, { status: 'success' | 'error' | 'waiting'; ts: string }> {
+  const out: Record<string, { status: 'success' | 'error' | 'waiting'; ts: string }> = {};
+
+  const cur = (run as any)?.nodeStates as Record<string, { status?: string; ts?: string }> | undefined;
+  if (cur && typeof cur === 'object') {
+    for (const [nodeId, st] of Object.entries(cur)) {
+      const s = String((st as any)?.status ?? '');
+      if (s === 'success' || s === 'error' || s === 'waiting') {
+        out[String(nodeId)] = { status: s, ts: String((st as any)?.ts ?? new Date().toISOString()) };
+      }
+    }
+  }
+
+  for (const ev of Array.isArray(run.events) ? run.events : []) {
+    const nodeId = String((ev as any)?.nodeId ?? '');
+    if (!nodeId) continue;
+    const ts = String((ev as any)?.ts ?? new Date().toISOString());
+    const type = String((ev as any)?.type ?? '');
+    if (type === 'node.completed') out[nodeId] = { status: 'success', ts };
+    if (type === 'node.error') out[nodeId] = { status: 'error', ts };
+    if (type === 'node.awaiting_approval') out[nodeId] = { status: 'waiting', ts };
+    if (type === 'node.approved') out[nodeId] = { status: 'success', ts };
+  }
+
+  return out;
+}
+
+function pickNextRunnableNodeIndex(opts: { workflow: Workflow; run: RunLog }): number | null {
+  const { workflow, run } = opts;
+  const nodes = Array.isArray(workflow.nodes) ? workflow.nodes : [];
+  if (!nodes.length) return null;
+
+  const hasEdges = Array.isArray(workflow.edges) && workflow.edges.length > 0;
+  if (!hasEdges) {
+    // Sequential fallback for legacy/no-edge workflows.
+    const start = typeof run.nextNodeIndex === 'number' ? run.nextNodeIndex : 0;
+    for (let i = Math.max(0, start); i < nodes.length; i++) {
+      const n = nodes[i]!;
+      const id = String((n as any)?.id ?? '');
+      if (!id) continue;
+      const st = (run.nodeStates ?? {})[id]?.status;
+      if (st === 'success' || st === 'error' || st === 'waiting') continue;
+      return i;
+    }
+    return null;
+  }
+
+  const nodeStates = loadNodeStatesFromRun(run);
+
+  const incomingEdgesByNodeId = new Map<string, WorkflowEdge[]>();
+  const edges = Array.isArray(workflow.edges) ? workflow.edges : [];
+  for (const e of edges) {
+    const to = String((e as any)?.to ?? '');
+    if (!to) continue;
+    const list = incomingEdgesByNodeId.get(to) ?? [];
+    list.push(e as WorkflowEdge);
+    incomingEdgesByNodeId.set(to, list);
+  }
+
+  function edgeSatisfied(e: WorkflowEdge): boolean {
+    const fromId = String((e as any)?.from ?? '');
+    const from = nodeStates[fromId]?.status;
+    const on = String((e as any)?.on ?? 'success');
+    if (!from) return false;
+    if (on === 'always') return from === 'success' || from === 'error';
+    if (on === 'error') return from === 'error';
+    return from === 'success';
+  }
+
+  function nodeReady(node: WorkflowNode): boolean {
+    const nodeId = String((node as any)?.id ?? '');
+    if (!nodeId) return false;
+    const st = nodeStates[nodeId]?.status;
+    if (st === 'success' || st === 'error' || st === 'waiting') return false;
+
+    const inputFrom = (node as any)?.input?.from;
+    if (Array.isArray(inputFrom) && inputFrom.length) {
+      return inputFrom.every((dep) => nodeStates[String(dep)]?.status === 'success');
+    }
+
+    const incoming = incomingEdgesByNodeId.get(nodeId) ?? [];
+    if (!incoming.length) return true;
+    return incoming.some(edgeSatisfied);
+  }
+
+  for (let i = 0; i < nodes.length; i++) {
+    if (nodeReady(nodes[i]!)) return i;
+  }
+  return null;
+}
 
 async function appendRunLog(runLogPath: string, fn: (cur: RunLog) => RunLog) {
   const raw = await fs.readFile(runLogPath, 'utf8');
@@ -906,29 +999,36 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
 
   try {
     // Scheduler-only: enqueue the next runnable node onto the assigned agent's pull queue.
-    let idx = typeof chosen.run.nextNodeIndex === 'number' ? chosen.run.nextNodeIndex : 0;
+    // Graph-aware: if workflow.edges exist, choose the next runnable node by edge conditions.
 
-    while (idx < (workflow.nodes?.length ?? 0)) {
+    let runCur = (await loadRunFile(teamDir, runsDir, chosen.run.runId)).run;
+    let idx = pickNextRunnableNodeIndex({ workflow, run: runCur });
+
+    // Auto-complete start/end nodes (they exist in UI workflows but are no-op for the runner).
+    while (idx !== null) {
       const n = workflow.nodes[idx]!;
       const k = String(n.kind ?? '');
       if (k !== 'start' && k !== 'end') break;
+      const ts = new Date().toISOString();
       await appendRunLog(chosen.file, (cur) => ({
         ...cur,
-        nextNodeIndex: idx + 1,
-        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: n.id, kind: k, noop: true }],
+        nextNodeIndex: idx! + 1,
+        nodeStates: { ...(cur as any).nodeStates, [n.id]: { status: 'success', ts } },
+        events: [...cur.events, { ts, type: 'node.completed', nodeId: n.id, kind: k, noop: true }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: n.id, kind: k, noop: true }],
       }));
-      idx += 1;
+      runCur = (await loadRunFile(teamDir, runsDir, chosen.run.runId)).run;
+      idx = pickNextRunnableNodeIndex({ workflow, run: runCur });
     }
 
-    if (idx >= (workflow.nodes?.length ?? 0)) {
+    if (idx === null) {
       await writeRunFile(chosen.file, (cur) => ({
         ...cur,
         updatedAt: new Date().toISOString(),
         status: 'completed',
         claimedBy: null,
         claimExpiresAt: null,
-        nextNodeIndex: idx,
+        nextNodeIndex: cur.nextNodeIndex,
         events: [...cur.events, { ts: new Date().toISOString(), type: 'run.completed' }],
       }));
       return { ok: true as const, teamId, claimed: 1, runId: chosen.run.runId, status: 'completed' as const };
@@ -1078,31 +1178,36 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
     try {
       // Scheduler-only: do NOT execute nodes directly here.
       // Instead, enqueue the next runnable node onto the assigned agent's pull queue.
-      let idx = typeof run.nextNodeIndex === 'number' ? run.nextNodeIndex : 0;
+      // Graph-aware: if workflow.edges exist, choose the next runnable node by edge conditions.
 
-      // Skip over start/end nodes immediately.
-      while (idx < (workflow.nodes?.length ?? 0)) {
+      let runCur = (await loadRunFile(teamDir, runsDir, run.runId)).run;
+      let idx = pickNextRunnableNodeIndex({ workflow, run: runCur });
+
+      // Auto-complete start/end nodes.
+      while (idx !== null) {
         const n = workflow.nodes[idx]!;
         const k = String(n.kind ?? '');
         if (k !== 'start' && k !== 'end') break;
-
+        const ts = new Date().toISOString();
         await appendRunLog(runPath, (cur) => ({
           ...cur,
-          nextNodeIndex: idx + 1,
-          events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: n.id, kind: k, noop: true }],
+          nextNodeIndex: idx! + 1,
+          nodeStates: { ...(cur as any).nodeStates, [n.id]: { status: 'success', ts } },
+          events: [...cur.events, { ts, type: 'node.completed', nodeId: n.id, kind: k, noop: true }],
           nodeResults: [...(cur.nodeResults ?? []), { nodeId: n.id, kind: k, noop: true }],
         }));
-        idx += 1;
+        runCur = (await loadRunFile(teamDir, runsDir, run.runId)).run;
+        idx = pickNextRunnableNodeIndex({ workflow, run: runCur });
       }
 
-      if (idx >= (workflow.nodes?.length ?? 0)) {
+      if (idx === null) {
         await writeRunFile(runPath, (cur) => ({
           ...cur,
           updatedAt: new Date().toISOString(),
           status: 'completed',
           claimedBy: null,
           claimExpiresAt: null,
-          nextNodeIndex: idx,
+          nextNodeIndex: cur.nextNodeIndex,
           events: [...cur.events, { ts: new Date().toISOString(), type: 'run.completed' }],
         }));
         return { runId: run.runId, status: 'completed' };
@@ -1550,10 +1655,12 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
     // start/end are no-op.
     if (kind === 'start' || kind === 'end') {
+      const completedTs = new Date().toISOString();
       await appendRunLog(runPath, (cur) => ({
         ...cur,
         nextNodeIndex: nodeIdx + 1,
-        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind, noop: true }],
+        nodeStates: { ...(cur as any).nodeStates, [node.id]: { status: 'success', ts: completedTs } },
+        events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, noop: true }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, noop: true }],
       }));
     } else if (kind === 'llm') {
@@ -1625,10 +1732,12 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       };
       await fs.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + '\n', 'utf8');
 
+      const completedTs = new Date().toISOString();
       await appendRunLog(runLogPath, (cur) => ({
         ...cur,
         nextNodeIndex: nodeIdx + 1,
-        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind: node.kind, nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
+        nodeStates: { ...(cur as any).nodeStates, [node.id]: { status: 'success', ts: completedTs } },
+        events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind: node.kind, nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, agentId: agentIdExec, nodeOutputPath: path.relative(teamDir, nodeOutputAbs), bytes: Buffer.byteLength(text, 'utf8') }],
       }));
     } else if (kind === 'human_approval') {
@@ -1723,11 +1832,13 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         },
       });
 
+      const waitingTs = new Date().toISOString();
       await appendRunLog(runPath, (cur) => ({
         ...cur,
         status: 'awaiting_approval',
         nextNodeIndex: nodeIdx + 1,
-        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.awaiting_approval', nodeId: node.id, bindingId: approvalBindingId, approvalFile: path.relative(teamDir, approvalPath) }],
+        nodeStates: { ...(cur as any).nodeStates, [node.id]: { status: 'waiting', ts: waitingTs } },
+        events: [...cur.events, { ts: waitingTs, type: 'node.awaiting_approval', nodeId: node.id, bindingId: approvalBindingId, approvalFile: path.relative(teamDir, approvalPath) }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, approvalBindingId, approvalFile: path.relative(teamDir, approvalPath) }],
       }));
 
@@ -1764,18 +1875,22 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           artifactPath: path.relative(teamDir, artifactPath),
         }, null, 2) + '\n', 'utf8');
 
+        const completedTs = new Date().toISOString();
         await appendRunLog(runPath, (cur) => ({
           ...cur,
           nextNodeIndex: nodeIdx + 1,
-          events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: node.id, kind: node.kind, artifactPath: path.relative(teamDir, artifactPath), nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
+          nodeStates: { ...(cur as any).nodeStates, [node.id]: { status: 'success', ts: completedTs } },
+          events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind: node.kind, artifactPath: path.relative(teamDir, artifactPath), nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
           nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath), nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
         }));
       } catch (e) {
         await fs.writeFile(artifactPath, JSON.stringify({ ok: false, tool: toolName, error: (e as Error).message }, null, 2) + '\n', 'utf8');
+        const errorTs = new Date().toISOString();
         await appendRunLog(runPath, (cur) => ({
           ...cur,
           status: 'error',
-          events: [...cur.events, { ts: new Date().toISOString(), type: 'node.error', nodeId: node.id, kind: node.kind, tool: toolName, message: (e as Error).message, artifactPath: path.relative(teamDir, artifactPath) }],
+          nodeStates: { ...(cur as any).nodeStates, [node.id]: { status: 'error', ts: errorTs } },
+          events: [...cur.events, { ts: errorTs, type: 'node.error', nodeId: node.id, kind: node.kind, tool: toolName, message: (e as Error).message, artifactPath: path.relative(teamDir, artifactPath) }],
           nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, tool: toolName, error: (e as Error).message, artifactPath: path.relative(teamDir, artifactPath) }],
         }));
         results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'error', error: (e as Error).message });
@@ -1785,42 +1900,36 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       throw new Error(`Worker does not yet support node kind: ${kind}`);
     }
 
-    // After node completion, enqueue next node (sequential model).
-    const updated = (await loadRunFile(teamDir, runsDir, task.runId)).run;
-    const nextIdx = typeof updated.nextNodeIndex == 'number' ? updated.nextNodeIndex : nodeIdx + 1;
+    // After node completion, enqueue next node.
+    // Graph-aware: if workflow.edges exist, compute the next runnable node from nodeStates + edges.
+
+    let updated = (await loadRunFile(teamDir, runsDir, task.runId)).run;
 
     if (updated.status === 'awaiting_approval') {
       results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'awaiting_approval' });
       continue;
     }
 
-    if (nextIdx >= (workflow.nodes?.length ?? 0)) {
-      await writeRunFile(runPath, (cur) => ({
-        ...cur,
-        updatedAt: new Date().toISOString(),
-        status: 'completed',
-        events: [...cur.events, { ts: new Date().toISOString(), type: 'run.completed' }],
-      }));
-      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'completed' });
-      continue;
-    }
+    let enqueueIdx = pickNextRunnableNodeIndex({ workflow, run: updated });
 
-    // Skip start/end nodes.
-    let enqueueIdx = nextIdx;
-    while (enqueueIdx < (workflow.nodes?.length ?? 0)) {
+    // Auto-complete start/end nodes.
+    while (enqueueIdx !== null) {
       const n = workflow.nodes[enqueueIdx]!;
       const k = String(n.kind ?? '');
       if (k !== 'start' && k !== 'end') break;
+      const ts = new Date().toISOString();
       await appendRunLog(runPath, (cur) => ({
         ...cur,
-        nextNodeIndex: enqueueIdx + 1,
-        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.completed', nodeId: n.id, kind: k, noop: true }],
+        nextNodeIndex: enqueueIdx! + 1,
+        nodeStates: { ...(cur as any).nodeStates, [n.id]: { status: 'success', ts } },
+        events: [...cur.events, { ts, type: 'node.completed', nodeId: n.id, kind: k, noop: true }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: n.id, kind: k, noop: true }],
       }));
-      enqueueIdx += 1;
+      updated = (await loadRunFile(teamDir, runsDir, task.runId)).run;
+      enqueueIdx = pickNextRunnableNodeIndex({ workflow, run: updated });
     }
 
-    if (enqueueIdx >= (workflow.nodes?.length ?? 0)) {
+    if (enqueueIdx === null) {
       await writeRunFile(runPath, (cur) => ({
         ...cur,
         updatedAt: new Date().toISOString(),
