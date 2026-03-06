@@ -164,6 +164,38 @@ function templateReplace(input: string, vars: Record<string, string>) {
   return out;
 }
 
+function sanitizeDraftOnlyText(text: string): string {
+  const lines = String(text ?? '').split(/\r?\n/);
+  const kept = lines.filter((l) => !/\bdraft\s*only\b/i.test(l));
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+async function loadProposedPostTextFromPriorNode(runDir: string, nodeOutputsDir: string, priorNodeId: string): Promise<string> {
+  // Node outputs are stored as JSON with { text: "..." } where text may itself be JSON.
+  const files = await fs.readdir(nodeOutputsDir);
+  const match = files.find((f) => f.endsWith(`-${priorNodeId}.json`));
+  if (!match) return '';
+  const outRaw = await fs.readFile(path.join(nodeOutputsDir, match), 'utf8');
+  const outObj = JSON.parse(outRaw) as { text?: string };
+  const rawText = String(outObj.text ?? '').trim();
+  if (!rawText) return '';
+
+  // Try to parse { platforms: { x: { hook, body } } }.
+  try {
+    const packet = JSON.parse(rawText) as unknown;
+    const packetObj = (packet && typeof packet === 'object') ? (packet as Record<string, unknown>) : {};
+    const platformsObj = (packetObj.platforms && typeof packetObj.platforms === 'object') ? (packetObj.platforms as Record<string, unknown>) : {};
+    const xObj = (platformsObj.x && typeof platformsObj.x === 'object') ? (platformsObj.x as Record<string, unknown>) : {};
+
+    const xHook = typeof xObj.hook === 'string' ? xObj.hook.trim() : '';
+    const xBody = typeof xObj.body === 'string' ? xObj.body.trim() : '';
+    const combined = [xHook, xBody].filter(Boolean).join('\n\n').trim();
+    return combined || rawText;
+  } catch {
+    return rawText;
+  }
+}
+
 async function moveRunTicket(opts: {
   teamDir: string;
   ticketPath: string;
@@ -584,6 +616,20 @@ async function executeWorkflowNodes(opts: {
       };
       await fs.writeFile(approvalPath, JSON.stringify(approvalObj, null, 2), 'utf8');
 
+      // Include the proposed post text in the approval request (what will actually be posted).
+      const nodeOutputsDir = path.join(runDir, 'node-outputs');
+      let proposed = '';
+      try {
+        // Heuristic: use qc_brand output if present (finalized drafts), otherwise use the immediately prior node.
+        const qcId = 'qc_brand';
+        const hasQc = (await fileExists(nodeOutputsDir)) && (await fs.readdir(nodeOutputsDir)).some((f) => f.endsWith(`-${qcId}.json`));
+        const priorId = hasQc ? qcId : String(workflow.nodes?.[Math.max(0, i - 1)]?.id ?? '');
+        if (priorId) proposed = await loadProposedPostTextFromPriorNode(runDir, nodeOutputsDir, priorId);
+      } catch {
+        proposed = '';
+      }
+      proposed = sanitizeDraftOnlyText(proposed);
+
       const msg = [
         `Approval requested for workflow run: ${workflow.name ?? workflow.id ?? workflowFile}`,
         `RunId: ${runId}`,
@@ -591,9 +637,13 @@ async function executeWorkflowNodes(opts: {
         `Ticket: ${path.relative(teamDir, curTicketPath)}`,
         `Run log: ${path.relative(teamDir, runLogPath)}`,
         `Approval file: ${path.relative(teamDir, approvalPath)}`,
-        `\nMVP: To approve/reject, run one of:`,
+        proposed ? `\n---\nPROPOSED POST (X)\n---\n${proposed}` : `\n(Warning: no proposed text found to preview)`,
+        `\nTo approve/reject:`,
+        `- approve ${String(approvalObj['code'] ?? '').trim() || '(code in approval file)'}`,
+        `- decline ${String(approvalObj['code'] ?? '').trim() || '(code in approval file)'}`,
+        `\n(Or via CLI)`,
         `- openclaw recipes workflows approve --team-id ${teamId} --run-id ${runId} --approved true`,
-        `- openclaw recipes workflows approve --team-id ${teamId} --run-id ${runId} --approved false`,
+        `- openclaw recipes workflows approve --team-id ${teamId} --run-id ${runId} --approved false --note "<what to change>"`,
         `Then resume:`,
         `- openclaw recipes workflows resume --team-id ${teamId} --run-id ${runId}`,
       ].join('\n');
@@ -1544,15 +1594,72 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
   const startNodeIndex = approvalIdx + 1;
 
   if (approval.status === 'rejected') {
-    // Mark run rejected and move ticket to done.
-    const moved = await moveRunTicket({ teamDir, ticketPath, toLane: 'done' });
-    await appendRunLog(runLogPath, (cur) => ({
-      ...cur,
-      status: 'rejected',
-      ticket: { ...cur.ticket, file: path.relative(teamDir, moved.ticketPath), lane: 'done' },
-      events: [...cur.events, { ts: new Date().toISOString(), type: 'run.rejected', nodeId: approval.nodeId }],
-    }));
-    return { ok: true as const, runId, status: 'rejected' as const, ticketPath: moved.ticketPath, runLogPath };
+    // Denial flow: mark run as needs_revision and loop back to the draft step (or closest prior llm node).
+    // This keeps workflows non-terminal on rejection.
+
+    const approvalNote = String(approval.note ?? '').trim();
+
+    // Find a reasonable "revise" node: prefer a node with id=draft_assets, else the closest prior llm node.
+    const approvalIdx = workflow.nodes.findIndex((n) => n.kind === 'human_approval' && String(n.id) === String(approval.nodeId));
+    if (approvalIdx < 0) throw new Error(`Approval node not found in workflow: nodeId=${approval.nodeId}`);
+
+    let reviseIdx = workflow.nodes.findIndex((n, idx) => idx < approvalIdx && String(n.id) === 'draft_assets');
+    if (reviseIdx < 0) {
+      for (let i = approvalIdx - 1; i >= 0; i--) {
+        if (workflow.nodes[i]?.kind === 'llm') {
+          reviseIdx = i;
+          break;
+        }
+      }
+    }
+    if (reviseIdx < 0) reviseIdx = 0;
+
+    const reviseNode = workflow.nodes[reviseIdx]!;
+    const reviseAgentId = String(reviseNode?.assignedTo?.agentId ?? '').trim();
+    if (!reviseAgentId) throw new Error(`Revision node ${reviseNode.id} missing assignedTo.agentId`);
+
+    // Mark run state as needing revision, and clear nodeStates for nodes from reviseIdx onward.
+    const now = new Date().toISOString();
+    await writeRunFile(runLogPath, (cur) => {
+      const nextStates: Record<string, { status: 'success' | 'error' | 'waiting'; ts: string; message?: string }> = {
+        ...(cur.nodeStates ?? {}),
+        [approval.nodeId]: { status: 'error', ts: now, message: 'rejected' },
+      };
+      for (let i = reviseIdx; i < (workflow.nodes?.length ?? 0); i++) {
+        const id = String(workflow.nodes[i]?.id ?? '').trim();
+        if (id) delete nextStates[id];
+      }
+      return {
+        ...cur,
+        updatedAt: now,
+        status: 'needs_revision',
+        nextNodeIndex: reviseIdx,
+        nodeStates: nextStates,
+        events: [
+          ...cur.events,
+          {
+            ts: now,
+            type: 'run.revision_requested',
+            nodeId: approval.nodeId,
+            reviseNodeId: reviseNode.id,
+            reviseAgentId,
+            ...(approvalNote ? { note: approvalNote } : {}),
+          },
+        ],
+      };
+    });
+
+    // Enqueue the revision node.
+    await enqueueTask(teamDir, reviseAgentId, {
+      teamId,
+      runId,
+      nodeId: reviseNode.id,
+      kind: 'execute_node',
+      // Include human feedback in the packet so prompt templates can use it.
+      packet: approvalNote ? { revisionNote: approvalNote } : {},
+    } as unknown as Record<string, unknown>);
+
+    return { ok: true as const, runId, status: 'needs_revision' as const, ticketPath, runLogPath };
   }
 
   // Mark node approved if not already recorded.
@@ -1847,13 +1954,28 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       };
       await fs.writeFile(approvalPath, JSON.stringify(approvalObj, null, 2), 'utf8');
 
+      // Include a proposed-post preview in the approval request.
+      let proposed = '';
+      try {
+        const nodeOutputsDir = path.join(runDir, 'node-outputs');
+        // Prefer qc_brand output if present; otherwise use the most recent prior node.
+        const qcId = 'qc_brand';
+        const hasQc = (await fileExists(nodeOutputsDir)) && (await fs.readdir(nodeOutputsDir)).some((f) => f.endsWith(`-${qcId}.json`));
+        const priorId = hasQc ? qcId : String(workflow.nodes?.[Math.max(0, nodeIdx - 1)]?.id ?? '');
+        if (priorId) proposed = await loadProposedPostTextFromPriorNode(runDir, nodeOutputsDir, priorId);
+      } catch {
+        proposed = '';
+      }
+      proposed = sanitizeDraftOnlyText(proposed);
+
       const msg = [
         `Approval requested: ${workflow.name ?? workflow.id ?? workflowFile}`,
         `Ticket: ${path.relative(teamDir, curTicketPath)}`,
         `Code: ${code}`,
+        proposed ? `\n---\nPROPOSED POST (X)\n---\n${proposed}` : `\n(Warning: no proposed text found to preview)`,
         `\nReply with:`,
         `- approve ${code}`,
-        `- decline ${code}`,
+        `- decline ${code} <what to change>`,
         `\n(You can also review in Kitchen: http://100.103.210.102:7777/teams/${teamId}/workflows/${workflow.id ?? ''})`,
       ].join('\n');
 
@@ -1957,7 +2079,8 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
           const xHook = typeof xObj.hook === 'string' ? xObj.hook.trim() : '';
           const xBody = typeof xObj.body === 'string' ? xObj.body.trim() : '';
-          const text = [xHook, xBody].filter(Boolean).join('\n\n').trim();
+          const textRaw = [xHook, xBody].filter(Boolean).join('\n\n').trim();
+          const text = sanitizeDraftOnlyText(textRaw);
           if (!text) throw new Error('No X draft text found in qc output (platforms.x.hook/body)');
 
           // Post via xurl (unless we already have a successful artifact result).
