@@ -1713,6 +1713,16 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       await ensureDir(path.dirname(nodeOutputAbs));
 
       const prompt = promptTemplateInline ? promptTemplateInline : await fs.readFile(promptPathAbs, 'utf8');
+      const taskText = [
+        `You are executing a workflow run for teamId=${teamId}.`,
+        `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,
+        `RunId: ${runId}`,
+        `Node: ${nodeLabel(node)}`,
+        `\n---\nPROMPT TEMPLATE\n---\n`,
+        prompt.trim(),
+        `\n---\nOUTPUT FORMAT\n---\n`,
+        `Return ONLY the final content (the worker will store it as JSON).`,
+      ].join('\n');
 
       let text = '';
       try {
@@ -1722,7 +1732,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             tool: 'llm-task-fixed',
             action: 'json',
             args: {
-              prompt: task,
+              prompt: taskText,
               input: { teamId, runId, nodeId: node.id, agentId },
             },
           });
@@ -1731,7 +1741,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             tool: 'llm-task',
             action: 'json',
             args: {
-              prompt: task,
+              prompt: taskText,
               input: { teamId, runId, nodeId: node.id, agentId },
             },
           });
