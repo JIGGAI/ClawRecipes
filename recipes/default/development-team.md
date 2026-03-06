@@ -62,14 +62,26 @@ cronJobs:
     message: |
       PR watcher (ticket-linked): scan active in-progress/testing tickets for GitHub PR URLs.
 
-      Do:
-      - Summarize checks/review/mergeable status in the ticket comments.
-      - If a PR is merged, comment "PR merged" + link.
-      - Optionally move ticket to TESTING if verification remains.
+      Team-level default (recommended): on merge, MOVE ticket to TESTING (never DONE).
+      Per-ticket override markers (literal strings, anywhere in the ticket body):
+      - [pr-watcher:comment-only]       -> on merge, comment only (no lane move)
+      - [pr-watcher:move-to-testing]    -> on merge, move to TESTING (if not already)
+      - [pr-watcher:close]              -> on merge, ticket may be eligible for DONE (see guardrails)
+
+      Always do:
+      - Summarize checks/review/mergeable status in ticket comments.
+      - If PR merged, comment "PR merged" + link + merge commit SHA (if available).
+
+      Lane-move rules on merge:
+      - NEVER move to DONE by default.
+      - Only move to DONE if BOTH:
+        1) ticket contains [pr-watcher:close]
+        2) all Tasks checkboxes are completed ("- [x]" for every item under ## Tasks)
+      - If DONE is NOT allowed, leave lane unchanged and comment WHY (missing marker and/or tasks incomplete).
+      - If move-to-testing is selected (default or marker), move to TESTING when verification remains.
 
       Do NOT:
-      - Do NOT move any ticket to DONE automatically.
-      - Only the team lead should move to DONE after all tasks are complete, tested, and merged.
+      - Do NOT create/update assignment stubs (work/assignments/* is deprecated).
     enabledByDefault: false
 
   - id: testing-lane-loop
