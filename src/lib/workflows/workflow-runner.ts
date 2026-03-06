@@ -1981,7 +1981,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             const day = new Date().toISOString().slice(0, 10);
             const postLogAbs = path.join(teamDir, 'shared-context', 'marketing', 'POST_LOG.md');
             await ensureDir(path.dirname(postLogAbs));
-            await fs.appendFile(postLogAbs, `- ${day} posted on X: ${url} (run=${runId})\n`, 'utf8');
+            await fs.appendFile(postLogAbs, `- ${day} posted on X: ${url} (run=${task.runId})\n`, 'utf8');
           }
         } else {
           const toolRes = await toolsInvoke<unknown>(api, {
