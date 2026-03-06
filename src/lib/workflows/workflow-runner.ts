@@ -1918,6 +1918,8 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         } else if (toolName === 'marketing.post_all') {
           // Real-world X posting (MVP): post a single X draft via the local `xurl` CLI.
           // Assumes user has authenticated xurl (OAuth2) outside the agent.
+          // Idempotency: if the tool artifact already exists and contains a tweet id, do NOT repost.
+
           const platforms = (toolArgs.platforms as unknown[] | undefined) ?? ['x'];
           if (!platforms.map(String).includes('x')) {
             throw new Error('marketing.post_all currently supports only platforms=["x"]');
@@ -1926,6 +1928,20 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           const argsObj = (toolArgs ?? {}) as Record<string, unknown>;
           const draftsFromNode = typeof argsObj.draftsFromNode === 'string' ? argsObj.draftsFromNode.trim() : '';
           if (!draftsFromNode) throw new Error('marketing.post_all requires args.draftsFromNode');
+
+          // If we already posted for this node/run, reuse the artifact result (avoid duplicates).
+          let parsed: unknown = null;
+          if (await fileExists(artifactPath)) {
+            try {
+              const raw = await fs.readFile(artifactPath, 'utf8');
+              const prev = JSON.parse(raw) as { ok?: boolean; result?: unknown };
+              if (prev && prev.ok && prev.result) {
+                parsed = prev.result;
+              }
+            } catch {
+              // ignore and proceed to post
+            }
+          }
 
           // Load prior node output JSON (from qc_brand) and extract platforms.x.{hook,body}
           const nodeOutputsDir = path.join(runDir, 'node-outputs');
@@ -1944,32 +1960,34 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           const text = [xHook, xBody].filter(Boolean).join('\n\n').trim();
           if (!text) throw new Error('No X draft text found in qc output (platforms.x.hook/body)');
 
-          // Post via xurl.
-          let stdout = '';
-          let stderr = '';
-          try {
-            const res = await execFileAsync('xurl', ['post', text], { timeout: 60_000, maxBuffer: 1024 * 1024 });
-            stdout = typeof (res as { stdout?: unknown }).stdout === 'string' ? (res as { stdout?: string }).stdout : '';
-            stderr = typeof (res as { stderr?: unknown }).stderr === 'string' ? (res as { stderr?: string }).stderr : '';
-          } catch (e) {
-            const err = e as unknown as { stdout?: unknown; stderr?: unknown; message?: unknown };
-            stdout = typeof err.stdout === 'string' ? err.stdout : '';
-            stderr = typeof err.stderr === 'string' ? err.stderr : typeof err.message === 'string' ? err.message : '';
-            throw new Error(`xurl post failed: ${stderr || stdout || (typeof err.message === 'string' ? err.message : '') || 'unknown error'}`);
-          }
-          let parsed: unknown = null;
-          try {
-            parsed = JSON.parse(String(stdout || '{}')) as unknown;
-          } catch {
-            parsed = { raw: String(stdout || '') };
-          }
+          // Post via xurl (unless we already have a successful artifact result).
+          if (!parsed) {
+            let stdout = '';
+            let stderr = '';
+            try {
+              const res = await execFileAsync('xurl', ['post', text], { timeout: 60_000, maxBuffer: 1024 * 1024 });
+              stdout = typeof (res as { stdout?: unknown }).stdout === 'string' ? (res as { stdout?: string }).stdout : '';
+              stderr = typeof (res as { stderr?: unknown }).stderr === 'string' ? (res as { stderr?: string }).stderr : '';
+            } catch (e) {
+              const err = e as unknown as { stdout?: unknown; stderr?: unknown; message?: unknown };
+              stdout = typeof err.stdout === 'string' ? err.stdout : '';
+              stderr = typeof err.stderr === 'string' ? err.stderr : typeof err.message === 'string' ? err.message : '';
+              throw new Error(`xurl post failed: ${stderr || stdout || (typeof err.message === 'string' ? err.message : '') || 'unknown error'}`);
+            }
 
-          // Persist artifact.
-          await fs.writeFile(
-            artifactPath,
-            JSON.stringify({ ok: true, tool: toolName, args: { platforms: ['x'], draftsFromNode }, result: parsed }, null, 2) + '\n',
-            'utf8'
-          );
+            try {
+              parsed = JSON.parse(String(stdout || '{}')) as unknown;
+            } catch {
+              parsed = { raw: String(stdout || '') };
+            }
+
+            // Persist artifact.
+            await fs.writeFile(
+              artifactPath,
+              JSON.stringify({ ok: true, tool: toolName, args: { platforms: ['x'], draftsFromNode }, result: parsed }, null, 2) + '\n',
+              'utf8'
+            );
+          }
 
           // Always append real post URL to the team post log (no templated placeholders).
           const parsedObj = (parsed && typeof parsed === 'object') ? (parsed as Record<string, unknown>) : {};
