@@ -156,11 +156,6 @@ function laneToStatus(lane: WorkflowLane) {
   return 'done';
 }
 
-function toolText(result: ToolTextResult | null | undefined): string {
-  const text = result?.content?.find((c) => c.type === 'text')?.text;
-  return String(text ?? '').trim();
-}
-
 function templateReplace(input: string, vars: Record<string, string>) {
   let out = String(input ?? '');
   for (const [k, v] of Object.entries(vars)) {
@@ -503,34 +498,39 @@ async function executeWorkflowNodes(opts: {
         `Return ONLY the final content (the runner will store it as JSON).`,
       ].join('\n');
 
-      // Prefer llm-task (no sessions/tool spawning required). Falls back to sessions_spawn if llm-task isn't available.
+      // Prefer llm-task-fixed when installed; fall back to llm-task.
+      // Avoid depending on sessions_spawn (not always exposed via gateway tools/invoke).
       let text = '';
       try {
-        const llmRes = await toolsInvoke<unknown>(api, {
-          tool: 'llm-task',
-          action: 'json',
-          args: {
-            prompt: task,
-            // Keep input minimal for now (file-first). Future: load inputFrom outputs.
-            input: { teamId, runId, nodeId: node.id, agentId },
-          },
-        });
+        let llmRes: unknown;
+        try {
+          llmRes = await toolsInvoke<unknown>(api, {
+            tool: 'llm-task-fixed',
+            action: 'json',
+            args: {
+              prompt: task,
+              // Keep input minimal for now (file-first). Future: load inputFrom outputs.
+              input: { teamId, runId, nodeId: node.id, agentId },
+            },
+          });
+        } catch {
+          llmRes = await toolsInvoke<unknown>(api, {
+            tool: 'llm-task',
+            action: 'json',
+            args: {
+              prompt: task,
+              // Keep input minimal for now (file-first). Future: load inputFrom outputs.
+              input: { teamId, runId, nodeId: node.id, agentId },
+            },
+          });
+        }
+
         const llmRec = asRecord(llmRes);
         const details = asRecord(llmRec['details']);
         const payload = details['json'] ?? (Object.keys(details).length ? details : llmRes) ?? null;
         text = JSON.stringify(payload, null, 2);
-      } catch {
-        const result = await toolsInvoke<ToolTextResult>(api, {
-          tool: 'sessions_spawn',
-          args: {
-            agentId,
-            task,
-            label: `workflow:${teamId}:${workflow.id ?? 'workflow'}:${runId}:${node.id}`,
-            cleanup: 'delete',
-            runTimeoutSeconds: 300,
-          },
-        });
-        text = toolText(result) || '[no output]';
+      } catch (e) {
+        throw new Error(`LLM execution failed for node ${nodeLabel(node)}: ${e instanceof Error ? e.message : String(e)}`);
       }
 
       const outputObj = {
@@ -1713,43 +1713,36 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       await ensureDir(path.dirname(nodeOutputAbs));
 
       const prompt = promptTemplateInline ? promptTemplateInline : await fs.readFile(promptPathAbs, 'utf8');
-      const taskText = [
-        `You are executing a workflow run for teamId=${teamId}.`,
-        `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,
-        `RunId: ${runId}`,
-        `Node: ${nodeLabel(node)}`,
-        `\n---\nPROMPT TEMPLATE\n---\n`,
-        prompt.trim(),
-        `\n---\nOUTPUT FORMAT\n---\n`,
-        `Return ONLY the final content (the worker will store it as JSON).`,
-      ].join('\n');
 
       let text = '';
       try {
-        const llmRes = await toolsInvoke<unknown>(api, {
-          tool: 'llm-task',
-          action: 'json',
-          args: {
-            prompt: task,
-            input: { teamId, runId, nodeId: node.id, agentId },
-          },
-        });
+        let llmRes: unknown;
+        try {
+          llmRes = await toolsInvoke<unknown>(api, {
+            tool: 'llm-task-fixed',
+            action: 'json',
+            args: {
+              prompt: task,
+              input: { teamId, runId, nodeId: node.id, agentId },
+            },
+          });
+        } catch {
+          llmRes = await toolsInvoke<unknown>(api, {
+            tool: 'llm-task',
+            action: 'json',
+            args: {
+              prompt: task,
+              input: { teamId, runId, nodeId: node.id, agentId },
+            },
+          });
+        }
+
         const llmRec = asRecord(llmRes);
         const details = asRecord(llmRec['details']);
         const payload = details['json'] ?? (Object.keys(details).length ? details : llmRes) ?? null;
         text = JSON.stringify(payload, null, 2);
-      } catch {
-        const result = await toolsInvoke<ToolTextResult>(api, {
-          tool: 'sessions_spawn',
-          args: {
-            agentId: agentIdExec,
-            task: taskText,
-            label: `workflow:${teamId}:${workflow.id ?? 'workflow'}:${runId}:${node.id}`,
-            cleanup: 'delete',
-            runTimeoutSeconds: 300,
-          },
-        });
-        text = toolText(result) || '[no output]';
+      } catch (e) {
+        throw new Error(`LLM execution failed for node ${nodeLabel(node)}: ${e instanceof Error ? e.message : String(e)}`);
       }
 
       const outputObj = {
