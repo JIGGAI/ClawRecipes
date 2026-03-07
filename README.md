@@ -2,7 +2,7 @@
 
 
 <p align="center">
-  <img src="https://github.com/JIGGAI/ClawRecipes/blob/main/clawcipes_cook.jpg" alt="ClawRecipes logo" width="240" />
+  <img src="./clawcipes_cook.jpg" alt="ClawRecipes logo" width="240" />
 </p>
 
 ClawRecipes is an OpenClaw plugin that provides **CLI-first recipes** for scaffolding specialist agents and teams from Markdown.
@@ -79,6 +79,12 @@ The plugin supports these config keys (with defaults):
 - `autoInstallMissingSkills` (default: `false`)
 - `confirmAutoInstall` (default: `true`)
 - `cronInstallation` (default: `prompt`; values: `off|prompt|on`)
+
+Workflow runner safety:
+- `workflowRunner.allowRuntimeExec` (default: `false`) — enables the workflow node tool `runtime.exec`.
+  - Intended for **dev/testing only**.
+  - Still requires per-workflow allowlists (`meta.execAllowBins[]` or `meta.execAllowCommands[]`).
+  - Executes via OpenClaw’s `exec` tool (so approvals/tool policy still apply).
 
 Cron note:
 - You do **not** enable cron via `tools.cron` in `openclaw.json` (that key is not part of the config schema).

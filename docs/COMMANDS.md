@@ -325,6 +325,12 @@ openclaw recipes complete --team-id <teamId> --ticket 0007
 
 Workflow runner utilities (file-first runs, runner/worker model).
 
+Notes:
+- `runtime.exec` is **disabled by default**. To enable (dev/testing only), set plugin config:
+  - `workflowRunner.allowRuntimeExec: true`
+- `runtime.exec` additionally requires workflow allowlists (`meta.execAllowBins[]` or `meta.execAllowCommands[]`).
+
+
 ```bash
 openclaw recipes workflows --help
 ```

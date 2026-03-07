@@ -53,6 +53,19 @@ shared-context/workflow-runs/<runId>/node-outputs/###-<nodeId>.json
 
 This output is intended to be stable and machine-readable.
 
+## Runner-native tools + safety
+
+The workflow runner includes a small set of runner-native tools (e.g. `fs.append`) that operate directly on the team workspace.
+
+### `runtime.exec` (dev/testing)
+
+- Disabled by default.
+- Enable via plugin config: `workflowRunner.allowRuntimeExec: true`.
+- Must be allowlisted per workflow using either:
+  - `workflow.meta.execAllowBins[]` (bin allowlist), or
+  - `workflow.meta.execAllowCommands[]` (exact command allowlist)
+- Execution is routed through OpenClaw’s `exec` tool (so central tool policy/approvals still apply).
+
 ## Approval gating
 
 Approval is a first-class state:
