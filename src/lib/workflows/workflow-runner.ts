@@ -296,6 +296,18 @@ function pickNextRunnableNodeIndex(opts: { workflow: Workflow; run: RunLog }): n
 
   const nodeStates = loadNodeStatesFromRun(run);
 
+  // Revision semantics: if the run is in needs_revision, we intentionally allow
+  // re-execution of nodes from nextNodeIndex onward even if they previously
+  // completed in an earlier attempt. Events are append-only, so earlier
+  // node.completed events would otherwise make the graph think everything is
+  // already satisfied and incorrectly mark the run completed.
+  if (run.status === 'needs_revision' && typeof run.nextNodeIndex === 'number') {
+    for (let i = Math.max(0, run.nextNodeIndex); i < nodes.length; i++) {
+      const id = asString(nodes[i]?.id).trim();
+      if (id) delete nodeStates[id];
+    }
+  }
+
   const incomingEdgesByNodeId = new Map<string, WorkflowEdge[]>();
   const edges = Array.isArray(workflow.edges) ? workflow.edges : [];
   for (const e of edges) {
