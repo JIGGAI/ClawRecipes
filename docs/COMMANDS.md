@@ -329,6 +329,7 @@ Notes:
 - `runtime.exec` is **disabled by default**. To enable (dev/testing only), set plugin config:
   - `workflowRunner.allowRuntimeExec: true`
 - `runtime.exec` additionally requires workflow allowlists (`meta.execAllowBins[]` or `meta.execAllowCommands[]`).
+- `marketing.post_all` is **disabled** in this build to avoid install-time safety warnings. Use a dedicated posting tool/plugin behind an approval gate.
 
 
 ```bash

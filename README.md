@@ -85,6 +85,8 @@ Workflow runner safety:
   - Intended for **dev/testing only**.
   - Still requires per-workflow allowlists (`meta.execAllowBins[]` or `meta.execAllowCommands[]`).
   - Executes via OpenClaw’s `exec` tool (so approvals/tool policy still apply).
+- `marketing.post_all` is intentionally **disabled** in this build to avoid install-time safety warnings (local process exec + possible exfil heuristics).
+  Use a dedicated posting tool/plugin behind an approval-gated node instead.
 
 Cron note:
 - You do **not** enable cron via `tools.cron` in `openclaw.json` (that key is not part of the config schema).

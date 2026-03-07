@@ -66,6 +66,16 @@ The workflow runner includes a small set of runner-native tools (e.g. `fs.append
   - `workflow.meta.execAllowCommands[]` (exact command allowlist)
 - Execution is routed through OpenClaw’s `exec` tool (so central tool policy/approvals still apply).
 
+### `marketing.post_all` (intentionally disabled in this build)
+
+Earlier versions included an MVP implementation that posted to X by spawning a local CLI.
+That pattern triggers OpenClaw’s install-time safety warnings (process execution + potential exfil signals),
+so this build disables `marketing.post_all`.
+
+Recommended pattern:
+- Keep **draft generation + QC + approval** inside the workflow.
+- Perform the actual post using a dedicated posting tool/plugin (or external integration) behind an approval gate.
+
 ## Approval gating
 
 Approval is a first-class state:
