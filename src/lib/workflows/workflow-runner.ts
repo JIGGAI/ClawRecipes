@@ -1,8 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawn, execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import { resolveWorkspaceRoot } from '../workspace';
 import type { ToolTextResult } from '../../toolsInvoke';
@@ -27,7 +25,6 @@ function asArray(v: unknown): unknown[] {
   return Array.isArray(v) ? v : [];
 }
 
-const execFileAsync = promisify(execFile);
 
 function normalizeWorkflow(raw: unknown): Workflow {
   const w = asRecord(raw);
@@ -766,8 +763,12 @@ async function executeWorkflowNodes(opts: {
 
         if (toolName === 'runtime.exec') {
           // Extra safety gate: runtime.exec must be explicitly enabled (dev/testing only).
-          if (process.env.OPENCLAW_WORKFLOW_RUNNER_ENABLE_RUNTIME_EXEC !== '1') {
-            throw new Error('runtime.exec denied: OPENCLAW_WORKFLOW_RUNNER_ENABLE_RUNTIME_EXEC!=1');
+          // IMPORTANT: keep this config-driven (not env-driven) to avoid install-time security warnings.
+          const pluginCfg = asRecord((api as any).pluginConfig);
+          const workflowRunnerCfg = asRecord(pluginCfg['workflowRunner']);
+          const allowRuntimeExec = workflowRunnerCfg['allowRuntimeExec'] === true;
+          if (!allowRuntimeExec) {
+            throw new Error('runtime.exec denied: set plugin config workflowRunner.allowRuntimeExec=true (dev/testing only)');
           }
 
           const meta = asRecord(workflow['meta']);
@@ -803,29 +804,17 @@ async function executeWorkflowNodes(opts: {
             throw new Error('runtime.exec cwd must be within the team workspace');
           }
 
-          const timeoutMs = Math.max(0, Number(meta.execTimeoutSeconds ?? 60)) * 1000;
+          const timeoutSeconds = Math.max(0, Number(meta.execTimeoutSeconds ?? 60));
 
-          const result = await new Promise<{ stdout: string; stderr: string; exitCode: number | null; signal: string | null }>((resolve, reject) => {
-            const child = spawn(parts[0]!, parts.slice(1), { cwd: cwdAbs, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
-            let stdout = '';
-            let stderr = '';
-            const maxBytes = 64 * 1024;
-            child.stdout?.on('data', (b: Buffer) => {
-              if (stdout.length < maxBytes) stdout += b.toString('utf8').slice(0, maxBytes - stdout.length);
-            });
-            child.stderr?.on('data', (b: Buffer) => {
-              if (stderr.length < maxBytes) stderr += b.toString('utf8').slice(0, maxBytes - stderr.length);
-            });
-
-            const t = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
-            child.on('error', (e) => {
-              clearTimeout(t);
-              reject(e);
-            });
-            child.on('close', (code, signal) => {
-              clearTimeout(t);
-              resolve({ stdout, stderr, exitCode: code, signal });
-            });
+          // IMPORTANT: do not spawn local processes from this plugin.
+          // Route through OpenClaw's `exec` tool, which is policy-gated/approved centrally.
+          const result = await toolsInvoke(api, {
+            tool: 'exec',
+            args: {
+              command: fullCommand,
+              workdir: path.relative(teamDir, cwdAbs) || '.',
+              timeout: timeoutSeconds,
+            },
           });
 
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2), 'utf8');
@@ -2105,92 +2094,11 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           const result = { appendedTo: path.relative(teamDir, abs), bytes: Buffer.byteLength(content, 'utf8') };
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
         } else if (toolName === 'marketing.post_all') {
-          // Real-world X posting (MVP): post a single X draft via the local `xurl` CLI.
-          // Assumes user has authenticated xurl (OAuth2) outside the agent.
-          // Idempotency: if the tool artifact already exists and contains a tweet id, do NOT repost.
-
-          const platforms = (toolArgs.platforms as unknown[] | undefined) ?? ['x'];
-          if (!platforms.map(String).includes('x')) {
-            throw new Error('marketing.post_all currently supports only platforms=["x"]');
-          }
-
-          const argsObj = (toolArgs ?? {}) as Record<string, unknown>;
-          const draftsFromNode = typeof argsObj.draftsFromNode === 'string' ? argsObj.draftsFromNode.trim() : '';
-          if (!draftsFromNode) throw new Error('marketing.post_all requires args.draftsFromNode');
-
-          // If we already posted for this node/run, reuse the artifact result (avoid duplicates).
-          let parsed: unknown = null;
-          if (await fileExists(artifactPath)) {
-            try {
-              const raw = await fs.readFile(artifactPath, 'utf8');
-              const prev = JSON.parse(raw) as { ok?: boolean; result?: unknown };
-              if (prev && prev.ok && prev.result) {
-                parsed = prev.result;
-              }
-            } catch {
-              // ignore and proceed to post
-            }
-          }
-
-          // Load prior node output JSON (from qc_brand) and extract platforms.x.{hook,body}
-          const nodeOutputsDir = path.join(runDir, 'node-outputs');
-          const files = await fs.readdir(nodeOutputsDir);
-          const match = files.find((f) => f.endsWith(`-${draftsFromNode}.json`));
-          if (!match) throw new Error(`Could not find node output for draftsFromNode=${draftsFromNode}`);
-          const outRaw = await fs.readFile(path.join(nodeOutputsDir, match), 'utf8');
-          const outObj = JSON.parse(outRaw) as { text?: string };
-          const packet = JSON.parse(String(outObj.text ?? '{}')) as unknown;
-          const packetObj = (packet && typeof packet === 'object') ? (packet as Record<string, unknown>) : {};
-          const platformsObj = (packetObj.platforms && typeof packetObj.platforms === 'object') ? (packetObj.platforms as Record<string, unknown>) : {};
-          const xObj = (platformsObj.x && typeof platformsObj.x === 'object') ? (platformsObj.x as Record<string, unknown>) : {};
-
-          const xHook = typeof xObj.hook === 'string' ? xObj.hook.trim() : '';
-          const xBody = typeof xObj.body === 'string' ? xObj.body.trim() : '';
-          const textRaw = [xHook, xBody].filter(Boolean).join('\n\n').trim();
-          const text = sanitizeDraftOnlyText(textRaw);
-          if (!text) throw new Error('No X draft text found in qc output (platforms.x.hook/body)');
-
-          // Post via xurl (unless we already have a successful artifact result).
-          if (!parsed) {
-            let stdout = '';
-            let stderr = '';
-            try {
-              const res = await execFileAsync('xurl', ['post', text], { timeout: 60_000, maxBuffer: 1024 * 1024 });
-              stdout = typeof (res as { stdout?: unknown }).stdout === 'string' ? (res as { stdout?: string }).stdout : '';
-              stderr = typeof (res as { stderr?: unknown }).stderr === 'string' ? (res as { stderr?: string }).stderr : '';
-            } catch (e) {
-              const err = e as unknown as { stdout?: unknown; stderr?: unknown; message?: unknown };
-              stdout = typeof err.stdout === 'string' ? err.stdout : '';
-              stderr = typeof err.stderr === 'string' ? err.stderr : typeof err.message === 'string' ? err.message : '';
-              throw new Error(`xurl post failed: ${stderr || stdout || (typeof err.message === 'string' ? err.message : '') || 'unknown error'}`);
-            }
-
-            try {
-              parsed = JSON.parse(String(stdout || '{}')) as unknown;
-            } catch {
-              parsed = { raw: String(stdout || '') };
-            }
-
-            // Persist artifact.
-            await fs.writeFile(
-              artifactPath,
-              JSON.stringify({ ok: true, tool: toolName, args: { platforms: ['x'], draftsFromNode }, result: parsed }, null, 2) + '\n',
-              'utf8'
-            );
-          }
-
-          // Always append real post URL to the team post log (no templated placeholders).
-          const parsedObj = (parsed && typeof parsed === 'object') ? (parsed as Record<string, unknown>) : {};
-          const dataObj = (parsedObj.data && typeof parsedObj.data === 'object') ? (parsedObj.data as Record<string, unknown>) : {};
-          const tweetId = typeof dataObj.id === 'string' ? dataObj.id.trim() : '';
-          if (tweetId) {
-            const handle = 'rjxdetroit';
-            const url = `https://x.com/${handle}/status/${tweetId}`;
-            const day = new Date().toISOString().slice(0, 10);
-            const postLogAbs = path.join(teamDir, 'shared-context', 'marketing', 'POST_LOG.md');
-            await ensureDir(path.dirname(postLogAbs));
-            await fs.appendFile(postLogAbs, `- ${day} posted on X: ${url} (run=${task.runId})\n`, 'utf8');
-          }
+          // Disabled by default: do not ship plugins that spawn local processes for posting.
+          // Use an approval-gated workflow node that calls a dedicated posting tool/plugin instead.
+          throw new Error(
+            'marketing.post_all is disabled in this build (install safety). Use an external posting tool/plugin (approval-gated) instead.'
+          );
         } else {
           const toolRes = await toolsInvoke<unknown>(api, {
             tool: toolName,
