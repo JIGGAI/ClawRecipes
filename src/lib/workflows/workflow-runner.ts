@@ -109,6 +109,15 @@ function assertLane(lane: string): asserts lane is WorkflowLane {
   }
 }
 
+function assertPathWithinDir(baseDir: string, candidatePath: string, label = 'path') {
+  const baseResolved = path.resolve(baseDir);
+  const candResolved = path.resolve(candidatePath);
+  const basePrefix = baseResolved + path.sep;
+  if (candResolved !== baseResolved && !candResolved.startsWith(basePrefix)) {
+    throw new Error(`${label} must be within ${baseResolved}: ${candResolved}`);
+  }
+}
+
 async function ensureDir(p: string) {
   await fs.mkdir(p, { recursive: true });
 }
@@ -167,12 +176,28 @@ function sanitizeDraftOnlyText(text: string): string {
   return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-async function loadProposedPostTextFromPriorNode(runDir: string, nodeOutputsDir: string, priorNodeId: string): Promise<string> {
+async function loadProposedPostTextFromPriorNode(opts: {
+  runDir: string;
+  nodeOutputsDir: string;
+  priorNodeId: string;
+}): Promise<string> {
+  const { runDir, nodeOutputsDir, priorNodeId } = opts;
+
+  // Explicitly scope all reads to the run directory to avoid accidental broad workspace access.
+  assertPathWithinDir(runDir, nodeOutputsDir, 'nodeOutputsDir');
+
   // Node outputs are stored as JSON with { text: "..." } where text may itself be JSON.
   const files = await fs.readdir(nodeOutputsDir);
-  const match = files.find((f) => f.endsWith(`-${priorNodeId}.json`));
+
+  // Only allow the canonical node-output naming scheme.
+  const safe = files.filter((f) => /^\d{3}-[a-z0-9_-]+\.json$/i.test(f));
+  const match = safe.find((f) => f.endsWith(`-${priorNodeId}.json`));
   if (!match) return '';
-  const outRaw = await fs.readFile(path.join(nodeOutputsDir, match), 'utf8');
+
+  const outputPath = path.join(nodeOutputsDir, match);
+  assertPathWithinDir(runDir, outputPath, 'node output');
+
+  const outRaw = await fs.readFile(outputPath, 'utf8');
   const outObj = JSON.parse(outRaw) as { text?: string };
   const rawText = String(outObj.text ?? '').trim();
   if (!rawText) return '';
@@ -633,7 +658,7 @@ async function executeWorkflowNodes(opts: {
         const qcId = 'qc_brand';
         const hasQc = (await fileExists(nodeOutputsDir)) && (await fs.readdir(nodeOutputsDir)).some((f) => f.endsWith(`-${qcId}.json`));
         const priorId = hasQc ? qcId : String(workflow.nodes?.[Math.max(0, i - 1)]?.id ?? '');
-        if (priorId) proposed = await loadProposedPostTextFromPriorNode(runDir, nodeOutputsDir, priorId);
+        if (priorId) proposed = await loadProposedPostTextFromPriorNode({ runDir, nodeOutputsDir, priorNodeId: priorId });
       } catch {
         proposed = '';
       }
@@ -2018,7 +2043,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         const qcId = 'qc_brand';
         const hasQc = (await fileExists(nodeOutputsDir)) && (await fs.readdir(nodeOutputsDir)).some((f) => f.endsWith(`-${qcId}.json`));
         const priorId = hasQc ? qcId : String(workflow.nodes?.[Math.max(0, nodeIdx - 1)]?.id ?? '');
-        if (priorId) proposed = await loadProposedPostTextFromPriorNode(runDir, nodeOutputsDir, priorId);
+        if (priorId) proposed = await loadProposedPostTextFromPriorNode({ runDir, nodeOutputsDir, priorNodeId: priorId });
       } catch {
         proposed = '';
       }
