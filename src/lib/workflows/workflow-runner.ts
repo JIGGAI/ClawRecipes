@@ -1649,6 +1649,26 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
       };
     });
 
+    // Clear any stale node locks from the revise node onward.
+    // (A revision is a deliberate re-run; prior locks must not permanently block it.)
+    try {
+      const runPath = runLogPath;
+      const runDir = path.dirname(runPath);
+      const lockDir = path.join(runDir, 'locks');
+      for (let i = reviseIdx; i < (workflow.nodes?.length ?? 0); i++) {
+        const id = String(workflow.nodes[i]?.id ?? '').trim();
+        if (!id) continue;
+        const lp = path.join(lockDir, `${id}.lock`);
+        try {
+          await fs.unlink(lp);
+        } catch {
+          // ignore
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     // Enqueue the revision node.
     await enqueueTask(teamDir, reviseAgentId, {
       teamId,
@@ -1749,9 +1769,44 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     try {
       await fs.writeFile(lockPath, JSON.stringify({ workerId, taskId: task.id, claimedAt: new Date().toISOString() }, null, 2), { encoding: 'utf8', flag: 'wx' });
     } catch {
-      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_locked' });
-      continue;
+      // Lock exists. Treat it as contention unless it looks stale.
+      // (If a worker crashed, the lock file can stick around and block retries/revisions forever.)
+      let unlocked = false;
+      try {
+        const raw = await fs.readFile(lockPath, 'utf8');
+        const parsed = JSON.parse(raw) as { claimedAt?: string };
+        const claimedAtMs = parsed?.claimedAt ? Date.parse(String(parsed.claimedAt)) : NaN;
+        const ageMs = Number.isFinite(claimedAtMs) ? Date.now() - claimedAtMs : NaN;
+        const stale = Number.isFinite(ageMs) && ageMs > 10 * 60 * 1000;
+        if (stale) {
+          await fs.unlink(lockPath);
+          unlocked = true;
+        }
+      } catch {
+        // ignore
+      }
+
+      if (unlocked) {
+        try {
+          await fs.writeFile(lockPath, JSON.stringify({ workerId, taskId: task.id, claimedAt: new Date().toISOString() }, null, 2), { encoding: 'utf8', flag: 'wx' });
+        } catch {
+          results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_locked' });
+          continue;
+        }
+      } else {
+        // Requeue to avoid task loss since dequeueNextTask already advanced the queue cursor.
+        await enqueueTask(teamDir, agentId, {
+          teamId,
+          runId: task.runId,
+          nodeId: task.nodeId,
+          kind: 'execute_node',
+        });
+        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_locked' });
+        continue;
+      }
     }
+
+    try {
 
     const { run } = await loadRunFile(teamDir, runsDir, task.runId);
     const workflowFile = String(run.workflow.file);
@@ -2257,6 +2312,14 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     }));
 
     results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'ok' });
+    } finally {
+      try {
+        await fs.unlink(lockPath);
+      } catch {
+        // ignore
+      }
+    }
+
   }
 
   return { ok: true as const, teamId, agentId, workerId, results };
