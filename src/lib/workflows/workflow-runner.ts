@@ -8,6 +8,7 @@ import { toolsInvoke } from '../../toolsInvoke';
 import { loadOpenClawConfig } from '../recipes-config';
 import type { Workflow, WorkflowEdge, WorkflowLane, WorkflowNode } from './workflow-types';
 import { dequeueNextTask, enqueueTask } from './workflow-queue';
+import { outboundPublish } from './outbound-client';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v == 'object' && !Array.isArray(v);
@@ -839,6 +840,67 @@ async function executeWorkflowNodes(opts: {
               command: fullCommand,
               workdir: path.relative(teamDir, cwdAbs) || '.',
               timeout: timeoutSeconds,
+            },
+          });
+
+          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2), 'utf8');
+
+          const completedTs = new Date().toISOString();
+          await appendRunLog(runLogPath, (cur) => ({
+            ...cur,
+            nextNodeIndex: i + 1,
+            nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
+            events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
+            nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
+          }));
+          nodeStates[String(node.id)] = { status: 'success', ts: completedTs };
+
+          continue;
+        }
+
+        if (toolName === 'outbound.post') {
+          // Outbound posting (local-first v0.1): publish via an external HTTP service.
+          // IMPORTANT: this runner-native tool intentionally does NOT read draft text from disk.
+          // Provide `args.text` directly from upstream LLM nodes, and (optionally) an approval receipt.
+          const pluginCfg = asRecord((api as any).pluginConfig);
+          const outboundCfg = asRecord(pluginCfg['outbound']);
+
+          const baseUrl = String(outboundCfg['baseUrl'] ?? '').trim();
+          const apiKey = String(outboundCfg['apiKey'] ?? '').trim();
+          if (!baseUrl) throw new Error('outbound.post requires plugin config outbound.baseUrl');
+          if (!apiKey) throw new Error('outbound.post requires plugin config outbound.apiKey');
+
+          const platform = String(toolArgs.platform ?? '').trim();
+          const text = String(toolArgs.text ?? '');
+          const idempotencyKey = String(toolArgs.idempotencyKey ?? `${task.runId}:${node.id}`).trim();
+          const runContext = asRecord(toolArgs.runContext);
+          const approval = toolArgs.approval ? asRecord(toolArgs.approval) : undefined;
+          const media = Array.isArray(toolArgs.media) ? toolArgs.media : undefined;
+          const dryRun = toolArgs.dryRun === true;
+
+          if (!platform) throw new Error('outbound.post requires args.platform');
+          if (!text) throw new Error('outbound.post requires args.text');
+          if (!idempotencyKey) throw new Error('outbound.post requires args.idempotencyKey');
+
+          const workflowId = String(workflow.id ?? '');
+
+          const result = await outboundPublish({
+            baseUrl,
+            apiKey,
+            platform: platform as any,
+            idempotencyKey,
+            request: {
+              text,
+              media: media as any,
+              runContext: {
+                teamId: String(runContext.teamId ?? ''),
+                workflowId: String(runContext.workflowId ?? workflowId),
+                workflowRunId: String(runContext.workflowRunId ?? task.runId),
+                nodeId: String(runContext.nodeId ?? node.id),
+                ticketPath: typeof runContext.ticketPath === 'string' ? runContext.ticketPath : undefined,
+              },
+              approval: approval as any,
+              dryRun,
             },
           });
 
