@@ -135,3 +135,9 @@ openclaw recipes workflows poll-approvals --team-id <teamId>
 - Check `node-outputs/` for structured output
 - Check `artifacts/` for tool output/files
 
+
+## Outbound posting (side effects)
+
+For side-effecting publish actions (e.g. posting to X/Discord), workflows should call an external Outbound Posting Service via the runner-native tool `outbound.post`.
+
+See: `docs/OUTBOUND_POSTING.md`.
