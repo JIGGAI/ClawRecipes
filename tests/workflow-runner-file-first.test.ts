@@ -103,6 +103,77 @@ describe("workflow-runner (file-first + runner/worker)", () => {
     }
   });
 
+  test("fs.append templates args.path (e.g. {{run.id}})", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-path";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "path-templating.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+
+      const workflow = {
+        id: "path-templating",
+        name: "Demo: fs.append path templating",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "append-log",
+            kind: "tool",
+            assignedTo: { agentId: "agent-a" },
+            action: {
+              tool: "fs.append",
+              args: {
+                path: "shared-context/workflow-runs/{{run.id}}/artifacts/fs-append.log",
+                content: "hello run={{run.id}}\n",
+              },
+            },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "append-log", on: "success" },
+          { from: "append-log", to: "end", on: "success" },
+        ],
+      };
+
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi();
+
+      const enq = await enqueueWorkflowRun(api, { teamId, workflowFile });
+      expect(enq.ok).toBe(true);
+
+      const r1 = await runWorkflowRunnerOnce(api, { teamId });
+      expect(r1.ok).toBe(true);
+
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 5, workerId: "worker-a" });
+      expect(w1.ok).toBe(true);
+
+      const runId = enq.runId;
+
+      const rendered = path.join(teamDir, "shared-context", "workflow-runs", runId, "artifacts", "fs-append.log");
+      const raw = await fs.readFile(rendered, "utf8");
+      expect(raw).toContain(`run=${runId}`);
+
+      // Sanity: we should NOT have created a literal {{run.id}} directory.
+      const literal = path.join(teamDir, "shared-context", "workflow-runs", "{{run.id}}", "artifacts", "fs-append.log");
+      await expect(fs.stat(literal)).rejects.toThrow();
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
   test("needs_revision clears downstream completion so revised node re-enqueues downstream nodes", async () => {
     const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
 

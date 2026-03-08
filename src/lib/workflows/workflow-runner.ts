@@ -749,7 +749,7 @@ async function executeWorkflowNodes(opts: {
 
       const vars = {
         date: new Date().toISOString(),
-        'run.id': task.runId,
+        'run.id': runId,
         'workflow.id': String(workflow.id ?? ''),
         'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
       };
@@ -757,11 +757,12 @@ async function executeWorkflowNodes(opts: {
       try {
         // Runner-native tools (preferred): do NOT depend on gateway tool exposure.
         if (toolName === 'fs.append') {
-          const relPath = String(toolArgs.path ?? '').trim();
+          const relPathRaw = String(toolArgs.path ?? '').trim();
           const contentRaw = String(toolArgs.content ?? '');
-          if (!relPath) throw new Error('fs.append requires args.path');
+          if (!relPathRaw) throw new Error('fs.append requires args.path');
           if (!contentRaw) throw new Error('fs.append requires args.content');
 
+          const relPath = templateReplace(relPathRaw, vars);
           const abs = path.resolve(teamDir, relPath);
           if (!abs.startsWith(teamDir + path.sep) && abs !== teamDir) {
             throw new Error('fs.append path must be within the team workspace');
@@ -1895,8 +1896,9 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     }
 
     try {
+      const runId = task.runId;
 
-    const { run } = await loadRunFile(teamDir, runsDir, task.runId);
+      const { run } = await loadRunFile(teamDir, runsDir, runId);
     const workflowFile = String(run.workflow.file);
     const workflowPath = path.join(workflowsDir, workflowFile);
     const workflowRaw = await fs.readFile(workflowPath, 'utf8');
@@ -2157,17 +2159,18 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       try {
         // Runner-native tools (preferred): do NOT depend on gateway tool exposure.
         if (toolName === 'fs.append') {
-          const relPath = String(toolArgs.path ?? '').trim();
+          const relPathRaw = String(toolArgs.path ?? '').trim();
           const contentRaw = String(toolArgs.content ?? '');
-          if (!relPath) throw new Error('fs.append requires args.path');
+          if (!relPathRaw) throw new Error('fs.append requires args.path');
           if (!contentRaw) throw new Error('fs.append requires args.content');
 
           const vars = {
             date: new Date().toISOString(),
-            'run.id': task.runId,
+            'run.id': runId,
             'workflow.id': String(workflow.id ?? ''),
             'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
           };
+          const relPath = templateReplace(relPathRaw, vars);
           const content = templateReplace(contentRaw, vars);
 
           const abs = path.resolve(teamDir, relPath);
