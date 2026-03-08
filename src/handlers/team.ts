@@ -64,6 +64,7 @@ async function writeTeamBootstrapFiles(opts: {
   // Team memory (file-first, machine-usable). Non-destructive.
   await ensureDir(path.join(sharedContextDir, "memory"));
   await writeFileSafely(path.join(sharedContextDir, "memory", "team.jsonl"), "", mode);
+  await writeFileSafely(path.join(sharedContextDir, "memory", "pinned.jsonl"), "", mode);
 
   await writeFileSafely(
     path.join(sharedContextDir, "DECISIONS.md"),
@@ -80,7 +81,7 @@ async function writeTeamBootstrapFiles(opts: {
   await writeFileSafely(path.join(notesDir, "status.md"), `# Status — ${teamId}\n\n- (empty)\n`, mode);
   await writeFileSafely(
     path.join(notesDir, "memory-policy.md"),
-    `# Memory Policy — ${teamId}\n\nThis workspace is file-first.\n\n## Where things go\n- **Ticket comments**: decisions/notes specific to a ticket (append under "## Comments").\n- **notes/status.md**: append-only status log for the team.\n- **notes/plan.md**: lead-curated plan + priorities for the team.\n- **shared-context/priorities.md**: lead-curated top priorities.\n- **shared-context/agent-outputs/**: append-only artifacts + logs produced by agents.\n\n## End-of-session checklist (everyone)\n- [ ] Update ticket "## Comments" with what changed + next step\n- [ ] Append a dated entry to notes/status.md\n- [ ] Save any artifacts to shared-context/agent-outputs/\n`,
+    `# Memory Policy — ${teamId}\n\nThis workspace is file-first.\n\n## Where things go\n- **Ticket comments**: decisions/notes specific to a ticket (append under "## Comments").\n- **notes/status.md**: append-only status log for the team.\n- **notes/plan.md**: lead-curated plan + priorities for the team.\n- **shared-context/priorities.md**: lead-curated top priorities.\n- **shared-context/memory/team.jsonl**: team knowledge stream (Kitchen Memory tab).\n- **shared-context/memory/pinned.jsonl**: pinned team facts/decisions (Kitchen Memory tab).\n- **shared-context/agent-outputs/**: append-only artifacts + logs produced by agents.\n\n## End-of-session checklist (everyone)\n- [ ] Update ticket "## Comments" with what changed + next step\n- [ ] Append a dated entry to notes/status.md\n- [ ] Save any artifacts to shared-context/agent-outputs/\n`,
     mode
   );
 
@@ -178,6 +179,15 @@ async function scaffoldTeamAgents(
     const role = a.role;
     const agentId = a.agentId ?? `${teamId}-${role}`;
     const agentName = a.name ?? `${teamId} ${role}`;
+    const roleFiles = baseFiles
+      // Guardrail: role workspaces should not create role-local shared-context.
+      // Team-level shared-context lives at <teamDir>/shared-context/.
+      .filter((f) => !String(f.path).startsWith("shared-context/"))
+      .map((f) => ({
+        ...f,
+        template: String(f.template).includes(".") ? f.template : `${role}.${f.template}`,
+      }));
+
     const scopedRecipe: RecipeFrontmatter = {
       id: `${recipe.id}:${role}`,
       name: agentName,
@@ -185,10 +195,7 @@ async function scaffoldTeamAgents(
       requiredSkills: recipe.requiredSkills,
       optionalSkills: recipe.optionalSkills,
       templates: recipe.templates,
-      files: baseFiles.map((f) => ({
-        ...f,
-        template: String(f.template).includes(".") ? f.template : `${role}.${f.template}`,
-      })),
+      files: roleFiles,
       tools: a.tools ?? recipe.tools,
     };
     const roleDir = path.join(rolesDir, role);
@@ -201,6 +208,45 @@ async function scaffoldTeamAgents(
       workspaceRootDir: roleDir,
       vars: { teamId, teamDir, role, agentId, agentName, roleDir },
     });
+
+    // Standard per-role continuity + outputs (file-first).
+    // These must exist even if the team recipe omits them.
+    {
+      const mode = overwrite ? "overwrite" : "createOnly";
+      const yyyyMmDd = new Date().toISOString().slice(0, 10);
+      await ensureDir(path.join(roleDir, "memory"));
+      await writeFileSafely(
+        path.join(roleDir, "MEMORY.md"),
+        `# MEMORY — ${teamId} (${role})
+
+Curated long-term memory for this role.
+
+- (empty)
+`,
+        mode
+      );
+      await writeFileSafely(
+        path.join(roleDir, "memory", `${yyyyMmDd}.md`),
+        `# ${yyyyMmDd} — ${teamId} (${role})
+
+- (empty)
+`,
+        mode
+      );
+      await ensureDir(path.join(roleDir, "agent-outputs"));
+      await writeFileSafely(
+        path.join(roleDir, "agent-outputs", "README.md"),
+        `# Agent outputs — ${teamId} (${role})
+
+Append-only artifacts/logs produced by this role.
+
+Recommended:
+- One file per day (e.g. "${yyyyMmDd}.md")
+- Or one file per ticket (e.g. "0175-run-detail-timeline.md")
+`,
+        mode
+      );
+    }
 
 
     // Heartbeat scaffold (opt-in): drop a minimal HEARTBEAT.md in the role workspace.
