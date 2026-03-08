@@ -8,7 +8,7 @@ import { toolsInvoke } from '../../toolsInvoke';
 import { loadOpenClawConfig } from '../recipes-config';
 import type { Workflow, WorkflowEdge, WorkflowLane, WorkflowNode } from './workflow-types';
 import { dequeueNextTask, enqueueTask } from './workflow-queue';
-import { outboundPublish } from './outbound-client';
+import { outboundPublish, type OutboundApproval, type OutboundMedia, type OutboundPlatform } from './outbound-client';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v == 'object' && !Array.isArray(v);
@@ -749,7 +749,7 @@ async function executeWorkflowNodes(opts: {
 
       const vars = {
         date: new Date().toISOString(),
-        'run.id': task.runId,
+        'run.id': runId,
         'workflow.id': String(workflow.id ?? ''),
         'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
       };
@@ -757,11 +757,12 @@ async function executeWorkflowNodes(opts: {
       try {
         // Runner-native tools (preferred): do NOT depend on gateway tool exposure.
         if (toolName === 'fs.append') {
-          const relPath = String(toolArgs.path ?? '').trim();
+          const relPathRaw = String(toolArgs.path ?? '').trim();
           const contentRaw = String(toolArgs.content ?? '');
-          if (!relPath) throw new Error('fs.append requires args.path');
+          if (!relPathRaw) throw new Error('fs.append requires args.path');
           if (!contentRaw) throw new Error('fs.append requires args.content');
 
+          const relPath = templateReplace(relPathRaw, vars);
           const abs = path.resolve(teamDir, relPath);
           if (!abs.startsWith(teamDir + path.sep) && abs !== teamDir) {
             throw new Error('fs.append path must be within the team workspace');
@@ -790,7 +791,7 @@ async function executeWorkflowNodes(opts: {
         if (toolName === 'runtime.exec') {
           // Extra safety gate: runtime.exec must be explicitly enabled (dev/testing only).
           // IMPORTANT: keep this config-driven (not env-driven) to avoid install-time security warnings.
-          const pluginCfg = asRecord((api as any).pluginConfig);
+          const pluginCfg = asRecord(asRecord(api)['pluginConfig']);
           const workflowRunnerCfg = asRecord(pluginCfg['workflowRunner']);
           const allowRuntimeExec = workflowRunnerCfg['allowRuntimeExec'] === true;
           if (!allowRuntimeExec) {
@@ -843,7 +844,7 @@ async function executeWorkflowNodes(opts: {
             },
           });
 
-          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2), 'utf8');
+          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
 
           const completedTs = new Date().toISOString();
           await appendRunLog(runLogPath, (cur) => ({
@@ -862,7 +863,7 @@ async function executeWorkflowNodes(opts: {
           // Outbound posting (local-first v0.1): publish via an external HTTP service.
           // IMPORTANT: this runner-native tool intentionally does NOT read draft text from disk.
           // Provide `args.text` directly from upstream LLM nodes, and (optionally) an approval receipt.
-          const pluginCfg = asRecord((api as any).pluginConfig);
+          const pluginCfg = asRecord(asRecord(api)['pluginConfig']);
           const outboundCfg = asRecord(pluginCfg['outbound']);
 
           const baseUrl = String(outboundCfg['baseUrl'] ?? '').trim();
@@ -887,11 +888,11 @@ async function executeWorkflowNodes(opts: {
           const result = await outboundPublish({
             baseUrl,
             apiKey,
-            platform: platform as any,
+            platform: platform as OutboundPlatform,
             idempotencyKey,
             request: {
               text,
-              media: media as any,
+              media: media as unknown as OutboundMedia[],
               runContext: {
                 teamId: String(runContext.teamId ?? ''),
                 workflowId: String(runContext.workflowId ?? workflowId),
@@ -899,7 +900,7 @@ async function executeWorkflowNodes(opts: {
                 nodeId: String(runContext.nodeId ?? node.id),
                 ticketPath: typeof runContext.ticketPath === 'string' ? runContext.ticketPath : undefined,
               },
-              approval: approval as any,
+              approval: approval as unknown as OutboundApproval,
               dryRun,
             },
           });
@@ -1895,8 +1896,9 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     }
 
     try {
+      const runId = task.runId;
 
-    const { run } = await loadRunFile(teamDir, runsDir, task.runId);
+      const { run } = await loadRunFile(teamDir, runsDir, runId);
     const workflowFile = String(run.workflow.file);
     const workflowPath = path.join(workflowsDir, workflowFile);
     const workflowRaw = await fs.readFile(workflowPath, 'utf8');
@@ -2157,17 +2159,18 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       try {
         // Runner-native tools (preferred): do NOT depend on gateway tool exposure.
         if (toolName === 'fs.append') {
-          const relPath = String(toolArgs.path ?? '').trim();
+          const relPathRaw = String(toolArgs.path ?? '').trim();
           const contentRaw = String(toolArgs.content ?? '');
-          if (!relPath) throw new Error('fs.append requires args.path');
+          if (!relPathRaw) throw new Error('fs.append requires args.path');
           if (!contentRaw) throw new Error('fs.append requires args.content');
 
           const vars = {
             date: new Date().toISOString(),
-            'run.id': task.runId,
+            'run.id': runId,
             'workflow.id': String(workflow.id ?? ''),
             'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
           };
+          const relPath = templateReplace(relPathRaw, vars);
           const content = templateReplace(contentRaw, vars);
 
           const abs = path.resolve(teamDir, relPath);
@@ -2180,6 +2183,63 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
           const result = { appendedTo: path.relative(teamDir, abs), bytes: Buffer.byteLength(content, 'utf8') };
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
+
+        } else if (toolName === 'runtime.exec') {
+          // Runner-native runtime.exec (worker-side):
+          // - gated by plugin config + workflow meta allowlists
+          // - executed via OpenClaw's `exec` tool (not local child_process)
+          const pluginCfg = asRecord(asRecord(api)['pluginConfig']);
+          const workflowRunnerCfg = asRecord(pluginCfg['workflowRunner']);
+          const allowRuntimeExec = workflowRunnerCfg['allowRuntimeExec'] === true;
+          if (!allowRuntimeExec) {
+            throw new Error('runtime.exec denied: set plugin config workflowRunner.allowRuntimeExec=true (dev/testing only)');
+          }
+
+          const meta = asRecord(workflow['meta']);
+          const allowBins = new Set<string>(Array.isArray(meta.execAllowBins) ? meta.execAllowBins.map(String) : []);
+          const allowCommands = new Set<string>(Array.isArray(meta.execAllowCommands) ? meta.execAllowCommands.map(String) : []);
+          if (allowBins.size === 0 && allowCommands.size === 0) {
+            throw new Error(`runtime.exec denied: set workflow meta.execAllowBins[] or meta.execAllowCommands[] (${nodeLabel(node)})`);
+          }
+
+          const cmdArray = Array.isArray(toolArgs.commandArray)
+            ? toolArgs.commandArray
+            : Array.isArray(toolArgs.command)
+              ? toolArgs.command
+              : null;
+          const cmdStr = typeof toolArgs.command === 'string' ? toolArgs.command : '';
+
+          const parts = (cmdArray ? cmdArray.map(String) : cmdStr.split(/\s+/)).map((x) => x.trim()).filter(Boolean);
+          if (!parts.length) throw new Error('runtime.exec requires args.command or args.commandArray');
+
+          const bin = path.basename(parts[0]!);
+          const fullCommand = cmdArray ? parts.join(' ') : String(cmdStr).trim();
+
+          if (allowCommands.size && !allowCommands.has(fullCommand)) {
+            throw new Error(`runtime.exec command not allowlisted: ${fullCommand}`);
+          }
+          if (!allowCommands.size && !allowBins.has(bin)) {
+            throw new Error(`runtime.exec bin not allowlisted: ${bin}`);
+          }
+
+          const cwdRel = typeof toolArgs.cwd === 'string' ? toolArgs.cwd : typeof toolArgs.workdir === 'string' ? toolArgs.workdir : '';
+          const cwdAbs = cwdRel ? path.resolve(teamDir, cwdRel) : teamDir;
+          if (!cwdAbs.startsWith(teamDir + path.sep) && cwdAbs !== teamDir) {
+            throw new Error('runtime.exec cwd must be within the team workspace');
+          }
+
+          const timeoutSeconds = Math.max(0, Number(meta.execTimeoutSeconds ?? 60));
+
+          const result = await toolsInvoke(api, {
+            tool: 'exec',
+            args: {
+              command: fullCommand,
+              workdir: path.relative(teamDir, cwdAbs) || '.',
+              timeout: timeoutSeconds,
+            },
+          });
+
+          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\\n', 'utf8');
         } else if (toolName === 'marketing.post_all') {
           // Disabled by default: do not ship plugins that spawn local processes for posting.
           // Use an approval-gated workflow node that calls a dedicated posting tool/plugin instead.
