@@ -329,18 +329,18 @@ templates:
     This file exists to prevent QA tickets being bounced due to missing environment access.
 
     ## ClawKitchen (hosted)
-    - URL: http://100.103.210.102:7777
+    - URL: http://localhost:7777
 
     ### HTTP Basic Auth
     - Username: `kitchen`
-    - Password: `<authToken>`
+    - Password: <AUTH_TOKEN> (obtain from your deployment secret / host config)
 
     ### QA token bootstrap
     Open once to set QA cookie:
-    - http://100.103.210.102:7777/tickets?qaToken=<qaToken>
+    - http://localhost:7777/tickets?qaToken=<QA_TOKEN>
 
     ## Notes
-    - Keep creds internal (team QA only).
+    - Do NOT commit real credentials to git.
     - When a ticket requires hosted Kitchen verification, link this file from the ticket.
 
   sharedContext.plan: |
