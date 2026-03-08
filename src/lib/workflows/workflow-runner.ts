@@ -788,76 +788,7 @@ async function executeWorkflowNodes(opts: {
           continue;
         }
 
-        if (toolName === 'runtime.exec') {
-          // Extra safety gate: runtime.exec must be explicitly enabled (dev/testing only).
-          // IMPORTANT: keep this config-driven (not env-driven) to avoid install-time security warnings.
-          const pluginCfg = asRecord(asRecord(api)['pluginConfig']);
-          const workflowRunnerCfg = asRecord(pluginCfg['workflowRunner']);
-          const allowRuntimeExec = workflowRunnerCfg['allowRuntimeExec'] === true;
-          if (!allowRuntimeExec) {
-            throw new Error('runtime.exec denied: set plugin config workflowRunner.allowRuntimeExec=true (dev/testing only)');
-          }
 
-          const meta = asRecord(workflow['meta']);
-          const allowBins = new Set<string>(Array.isArray(meta.execAllowBins) ? meta.execAllowBins.map(String) : []);
-          const allowCommands = new Set<string>(Array.isArray(meta.execAllowCommands) ? meta.execAllowCommands.map(String) : []);
-          if (allowBins.size === 0 && allowCommands.size === 0) {
-            throw new Error(`runtime.exec denied: set workflow meta.execAllowBins[] or meta.execAllowCommands[] (${nodeLabel(node)})`);
-          }
-
-          const cmdArray = Array.isArray(toolArgs.commandArray)
-            ? toolArgs.commandArray
-            : Array.isArray(toolArgs.command)
-              ? toolArgs.command
-              : null;
-          const cmdStr = typeof toolArgs.command === 'string' ? toolArgs.command : '';
-
-          const parts = (cmdArray ? cmdArray.map(String) : cmdStr.split(/\s+/)).map((s) => s.trim()).filter(Boolean);
-          if (!parts.length) throw new Error('runtime.exec requires args.command or args.commandArray');
-
-          const bin = path.basename(parts[0]!);
-          const fullCommand = cmdArray ? parts.join(' ') : String(cmdStr).trim();
-
-          if (allowCommands.size && !allowCommands.has(fullCommand)) {
-            throw new Error(`runtime.exec command not allowlisted: ${fullCommand}`);
-          }
-          if (!allowCommands.size && !allowBins.has(bin)) {
-            throw new Error(`runtime.exec bin not allowlisted: ${bin}`);
-          }
-
-          const cwdRel = typeof toolArgs.cwd === 'string' ? toolArgs.cwd : typeof toolArgs.workdir === 'string' ? toolArgs.workdir : '';
-          const cwdAbs = cwdRel ? path.resolve(teamDir, cwdRel) : teamDir;
-          if (!cwdAbs.startsWith(teamDir + path.sep) && cwdAbs !== teamDir) {
-            throw new Error('runtime.exec cwd must be within the team workspace');
-          }
-
-          const timeoutSeconds = Math.max(0, Number(meta.execTimeoutSeconds ?? 60));
-
-          // IMPORTANT: do not spawn local processes from this plugin.
-          // Route through OpenClaw's `exec` tool, which is policy-gated/approved centrally.
-          const result = await toolsInvoke(api, {
-            tool: 'exec',
-            args: {
-              command: fullCommand,
-              workdir: path.relative(teamDir, cwdAbs) || '.',
-              timeout: timeoutSeconds,
-            },
-          });
-
-          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
-
-          const completedTs = new Date().toISOString();
-          await appendRunLog(runLogPath, (cur) => ({
-            ...cur,
-            nextNodeIndex: i + 1,
-            nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
-            events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
-            nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
-          }));
-          nodeStates[String(node.id)] = { status: 'success', ts: completedTs };
-
-          continue;
-        }
 
         if (toolName === 'outbound.post') {
           // Outbound posting (local-first v0.1): publish via an external HTTP service.
@@ -2245,62 +2176,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           const result = { appendedTo: path.relative(teamDir, abs), bytes: Buffer.byteLength(content, 'utf8') };
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
 
-        } else if (toolName === 'runtime.exec') {
-          // Runner-native runtime.exec (worker-side):
-          // - gated by plugin config + workflow meta allowlists
-          // - executed via OpenClaw's `exec` tool (not local child_process)
-          const pluginCfg = asRecord(asRecord(api)['pluginConfig']);
-          const workflowRunnerCfg = asRecord(pluginCfg['workflowRunner']);
-          const allowRuntimeExec = workflowRunnerCfg['allowRuntimeExec'] === true;
-          if (!allowRuntimeExec) {
-            throw new Error('runtime.exec denied: set plugin config workflowRunner.allowRuntimeExec=true (dev/testing only)');
-          }
 
-          const meta = asRecord(workflow['meta']);
-          const allowBins = new Set<string>(Array.isArray(meta.execAllowBins) ? meta.execAllowBins.map(String) : []);
-          const allowCommands = new Set<string>(Array.isArray(meta.execAllowCommands) ? meta.execAllowCommands.map(String) : []);
-          if (allowBins.size === 0 && allowCommands.size === 0) {
-            throw new Error(`runtime.exec denied: set workflow meta.execAllowBins[] or meta.execAllowCommands[] (${nodeLabel(node)})`);
-          }
-
-          const cmdArray = Array.isArray(toolArgs.commandArray)
-            ? toolArgs.commandArray
-            : Array.isArray(toolArgs.command)
-              ? toolArgs.command
-              : null;
-          const cmdStr = typeof toolArgs.command === 'string' ? toolArgs.command : '';
-
-          const parts = (cmdArray ? cmdArray.map(String) : cmdStr.split(/\s+/)).map((x) => x.trim()).filter(Boolean);
-          if (!parts.length) throw new Error('runtime.exec requires args.command or args.commandArray');
-
-          const bin = path.basename(parts[0]!);
-          const fullCommand = cmdArray ? parts.join(' ') : String(cmdStr).trim();
-
-          if (allowCommands.size && !allowCommands.has(fullCommand)) {
-            throw new Error(`runtime.exec command not allowlisted: ${fullCommand}`);
-          }
-          if (!allowCommands.size && !allowBins.has(bin)) {
-            throw new Error(`runtime.exec bin not allowlisted: ${bin}`);
-          }
-
-          const cwdRel = typeof toolArgs.cwd === 'string' ? toolArgs.cwd : typeof toolArgs.workdir === 'string' ? toolArgs.workdir : '';
-          const cwdAbs = cwdRel ? path.resolve(teamDir, cwdRel) : teamDir;
-          if (!cwdAbs.startsWith(teamDir + path.sep) && cwdAbs !== teamDir) {
-            throw new Error('runtime.exec cwd must be within the team workspace');
-          }
-
-          const timeoutSeconds = Math.max(0, Number(meta.execTimeoutSeconds ?? 60));
-
-          const result = await toolsInvoke(api, {
-            tool: 'exec',
-            args: {
-              command: fullCommand,
-              workdir: path.relative(teamDir, cwdAbs) || '.',
-              timeout: timeoutSeconds,
-            },
-          });
-
-          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\\n', 'utf8');
         } else if (toolName === 'marketing.post_all') {
           // Disabled by default: do not ship plugins that spawn local processes for posting.
           // Use an approval-gated workflow node that calls a dedicated posting tool/plugin instead.
