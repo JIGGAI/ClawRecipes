@@ -825,11 +825,19 @@ templates:
     ## Guardrails (read → act → write)
 
     Before you act:
-    1) Read:
+    1) Read (role continuity):
+       - `MEMORY.md`
+       - `memory/YYYY-MM-DD.md` (today; create if missing)
+
+    2) Read (team context):
        - `notes/plan.md`
        - `notes/status.md`
        - `shared-context/priorities.md`
        - the relevant ticket(s)
+
+    Optional (team knowledge memory, Kitchen UI):
+       - `shared-context/memory/pinned.jsonl`
+       - `shared-context/memory/team.jsonl`
 
     After you act:
     1) Write back:
@@ -896,11 +904,19 @@ templates:
     ## Guardrails (read → act → write)
 
     Before you change anything:
-    1) Read:
+    1) Read (role continuity):
+       - `MEMORY.md`
+       - `memory/YYYY-MM-DD.md` (today; create if missing)
+
+    2) Read (team context):
        - `notes/plan.md`
        - `notes/status.md`
        - `shared-context/priorities.md`
        - the current ticket you’re working on
+
+    Optional (team knowledge memory, Kitchen UI):
+       - `shared-context/memory/pinned.jsonl`
+       - `shared-context/memory/team.jsonl`
 
     While working:
     - Keep changes small and safe.
@@ -947,11 +963,19 @@ templates:
     ## Guardrails (read → act → write)
 
     Before you change anything:
-    1) Read:
+    1) Read (role continuity):
+       - `MEMORY.md`
+       - `memory/YYYY-MM-DD.md` (today; create if missing)
+
+    2) Read (team context):
        - `notes/plan.md`
        - `notes/status.md`
        - `shared-context/priorities.md`
        - the current ticket you’re working on
+
+    Optional (team knowledge memory, Kitchen UI):
+       - `shared-context/memory/pinned.jsonl`
+       - `shared-context/memory/team.jsonl`
 
     After you finish a work session:
     1) Write back:
@@ -1036,6 +1060,14 @@ templates:
 
     Shared workspace: {{teamDir}}
 
+    ## Startup (read)
+    - `MEMORY.md`
+    - `memory/YYYY-MM-DD.md` (today; create if missing)
+    - `notes/status.md` (for current known issues)
+
+    Optional:
+    - `shared-context/memory/pinned.jsonl`
+
     ## Primary responsibility
     Drain queued workflow runs without duplicating work:
     - Claim runs with a short lease
@@ -1081,11 +1113,19 @@ templates:
     ## Guardrails (read → act → write)
 
     Before verifying:
-    1) Read:
+    1) Read (role continuity):
+       - `MEMORY.md`
+       - `memory/YYYY-MM-DD.md` (today; create if missing)
+
+    2) Read (team context):
        - `notes/plan.md`
        - `notes/status.md`
        - `shared-context/priorities.md`
        - the ticket under test
+
+    Optional (team knowledge memory, Kitchen UI):
+       - `shared-context/memory/pinned.jsonl`
+       - `shared-context/memory/team.jsonl`
 
     After each verification pass:
     1) Write back:
