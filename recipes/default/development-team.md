@@ -209,6 +209,18 @@ templates:
 
     Guardrail: do **not** create or rely on `roles/<role>/shared-context/**`.
 
+    ## Role work loop contract (safe-idle)
+    When a role’s cron/heartbeat runs:
+    - **No-op unless explicit queued work exists** for that role (ticket assigned/owned by role, or workflow run nodes assigned to the role agentId).
+    - If work happens, write back in this order:
+      1) Update the relevant ticket(s) (source of truth).
+      2) Append 1–3 bullets to `notes/status.md` (team roll-up).
+      3) Write raw logs/artifacts under `roles/<role>/agent-outputs/` and reference them from the ticket.
+    - Team memory JSONL policy:
+      - Non-lead roles must **not** write directly to `shared-context/memory/pinned.jsonl`.
+      - Non-leads may propose memory items in ticket comments or role outputs; lead pins.
+      - Optional: roles may append non-pinned learnings to dedicated streams (e.g. `shared-context/memory/<topic>.jsonl`) if the recipe/workflow opts in.
+
     ## End-of-session checklist (everyone)
     After meaningful work:
     1) Update the ticket with what changed + how to verify + rollback.
