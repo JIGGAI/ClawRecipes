@@ -181,6 +181,8 @@ templates:
   sharedContext.memoryPolicy: |
     # Team Memory Policy (File-first)
 
+    Quick link: see `shared-context/MEMORY_PLAN.md` for the canonical “what goes where” map.
+
     This team is run **file-first**. Chat is not the system of record.
 
     ## Where memory lives (and what it’s for)
@@ -237,6 +239,38 @@ templates:
     # Status (append-only)
 
     - (empty)
+
+  sharedContext.memoryPlan: |
+    # Memory Plan (Team)
+
+    This team is file-first. Chat is not the system of record.
+
+    ## Source of truth
+    - Tickets (`work/*/*.md`) are the source of truth for a unit of work.
+
+    ## Team knowledge memory (Kitchen UI)
+    - `shared-context/memory/team.jsonl` (append-only)
+    - `shared-context/memory/pinned.jsonl` (append-only, curated/high-signal)
+
+    Policy:
+    - Lead may pin to `pinned.jsonl`.
+    - Non-leads propose memory items via ticket comments or role outputs; lead pins.
+
+    ## Per-role continuity memory (agent startup)
+    - `roles/<role>/MEMORY.md` (curated long-term)
+    - `roles/<role>/memory/YYYY-MM-DD.md` (daily log)
+
+    ## Plan vs status (team coordination)
+    - `notes/plan.md` + `shared-context/priorities.md` are lead-curated
+    - `notes/status.md` is append-only roll-up (everyone appends)
+
+    ## Outputs / artifacts
+    - `roles/<role>/agent-outputs/` (append-only)
+    - `shared-context/agent-outputs/` (optional team-level)
+
+    ## Role work loop contract (safe-idle)
+    - No-op unless explicit queued work exists for the role.
+    - If work happens, write back in order: ticket → `notes/status.md` → `roles/<role>/agent-outputs/`.
 
   sharedContext.priorities: |
     # Priorities (lead-curated)
@@ -825,11 +859,19 @@ templates:
     ## Guardrails (read → act → write)
 
     Before you act:
-    1) Read:
+    1) Read (role continuity):
+       - `MEMORY.md`
+       - `memory/YYYY-MM-DD.md` (today; create if missing)
+
+    2) Read (team context):
        - `notes/plan.md`
        - `notes/status.md`
        - `shared-context/priorities.md`
        - the relevant ticket(s)
+
+    Optional (team knowledge memory, Kitchen UI):
+       - `shared-context/memory/pinned.jsonl`
+       - `shared-context/memory/team.jsonl`
 
     After you act:
     1) Write back:
@@ -896,11 +938,19 @@ templates:
     ## Guardrails (read → act → write)
 
     Before you change anything:
-    1) Read:
+    1) Read (role continuity):
+       - `MEMORY.md`
+       - `memory/YYYY-MM-DD.md` (today; create if missing)
+
+    2) Read (team context):
        - `notes/plan.md`
        - `notes/status.md`
        - `shared-context/priorities.md`
        - the current ticket you’re working on
+
+    Optional (team knowledge memory, Kitchen UI):
+       - `shared-context/memory/pinned.jsonl`
+       - `shared-context/memory/team.jsonl`
 
     While working:
     - Keep changes small and safe.
@@ -947,11 +997,19 @@ templates:
     ## Guardrails (read → act → write)
 
     Before you change anything:
-    1) Read:
+    1) Read (role continuity):
+       - `MEMORY.md`
+       - `memory/YYYY-MM-DD.md` (today; create if missing)
+
+    2) Read (team context):
        - `notes/plan.md`
        - `notes/status.md`
        - `shared-context/priorities.md`
        - the current ticket you’re working on
+
+    Optional (team knowledge memory, Kitchen UI):
+       - `shared-context/memory/pinned.jsonl`
+       - `shared-context/memory/team.jsonl`
 
     After you finish a work session:
     1) Write back:
@@ -1036,6 +1094,14 @@ templates:
 
     Shared workspace: {{teamDir}}
 
+    ## Startup (read)
+    - `MEMORY.md`
+    - `memory/YYYY-MM-DD.md` (today; create if missing)
+    - `notes/status.md` (for current known issues)
+
+    Optional:
+    - `shared-context/memory/pinned.jsonl`
+
     ## Primary responsibility
     Drain queued workflow runs without duplicating work:
     - Claim runs with a short lease
@@ -1081,11 +1147,19 @@ templates:
     ## Guardrails (read → act → write)
 
     Before verifying:
-    1) Read:
+    1) Read (role continuity):
+       - `MEMORY.md`
+       - `memory/YYYY-MM-DD.md` (today; create if missing)
+
+    2) Read (team context):
        - `notes/plan.md`
        - `notes/status.md`
        - `shared-context/priorities.md`
        - the ticket under test
+
+    Optional (team knowledge memory, Kitchen UI):
+       - `shared-context/memory/pinned.jsonl`
+       - `shared-context/memory/team.jsonl`
 
     After each verification pass:
     1) Write back:
@@ -1176,6 +1250,9 @@ files:
   # Memory / continuity (team-level)
   - path: notes/memory-policy.md
     template: sharedContext.memoryPolicy
+    mode: createOnly
+  - path: shared-context/MEMORY_PLAN.md
+    template: sharedContext.memoryPlan
     mode: createOnly
   - path: notes/plan.md
     template: sharedContext.plan
