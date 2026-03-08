@@ -84,6 +84,13 @@ cronJobs:
 
       Guardrail: run ./scripts/ticket-hygiene-dev.sh each loop; if it fails, fix lane/status/owner mismatches before proceeding (assignment stubs are deprecated).
 
+      LEAD-OWNED TICKETS RULE (must follow)
+      - Do NOT automatically move a ticket just because Owner=lead “expects backlog”.
+      - If you encounter a lead-owned ticket in work/in-progress or work/testing that seems misassigned:
+        - LEAVE IT IN PLACE.
+        - Add a dated comment to the ticket explaining what you observed and what should change.
+        - If the ticket failed QA, set Owner=dev (and keep it in work/in-progress).
+
     enabledByDefault: false
 
   - id: workflow-runner-loop
@@ -315,6 +322,26 @@ templates:
     - Requirements
     - Acceptance criteria
 
+
+  sharedContext.qaAccess: |
+    # QA Access — {{teamId}}
+
+    This file exists to prevent QA tickets being bounced due to missing environment access.
+
+    ## ClawKitchen (hosted)
+    - URL: http://100.103.210.102:7777
+
+    ### HTTP Basic Auth
+    - Username: `kitchen`
+    - Password: `<authToken>`
+
+    ### QA token bootstrap
+    Open once to set QA cookie:
+    - http://100.103.210.102:7777/tickets?qaToken=<qaToken>
+
+    ## Notes
+    - Keep creds internal (team QA only).
+    - When a ticket requires hosted Kitchen verification, link this file from the ticket.
 
   sharedContext.plan: |
     # Plan (lead-curated)
@@ -1381,6 +1408,9 @@ files:
   # Memory / continuity (team-level)
   - path: notes/memory-policy.md
     template: sharedContext.memoryPolicy
+    mode: createOnly
+  - path: notes/QA_ACCESS.md
+    template: sharedContext.qaAccess
     mode: createOnly
   - path: shared-context/MEMORY_PLAN.md
     template: sharedContext.memoryPlan
