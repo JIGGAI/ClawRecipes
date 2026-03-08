@@ -9,6 +9,7 @@ cronJobs:
     name: "Lead triage loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
+    agentId: "{{teamId}}-lead"
     message: |
       Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md.
 
@@ -22,10 +23,37 @@ cronJobs:
 
     enabledByDefault: true
 
+  # Safe-idle role loops (enabled by default): roles do not "wake up" unless they have their own heartbeat schedule or cron.
+  - id: dev-work-loop
+    name: "Dev work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-dev"
+    message: "Safe-idle loop: check for dev-assigned tickets/runs, make small progress, and write outputs under roles/dev/agent-outputs/."
+    enabledByDefault: true
+
+  - id: devops-work-loop
+    name: "DevOps work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-devops"
+    message: "Safe-idle loop: check for devops-assigned tickets/runs, make small progress, and write outputs under roles/devops/agent-outputs/."
+    enabledByDefault: true
+
+  - id: test-work-loop
+    name: "Test/QA work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-test"
+    message: "Safe-idle loop: drain work/testing tickets; follow verification steps; on fail write repro + handoff; write outputs under roles/test/agent-outputs/."
+    enabledByDefault: true
+
+  # Optional generic executor loop (off by default): can be enabled later if you want an extra catch-all.
   - id: execution-loop
     name: "Execution loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
+    agentId: "{{teamId}}-lead"
     message: |
       Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md.
 
@@ -59,6 +87,7 @@ cronJobs:
     name: "PR watcher (ticket-linked)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
+    agentId: "{{teamId}}-lead"
     message: |
       PR watcher (ticket-linked): scan active in-progress/testing tickets for GitHub PR URLs.
 
@@ -88,6 +117,7 @@ cronJobs:
     name: "Testing lane loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
+    agentId: "{{teamId}}-test"
     message: "Testing lane loop: drain work/testing tickets; follow verification steps; complete on pass; on fail write repro + handoff."
     enabledByDefault: false
 
@@ -96,6 +126,7 @@ cronJobs:
     # Every 3h during 07:00–22:00 America/New_York (avoids 02:00–07:00 blackout)
     schedule: "0 7,10,13,16,19,22 * * *"
     timezone: "America/New_York"
+    agentId: "{{teamId}}-lead"
     message: "Backup job: run ./scripts/backup-work.sh to create a timestamped tarball of work/notes/scripts."
     enabledByDefault: true
 requiredSkills: []
@@ -152,18 +183,38 @@ templates:
 
     This team is run **file-first**. Chat is not the system of record.
 
+    ## Where memory lives (and what it’s for)
+
+    ### 1) Team knowledge memory (Kitchen UI)
+    - `shared-context/memory/team.jsonl` (append-only)
+    - `shared-context/memory/pinned.jsonl` (append-only)
+
+    Kitchen’s Team Editor → Memory tab reads/writes these JSONL streams.
+
+    ### 2) Per-role continuity memory (agents)
+    Each role keeps its own continuity memory:
+    - `roles/<role>/memory/YYYY-MM-DD.md` (daily log)
+    - `roles/<role>/MEMORY.md` (curated long-term memory)
+
+    These files are what the role agent uses to “remember” decisions and context across sessions.
+
     ## Where to write things
     - Ticket = source of truth for a unit of work.
     - `notes/plan.md` + `shared-context/priorities.md` are **lead-curated**.
     - `notes/status.md` is **append-only** and updated after each work session (3–5 bullets).
-    - `shared-context/agent-outputs/` is **append-only** logs/output.
+
+    ## Outputs / artifacts
+    - Role-level raw output (append-only): `roles/<role>/agent-outputs/`
+    - Team-level raw output (append-only, optional): `shared-context/agent-outputs/`
+
+    Guardrail: do **not** create or rely on `roles/<role>/shared-context/**`.
 
     ## End-of-session checklist (everyone)
     After meaningful work:
     1) Update the ticket with what changed + how to verify + rollback.
     2) Add a dated note in the ticket `## Comments`.
     3) Append 3–5 bullets to `notes/status.md`.
-    4) Append logs/output to `shared-context/agent-outputs/`.
+    4) Append logs/output to `roles/<role>/agent-outputs/`.
 
   sharedContext.plan: |
     # Plan (lead-curated)

@@ -9,12 +9,95 @@ cronJobs:
     name: "Lead triage loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
+    agentId: "{{teamId}}-lead"
     message: "Automated lead triage loop (Marketing Team): triage inbox/tickets, assign work, and update notes/status.md."
     enabledByDefault: false
+
+  # Safe-idle role loops (enabled by default): roles do not "wake up" unless they have their own heartbeat schedule or cron.
+  - id: seo-work-loop
+    name: "SEO work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-seo"
+    message: "Safe-idle loop: check for SEO-assigned work (tickets/workflows), make small progress, and write outputs under roles/seo/agent-outputs/."
+    enabledByDefault: true
+  - id: copywriter-work-loop
+    name: "Copywriter work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-copywriter"
+    message: "Safe-idle loop: check for copywriting-assigned work, make progress, and write outputs under roles/copywriter/agent-outputs/."
+    enabledByDefault: true
+  - id: ads-work-loop
+    name: "Ads work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-ads"
+    message: "Safe-idle loop: check for ads-assigned work, make progress, and write outputs under roles/ads/agent-outputs/."
+    enabledByDefault: true
+  - id: social-work-loop
+    name: "Social work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-social"
+    message: "Safe-idle loop: check for social/community-assigned work, make progress, and write outputs under roles/social/agent-outputs/."
+    enabledByDefault: true
+  - id: designer-work-loop
+    name: "Designer work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-designer"
+    message: "Safe-idle loop: check for creative/design-assigned work, make progress, and write outputs under roles/designer/agent-outputs/."
+    enabledByDefault: true
+  - id: analyst-work-loop
+    name: "Analyst work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-analyst"
+    message: "Safe-idle loop: check for analytics-assigned work, make progress, and write outputs under roles/analyst/agent-outputs/."
+    enabledByDefault: true
+  - id: video-work-loop
+    name: "Video work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-video"
+    message: "Safe-idle loop: check for video-assigned work, make progress, and write outputs under roles/video/agent-outputs/."
+    enabledByDefault: true
+  - id: compliance-work-loop
+    name: "Compliance work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-compliance"
+    message: "Safe-idle loop: check for compliance/brand-review work, make progress, and write outputs under roles/compliance/agent-outputs/."
+    enabledByDefault: true
+  - id: offer-work-loop
+    name: "Offer work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-offer"
+    message: "Safe-idle loop: check for offer/positioning work, make progress, and write outputs under roles/offer/agent-outputs/."
+    enabledByDefault: true
+  - id: funnel-work-loop
+    name: "Funnel work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-funnel"
+    message: "Safe-idle loop: check for funnel/landing-page work, make progress, and write outputs under roles/funnel/agent-outputs/."
+    enabledByDefault: true
+  - id: lifecycle-work-loop
+    name: "Lifecycle work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-lifecycle"
+    message: "Safe-idle loop: check for lifecycle/email work, make progress, and write outputs under roles/lifecycle/agent-outputs/."
+    enabledByDefault: true
+
+  # Optional team-wide loop (off by default): can be enabled later if you want an extra generic executor.
   - id: execution-loop
     name: "Execution loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
+    agentId: "{{teamId}}-lead"
     message: "Automated execution loop (Marketing Team): make progress on in-progress tickets and update notes/status.md."
     enabledByDefault: false
 requiredSkills: []
@@ -100,18 +183,38 @@ templates:
 
     This team is run **file-first**. Chat is not the system of record.
 
+    ## Where memory lives (and what it’s for)
+
+    ### 1) Team knowledge memory (Kitchen UI)
+    - `shared-context/memory/team.jsonl` (append-only)
+    - `shared-context/memory/pinned.jsonl` (append-only)
+
+    Kitchen’s Team Editor → Memory tab reads/writes these JSONL streams.
+
+    ### 2) Per-role continuity memory (agents)
+    Each role keeps its own continuity memory:
+    - `roles/<role>/memory/YYYY-MM-DD.md` (daily log)
+    - `roles/<role>/MEMORY.md` (curated long-term memory)
+
+    These files are what the role agent uses to “remember” decisions and context across sessions.
+
     ## Where to write things
     - Ticket = source of truth for a unit of work.
     - `notes/plan.md` + `shared-context/priorities.md` are **lead-curated**.
     - `notes/status.md` is **append-only** and updated after each work session (3–5 bullets).
-    - `shared-context/agent-outputs/` is **append-only** logs/output.
+
+    ## Outputs / artifacts
+    - Role-level raw output (append-only): `roles/<role>/agent-outputs/`
+    - Team-level raw output (append-only, optional): `shared-context/agent-outputs/`
+
+    Guardrail: do **not** create or rely on `roles/<role>/shared-context/**`.
 
     ## End-of-session checklist (everyone)
     After meaningful work:
     1) Update the ticket with what changed + how to verify + rollback.
     2) Add a dated note in the ticket `## Comments`.
     3) Append 3–5 bullets to `notes/status.md`.
-    4) Append logs/output to `shared-context/agent-outputs/`.
+    4) Append logs/output to `roles/<role>/agent-outputs/`.
 
   sharedContext.plan: |
     # Plan (lead-curated)
