@@ -178,14 +178,6 @@ Most users should focus on:
 - scaffolding teams (`openclaw recipes scaffold-team ...`)
 - running the file-first workflow (dispatch → backlog → in-progress → testing → done)
 
-## Goals
-- ~~Release Clawmarket, https://github.com/JIGGAI/ClawMarket, public url https://clawkitchen.ai~~
-- ~~Release ClawKitchen, https://github.com/JIGGAI/ClawKitchen~~
-- ~~Merge at least 1 community pull request~~
-- Daily shipping/pull requests of ClawRecipes features
-- Improve recipes with more detailed agent files
-- Add ability to install skills for agents through ClawKitchen
-
 ## License
 
 ClawRecipes is licensed under **Apache-2.0**.
