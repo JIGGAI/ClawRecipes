@@ -397,6 +397,7 @@ files: []
 
         // Team memory + shared-context starter files
         expect(await fs.readFile(path.join(res.teamDir, "shared-context", "memory", "team.jsonl"), "utf8")).toBeDefined();
+        expect(await fs.readFile(path.join(res.teamDir, "shared-context", "memory", "pinned.jsonl"), "utf8")).toBeDefined();
         expect(await fs.readFile(path.join(res.teamDir, "shared-context", "DECISIONS.md"), "utf8")).toContain("# Decisions");
         expect(await fs.readFile(path.join(res.teamDir, "shared-context", "GLOSSARY.md"), "utf8")).toContain("# Glossary");
 
@@ -406,6 +407,16 @@ files: []
         expect(await fs.readFile(path.join(res.teamDir, "notes", "status.md"), "utf8")).toContain("# Status");
         expect(await fs.readFile(path.join(res.teamDir, "shared-context", "priorities.md"), "utf8")).toContain("# Priorities");
         expect(await fs.readFile(path.join(res.teamDir, "shared-context", "agent-outputs", "README.md"), "utf8")).toContain("Agent outputs");
+
+        // Per-role continuity + outputs
+        const yyyyMmDd = new Date().toISOString().slice(0, 10);
+        const leadDir = path.join(res.teamDir, "roles", "lead");
+        expect(await fs.readFile(path.join(leadDir, "MEMORY.md"), "utf8")).toContain("# MEMORY");
+        expect(await fs.readFile(path.join(leadDir, "memory", `${yyyyMmDd}.md`), "utf8")).toContain(yyyyMmDd);
+        expect(await fs.readFile(path.join(leadDir, "agent-outputs", "README.md"), "utf8")).toContain("Agent outputs");
+
+        // Guardrail: do not create role-local shared-context by default
+        await expect(fs.stat(path.join(leadDir, "shared-context"))).rejects.toThrow();
       }
     } finally {
       await fs.rm(base, { recursive: true, force: true });
