@@ -163,7 +163,7 @@ agents:
     tools:
       profile: "coding"
       allow: ["group:fs", "group:runtime", "group:automation"]
-      deny: ["runtime.exec"]
+      deny: []
 
 templates:
   sharedContext.ticketFlow: |

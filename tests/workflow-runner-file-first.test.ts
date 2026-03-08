@@ -4,11 +4,16 @@ import os from "node:os";
 import path from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
+const toolCalls: Array<{ tool: string; args?: any; action?: string }> = [];
+
 // The workflow runner/worker uses toolsInvoke for message sends (human approval) and llm-task.
 // For unit tests, mock it so we can exercise approval + revision flows without a gateway.
 vi.mock("../src/toolsInvoke", () => {
   return {
-    toolsInvoke: async () => ({ ok: true }),
+    toolsInvoke: async (api: any, req: any) => {
+      toolCalls.push({ tool: String(req?.tool ?? ""), args: req?.args, action: req?.action });
+      return { ok: true, mocked: true };
+    },
   };
 });
 
@@ -27,9 +32,9 @@ async function mkTmpWorkspace() {
   return { base, workspaceRoot };
 }
 
-function stubApi(): OpenClawPluginApi {
-  // Only api.config is used by workflow runner/worker in these tests.
-  return { config: {} } as any;
+function stubApi(extra?: { pluginConfig?: any }): OpenClawPluginApi {
+  // Only api.config + api.pluginConfig are used by workflow runner/worker in these tests.
+  return { config: {}, ...(extra ?? {}) } as any;
 }
 
 describe("workflow-runner (file-first + runner/worker)", () => {
@@ -168,6 +173,80 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       // Sanity: we should NOT have created a literal {{run.id}} directory.
       const literal = path.join(teamDir, "shared-context", "workflow-runs", "{{run.id}}", "artifacts", "fs-append.log");
       await expect(fs.stat(literal)).rejects.toThrow();
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+
+  test("worker executes tool runtime.exec via exec tool (allowlisted)", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-exec";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      toolCalls.length = 0;
+
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "exec.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+
+      const workflow = {
+        id: "exec",
+        name: "Demo: runtime.exec via worker",
+        meta: {
+          execAllowBins: ["echo"],
+          execTimeoutSeconds: 5,
+        },
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "do-exec",
+            kind: "tool",
+            assignedTo: { agentId: "agent-a" },
+            action: {
+              tool: "runtime.exec",
+              args: {
+                command: "echo hello",
+              },
+            },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "do-exec", on: "success" },
+          { from: "do-exec", to: "end", on: "success" },
+        ],
+      };
+
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi({ pluginConfig: { workflowRunner: { allowRuntimeExec: true } } });
+
+      const enq = await enqueueWorkflowRun(api, { teamId, workflowFile });
+      expect(enq.ok).toBe(true);
+
+      const r1 = await runWorkflowRunnerOnce(api, { teamId });
+      expect(r1.ok).toBe(true);
+
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 5, workerId: "worker-a" });
+      expect(w1.ok).toBe(true);
+
+      const runRaw = await fs.readFile(enq.runLogPath, "utf8");
+      const run = JSON.parse(runRaw) as { status: string };
+      expect(run.status).toBe("completed");
+
+      // The worker should have routed runtime.exec through OpenClaw's exec tool.
+      expect(toolCalls.some((c) => c.tool === "exec")).toBe(true);
     } finally {
       process.env.OPENCLAW_WORKSPACE = prevWorkspace;
       await fs.rm(base, { recursive: true, force: true });
