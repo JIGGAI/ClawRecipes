@@ -252,7 +252,6 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       await fs.rm(base, { recursive: true, force: true });
     }
   });
-
   test("needs_revision clears downstream completion so revised node re-enqueues downstream nodes", async () => {
     const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
 
