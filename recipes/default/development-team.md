@@ -13,6 +13,12 @@ cronJobs:
     message: |
       Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md.
 
+      QA-gated PR rule:
+      - Dev/DevOps must NOT open PRs.
+      - QA (test) verifies first.
+      - After `QA: PASS`, ticket stays in work/testing but is assigned `Owner: lead` (ready-for-pr).
+      - Lead opens PR only for testing-lane tickets owned by lead with QA PASS evidence.
+
       CWD guardrail (team root): run:
         cd "$(bash ../../scripts/team-root.sh 2>/dev/null || bash ./scripts/team-root.sh)"
       before any relative-path commands (e.g. work/, notes/, scripts/).
@@ -29,7 +35,13 @@ cronJobs:
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-dev"
-    message: "Safe-idle loop: check for dev-assigned tickets/runs, make small progress, and write outputs under roles/dev/agent-outputs/."
+    message: |
+      Safe-idle loop: work dev-assigned tickets.
+
+      Constraints:
+      - Do NOT open PRs. Dev hands off to QA by moving ticket to work/testing and setting Owner=test.
+      - Ensure ticket contains `## PR-ready` (repo + branch + sha) + verification steps.
+
     enabledByDefault: true
 
   - id: devops-work-loop
@@ -45,7 +57,16 @@ cronJobs:
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-test"
-    message: "Safe-idle loop: drain work/testing tickets; follow verification steps; on fail write repro + handoff; write outputs under roles/test/agent-outputs/."
+    message: |
+      Safe-idle loop: drain work/testing tickets assigned to test.
+
+      Workflow:
+      - On PASS: keep ticket in work/testing but set Owner=lead (ready-for-pr) and add a `QA: PASS` comment + evidence.
+      - On FAIL: move back to work/in-progress, set Owner=dev, add `QA: FAIL` + repro.
+
+      Constraints:
+      - QA happens BEFORE PR creation.
+
     enabledByDefault: true
 
   # Optional generic executor loop (off by default): can be enabled later if you want an extra catch-all.
@@ -62,6 +83,13 @@ cronJobs:
       before any relative-path commands (e.g. work/, notes/, scripts/).
 
       Guardrail: run ./scripts/ticket-hygiene-dev.sh each loop; if it fails, fix lane/status/owner mismatches before proceeding (assignment stubs are deprecated).
+
+      LEAD-OWNED TICKETS RULE (must follow)
+      - Do NOT automatically move a ticket just because Owner=lead “expects backlog”.
+      - If you encounter a lead-owned ticket in work/in-progress or work/testing that seems misassigned:
+        - LEAVE IT IN PLACE.
+        - Add a dated comment to the ticket explaining what you observed and what should change.
+        - If the ticket failed QA, set Owner=dev (and keep it in work/in-progress).
 
     enabledByDefault: false
 
@@ -118,7 +146,14 @@ cronJobs:
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-test"
-    message: "Testing lane loop: drain work/testing tickets; follow verification steps; complete on pass; on fail write repro + handoff."
+    message: |
+      Testing lane loop (QA gate): drain work/testing tickets.
+
+      Rules:
+      - On PASS: keep lane as work/testing, set Owner=lead, and add `QA: PASS` + evidence.
+      - On FAIL: move back to work/in-progress, set Owner=dev, add `QA: FAIL` + repro.
+      - Do NOT move tickets to DONE on PASS. Lead will open PR after PASS.
+
     enabledByDefault: false
 
   - id: backup-devteam-work
@@ -175,7 +210,11 @@ templates:
         "test": "testing",
         "qa": "testing"
       },
-      "defaultLane": "in-progress"
+      "defaultLane": "in-progress",
+      "notes": [
+        "Ready-for-PR state lives in work/testing but uses Owner: lead after QA PASS.",
+        "ticket-hygiene.sh special-cases lead in testing to allow this without failing hygiene."
+      ]
     }
 
   sharedContext.memoryPolicy: |
@@ -229,6 +268,80 @@ templates:
     2) Add a dated note in the ticket `## Comments`.
     3) Append 3–5 bullets to `notes/status.md`.
     4) Append logs/output to `roles/<role>/agent-outputs/`.
+
+  tickets: |
+    # Tickets — {{teamId}}
+
+    ## Workflow stages
+    - backlog → in-progress → testing → done
+
+    ## Roles / responsibility
+    - dev/devops: implement + handoff to test (NO PR creation)
+    - test: verify + record PASS/FAIL
+    - lead: creates PR **only after QA PASS**
+
+    ## “Ready for PR” (no extra lane)
+    This team does **not** add a separate lane.
+
+    Instead, a ticket is considered **ready for PR** when:
+    - it is in `work/testing/`
+    - `Owner: lead`
+    - ticket contains a `QA: PASS` comment + evidence
+
+    ## Handoff rules
+
+    ### Dev → Test
+    When implementation is ready:
+    - Move ticket to `work/testing/`
+    - Set `Owner: test`
+    - Ensure the ticket contains:
+      - verification steps (“How to test”)
+      - links to branch/commit under `## PR-ready`
+
+    ### Test → Lead (QA PASS)
+    On PASS:
+    - Add a dated ticket comment: `QA: PASS` + evidence
+    - Keep lane as `work/testing/`
+    - Set `Owner: lead`
+
+    On FAIL:
+    - Add `QA: FAIL` + repro
+    - Move ticket back to `work/in-progress/` and set `Owner: dev`
+
+    ### Lead → PR
+    Lead creates a PR only after QA PASS.
+    When creating the PR:
+    - Link the PR URL in the ticket
+    - Add `[pr-watcher:close]` marker if the ticket is eligible to auto-move to DONE on merge.
+
+    ## Required fields
+    Each ticket must include:
+    - Owner: lead|dev|devops|test
+    - Status: backlog|in-progress|testing|done
+    - Context
+    - Requirements
+    - Acceptance criteria
+
+
+  sharedContext.qaAccess: |
+    # QA Access — {{teamId}}
+
+    This file exists to prevent QA tickets being bounced due to missing environment access.
+
+    ## ClawKitchen (hosted)
+    - URL: http://localhost:7777
+
+    ### HTTP Basic Auth
+    - Username: `kitchen`
+    - Password: <AUTH_TOKEN> (obtain from your deployment secret / host config)
+
+    ### QA token bootstrap
+    Open once to set QA cookie:
+    - http://localhost:7777/tickets?qaToken=<QA_TOKEN>
+
+    ## Notes
+    - Do NOT commit real credentials to git.
+    - When a ticket requires hosted Kitchen verification, link this file from the ticket.
 
   sharedContext.plan: |
     # Plan (lead-curated)
@@ -342,6 +455,12 @@ templates:
     expected_lane_for_owner() {
       local owner="$1"
       local currentLane="$2"
+
+      # Special-case: lead may own BACKLOG (triage) OR TESTING (ready-for-pr) without hygiene failure.
+      if [[ "$owner" == "lead" && ( "$currentLane" == "backlog" || "$currentLane" == "testing" ) ]]; then
+        echo "$currentLane"
+        return 0
+      fi
 
       # If jq or the mapping file isn't available, do not block progress.
       if [[ ! -f "$flow" ]]; then
@@ -474,6 +593,12 @@ templates:
     expected_lane_for_owner() {
       local owner="$1"
       local currentLane="$2"
+
+      # Special-case: lead may own BACKLOG (triage) OR TESTING (ready-for-pr) without hygiene failure.
+      if [[ "$owner" == "lead" && ( "$currentLane" == "backlog" || "$currentLane" == "testing" ) ]]; then
+        echo "$currentLane"
+        return 0
+      fi
 
       # If jq or the mapping file isn't available, do not block progress.
       if [[ ! -f "$flow" ]]; then
@@ -619,6 +744,12 @@ templates:
       local owner="$1"
       local currentLane="$2"
 
+      # Special-case: lead may own BACKLOG (triage) OR TESTING (ready-for-pr) without hygiene failure.
+      if [[ "$owner" == "lead" && ( "$currentLane" == "backlog" || "$currentLane" == "testing" ) ]]; then
+        echo "$currentLane"
+        return 0
+      fi
+
       # If jq or the mapping file isn't available, do not block progress.
       if [[ ! -f "$flow" ]]; then
         echo "$currentLane"
@@ -747,6 +878,12 @@ templates:
     expected_lane_for_owner() {
       local owner="$1"
       local currentLane="$2"
+
+      # Special-case: lead may own BACKLOG (triage) OR TESTING (ready-for-pr) without hygiene failure.
+      if [[ "$owner" == "lead" && ( "$currentLane" == "backlog" || "$currentLane" == "testing" ) ]]; then
+        echo "$currentLane"
+        return 0
+      fi
 
       # If jq or the mapping file isn't available, do not block progress.
       if [[ ! -f "$flow" ]]; then
@@ -921,8 +1058,10 @@ templates:
     - Curate `notes/plan.md` and `shared-context/priorities.md`.
     - Keep `notes/status.md` updated.
     - When work is ready for QA, move the ticket to `work/testing/` and assign it to the tester.
-    - Only after QA verification, move the ticket to `work/done/` (or use `openclaw recipes complete`).
-    - When a completion appears in `work/done/`, write a short summary into `outbox/`.
+    - When QA passes a ticket, QA will keep it in `work/testing/` but set `Owner: lead` (ready-for-pr).
+    - As lead, create the PR **only** for testing-lane tickets with `Owner: lead` + `QA: PASS` evidence.
+      - On PR creation, link PR in the ticket and add `[pr-watcher:close]` if eligible for auto-close on merge.
+    - After PR merge, pr-watcher may move ticket to DONE if `[pr-watcher:close]` is present and tasks are complete.
 
   dev.soul: |
     # SOUL.md
@@ -934,6 +1073,11 @@ templates:
     # AGENTS.md
 
     Shared workspace: {{teamDir}}
+
+    ## Core workflow (QA gated)
+    - Your job: implement changes and hand off to QA.
+    - You MUST NOT open pull requests. PR creation is owned by the team lead after QA PASS.
+    - When work is ready: move the ticket to `work/testing/` and set `Owner: test`.
 
     ## Guardrails (read → act → write)
 
@@ -978,10 +1122,15 @@ templates:
 
     4) Do the work.
 
-    5) Write a completion report into `work/done/` with:
-       - What changed
-       - How to test
-       - Any follow-ups
+    5) Handoff to QA (required):
+       - Ensure the ticket has verification steps (“How to test”).
+       - Add a `## PR-ready` section with repo + branch + commit SHA (if known).
+       - Move the ticket to `work/testing/`.
+       - Set `Owner: test`.
+
+    Notes:
+    - Do NOT move tickets to `work/done/`.
+    - Do NOT open PRs. Lead opens PR only after QA PASS.
 
   devops.soul: |
     # SOUL.md
@@ -1144,6 +1293,11 @@ templates:
 
     Shared workspace: {{teamDir}}
 
+    ## Core workflow (QA gated)
+    - You verify work before any PR is created.
+    - If the ticket passes: keep it in `work/testing/` but set `Owner: lead` (this is the “ready for PR” state).
+    - If it fails: move it back to `work/in-progress/` and set `Owner: dev`.
+
     ## Guardrails (read → act → write)
 
     Before verifying:
@@ -1181,10 +1335,14 @@ templates:
        - Write a short verification note (or failures) into the ticket itself or a sibling note.
 
     3) If it passes:
-       - Move the ticket to `work/done/` (or ask the lead to do it).
+       - Add a dated ticket comment: `QA: PASS` + evidence (links, logs, screenshots as applicable).
+       - Keep the ticket in `work/testing/`.
+       - Set `Owner: lead` (this is the “ready for PR” state).
 
     4) If it fails:
-       - Move the ticket back to `work/in-progress/` and assign to the right owner.
+       - Add a dated ticket comment: `QA: FAIL` + repro + what to fix.
+       - Move the ticket back to `work/in-progress/`.
+       - Set `Owner: dev`.
 
     ## Cleanup after testing
 
@@ -1250,6 +1408,9 @@ files:
   # Memory / continuity (team-level)
   - path: notes/memory-policy.md
     template: sharedContext.memoryPolicy
+    mode: createOnly
+  - path: notes/QA_ACCESS.md
+    template: sharedContext.qaAccess
     mode: createOnly
   - path: shared-context/MEMORY_PLAN.md
     template: sharedContext.memoryPlan
