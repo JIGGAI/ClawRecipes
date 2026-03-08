@@ -464,7 +464,12 @@ files:
 
         const leadDir = path.join(res.teamDir, "roles", "lead");
         const devDir = path.join(res.teamDir, "roles", "dev");
-        expect(await fs.readFile(path.join(leadDir, "HEARTBEAT.md"), "utf8")).toContain("Checklist");
+
+        // Lead heartbeat reads team-root HEARTBEAT.md
+        expect(await fs.readFile(path.join(res.teamDir, "HEARTBEAT.md"), "utf8")).toContain("## Checklist");
+
+        // Non-lead roles do not get a role-local HEARTBEAT.md unless explicitly enabled.
+        await expect(fs.readFile(path.join(leadDir, "HEARTBEAT.md"), "utf8")).rejects.toThrow();
         await expect(fs.readFile(path.join(devDir, "HEARTBEAT.md"), "utf8")).rejects.toThrow();
       }
     } finally {

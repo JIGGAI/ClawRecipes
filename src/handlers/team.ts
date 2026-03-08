@@ -84,6 +84,25 @@ async function writeTeamBootstrapFiles(opts: {
     mode
   );
 
+  // Heartbeat checklist (team-root; lead-owned). Quiet by default.
+  // NOTE: this file is read frequently by the lead heartbeat runner.
+  await writeFileSafely(
+    path.join(teamDir, "HEARTBEAT.md"),
+    `# HEARTBEAT — ${teamId}
+
+Keep this file small. It is loaded frequently.
+
+Default behavior: **quiet**. If there is nothing to report, do nothing.
+
+## Checklist
+- [ ] Check \`inbox/\` for new requests
+- [ ] Scan \`work/in-progress/\` for blocked/stuck tickets
+- [ ] If anything materially changed, append a dated bullet to \`notes/status.md\` (append-only)
+- [ ] If nothing changed, reply \`HEARTBEAT_OK\`
+`,
+    mode,
+  );
+
   // Append-only artifacts produced by agents
   await ensureDir(path.join(sharedContextDir, "agent-outputs"));
   await writeFileSafely(
@@ -197,15 +216,16 @@ async function scaffoldTeamAgents(
       agentName,
       update: overwrite,
       filesRootDir: roleDir,
-      // IMPORTANT: per-role workspace so the Kitchen UI / agent files panel reads the role files.
-      workspaceRootDir: roleDir,
+      // IMPORTANT: non-lead roles use per-role workspaces so the Kitchen UI / agent files panel reads role files.
+      // Lead uses the team root so the lead heartbeat reads team-root HEARTBEAT.md.
+      workspaceRootDir: role === "lead" ? teamDir : roleDir,
       vars: { teamId, teamDir, role, agentId, agentName, roleDir },
     });
 
 
-    // Heartbeat scaffold (opt-in): drop a minimal HEARTBEAT.md in the role workspace.
-    // This file is intentionally tiny; it is read on every heartbeat turn.
-    if (heartbeatEnabledRoles.has(String(role))) {
+    // Heartbeat scaffold (opt-in for non-lead roles): drop a minimal HEARTBEAT.md in the role workspace.
+    // The lead uses the team-root HEARTBEAT.md.
+    if (role !== "lead" && heartbeatEnabledRoles.has(String(role))) {
       const mode = overwrite ? "overwrite" : "createOnly";
       const hb = `# HEARTBEAT — ${teamId} (${role})
 
