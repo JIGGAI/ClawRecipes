@@ -8,7 +8,7 @@ import { toolsInvoke } from '../../toolsInvoke';
 import { loadOpenClawConfig } from '../recipes-config';
 import type { Workflow, WorkflowEdge, WorkflowLane, WorkflowNode } from './workflow-types';
 import { dequeueNextTask, enqueueTask } from './workflow-queue';
-import { outboundPublish } from './outbound-client';
+import { outboundPublish, type OutboundApproval, type OutboundMedia, type OutboundPlatform } from './outbound-client';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v == 'object' && !Array.isArray(v);
@@ -791,7 +791,7 @@ async function executeWorkflowNodes(opts: {
         if (toolName === 'runtime.exec') {
           // Extra safety gate: runtime.exec must be explicitly enabled (dev/testing only).
           // IMPORTANT: keep this config-driven (not env-driven) to avoid install-time security warnings.
-          const pluginCfg = asRecord((api as any).pluginConfig);
+          const pluginCfg = asRecord(asRecord(api)['pluginConfig']);
           const workflowRunnerCfg = asRecord(pluginCfg['workflowRunner']);
           const allowRuntimeExec = workflowRunnerCfg['allowRuntimeExec'] === true;
           if (!allowRuntimeExec) {
@@ -863,7 +863,7 @@ async function executeWorkflowNodes(opts: {
           // Outbound posting (local-first v0.1): publish via an external HTTP service.
           // IMPORTANT: this runner-native tool intentionally does NOT read draft text from disk.
           // Provide `args.text` directly from upstream LLM nodes, and (optionally) an approval receipt.
-          const pluginCfg = asRecord((api as any).pluginConfig);
+          const pluginCfg = asRecord(asRecord(api)['pluginConfig']);
           const outboundCfg = asRecord(pluginCfg['outbound']);
 
           const baseUrl = String(outboundCfg['baseUrl'] ?? '').trim();
@@ -888,11 +888,11 @@ async function executeWorkflowNodes(opts: {
           const result = await outboundPublish({
             baseUrl,
             apiKey,
-            platform: platform as any,
+            platform: platform as OutboundPlatform,
             idempotencyKey,
             request: {
               text,
-              media: media as any,
+              media: media as unknown as OutboundMedia[],
               runContext: {
                 teamId: String(runContext.teamId ?? ''),
                 workflowId: String(runContext.workflowId ?? workflowId),
@@ -900,7 +900,7 @@ async function executeWorkflowNodes(opts: {
                 nodeId: String(runContext.nodeId ?? node.id),
                 ticketPath: typeof runContext.ticketPath === 'string' ? runContext.ticketPath : undefined,
               },
-              approval: approval as any,
+              approval: approval as unknown as OutboundApproval,
               dryRun,
             },
           });
@@ -2188,7 +2188,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           // Runner-native runtime.exec (worker-side):
           // - gated by plugin config + workflow meta allowlists
           // - executed via OpenClaw's `exec` tool (not local child_process)
-          const pluginCfg = asRecord((api as any).pluginConfig);
+          const pluginCfg = asRecord(asRecord(api)['pluginConfig']);
           const workflowRunnerCfg = asRecord(pluginCfg['workflowRunner']);
           const allowRuntimeExec = workflowRunnerCfg['allowRuntimeExec'] === true;
           if (!allowRuntimeExec) {
