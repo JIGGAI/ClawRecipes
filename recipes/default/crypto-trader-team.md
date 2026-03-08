@@ -62,6 +62,8 @@ templates:
   sharedContext.memoryPolicy: |
     # Team Memory Policy (File-first)
 
+    Quick link: see `shared-context/MEMORY_PLAN.md` for the canonical “what goes where” map.
+
     This team is run **file-first**. Chat is not the system of record.
 
     ## Where to write things
@@ -86,6 +88,38 @@ templates:
     # Status (append-only)
 
     - (empty)
+
+  sharedContext.memoryPlan: |
+    # Memory Plan (Team)
+
+    This team is file-first. Chat is not the system of record.
+
+    ## Source of truth
+    - Tickets (`work/*/*.md`) are the source of truth for a unit of work.
+
+    ## Team knowledge memory (Kitchen UI)
+    - `shared-context/memory/team.jsonl` (append-only)
+    - `shared-context/memory/pinned.jsonl` (append-only, curated/high-signal)
+
+    Policy:
+    - Lead may pin to `pinned.jsonl`.
+    - Non-leads propose memory items via ticket comments or role outputs; lead pins.
+
+    ## Per-role continuity memory (agent startup)
+    - `roles/<role>/MEMORY.md` (curated long-term)
+    - `roles/<role>/memory/YYYY-MM-DD.md` (daily log)
+
+    ## Plan vs status (team coordination)
+    - `notes/plan.md` + `shared-context/priorities.md` are lead-curated
+    - `notes/status.md` is append-only roll-up (everyone appends)
+
+    ## Outputs / artifacts
+    - `roles/<role>/agent-outputs/` (append-only)
+    - `shared-context/agent-outputs/` (optional team-level)
+
+    ## Role work loop contract (safe-idle)
+    - No-op unless explicit queued work exists for the role.
+    - If work happens, write back in order: ticket → `notes/status.md` → `roles/<role>/agent-outputs/`.
 
   sharedContext.priorities: |
     # Priorities (lead-curated)

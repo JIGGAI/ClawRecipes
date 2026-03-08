@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * CI/guard: bundled team recipes must include "## Files" and "## Tooling" in the markdown body.
+ * CI/guard: bundled team recipes must include required headings and memory scaffolds.
  *
  * We only check recipes/default/*.md where frontmatter kind: team.
  */
@@ -28,6 +28,16 @@ function hasRequiredHeadings(body) {
   return body.includes("## Files") && body.includes("## Tooling");
 }
 
+function hasMemoryPlanScaffold(frontmatter) {
+  // These are scaffolding requirements for bundled team recipes.
+  return (
+    frontmatter.includes("shared-context/MEMORY_PLAN.md") &&
+    frontmatter.includes("sharedContext.memoryPlan") &&
+    frontmatter.includes("Quick link: see `shared-context/MEMORY_PLAN.md`")
+  );
+}
+
+
 const root = path.join(__dirname, "..", "recipes", "default");
 const files = fs.readdirSync(root).filter((f) => f.endsWith(".md"));
 
@@ -38,8 +48,15 @@ for (const f of files) {
   const md = fs.readFileSync(full, "utf8");
   const { frontmatter, body } = splitFrontmatter(md, f);
   if (!isTeamRecipe(frontmatter)) continue;
+
   if (!hasRequiredHeadings(body)) {
     failures.push(`${f}: missing required headings (## Files and/or ## Tooling)`);
+  }
+
+  if (!hasMemoryPlanScaffold(frontmatter)) {
+    failures.push(
+      `${f}: missing MEMORY_PLAN scaffolding (expected: sharedContext.memoryPlan template, shared-context/MEMORY_PLAN.md scaffold, and quick link in notes/memory-policy.md template)`
+    );
   }
 }
 
@@ -48,4 +65,6 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("Bundled team recipe guard OK (all team recipes include ## Files and ## Tooling)");
+console.log(
+  "Bundled team recipe guard OK (all team recipes include ## Files/## Tooling + MEMORY_PLAN scaffolding)"
+);
