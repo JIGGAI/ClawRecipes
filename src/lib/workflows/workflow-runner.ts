@@ -9,6 +9,7 @@ import { loadOpenClawConfig } from '../recipes-config';
 import type { Workflow, WorkflowEdge, WorkflowLane, WorkflowNode } from './workflow-types';
 import { dequeueNextTask, enqueueTask } from './workflow-queue';
 import { outboundPublish, type OutboundApproval, type OutboundMedia, type OutboundPlatform } from './outbound-client';
+import { sanitizeOutboundPostText } from './outbound-sanitize';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v == 'object' && !Array.isArray(v);
@@ -172,17 +173,19 @@ function templateReplace(input: string, vars: Record<string, string>) {
 }
 
 function sanitizeDraftOnlyText(text: string): string {
-  const lines = String(text ?? '').split(/\r?\n/);
-  const kept = lines.filter((l) => !/\bdraft\s*only\b/i.test(l));
-  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  // Back-compat: older workflow nodes mention 'draft only'.
+  // New canonical sanitizer also strips other internal-only disclaimer lines.
+  return sanitizeOutboundPostText(text);
 }
 
 async function loadProposedPostTextFromPriorNode(opts: {
   runDir: string;
   nodeOutputsDir: string;
   priorNodeId: string;
+  platform?: string;
 }): Promise<string> {
   const { runDir, nodeOutputsDir, priorNodeId } = opts;
+  const platform = String(opts.platform ?? 'x').trim() || 'x';
 
   // Explicitly scope all reads to the run directory to avoid accidental broad workspace access.
   assertPathWithinDir(runDir, nodeOutputsDir, 'nodeOutputsDir');
@@ -203,16 +206,16 @@ async function loadProposedPostTextFromPriorNode(opts: {
   const rawText = String(outObj.text ?? '').trim();
   if (!rawText) return '';
 
-  // Try to parse { platforms: { x: { hook, body } } }.
+  // Try to parse { platforms: { <platform>: { hook, body } } }.
   try {
     const packet = JSON.parse(rawText) as unknown;
     const packetObj = (packet && typeof packet === 'object') ? (packet as Record<string, unknown>) : {};
     const platformsObj = (packetObj.platforms && typeof packetObj.platforms === 'object') ? (packetObj.platforms as Record<string, unknown>) : {};
-    const xObj = (platformsObj.x && typeof platformsObj.x === 'object') ? (platformsObj.x as Record<string, unknown>) : {};
+    const pObj = (platformsObj[platform] && typeof platformsObj[platform] === 'object') ? (platformsObj[platform] as Record<string, unknown>) : {};
 
-    const xHook = typeof xObj.hook === 'string' ? xObj.hook.trim() : '';
-    const xBody = typeof xObj.body === 'string' ? xObj.body.trim() : '';
-    const combined = [xHook, xBody].filter(Boolean).join('\n\n').trim();
+    const hook = typeof pObj.hook === 'string' ? pObj.hook.trim() : '';
+    const body = typeof pObj.body === 'string' ? pObj.body.trim() : '';
+    const combined = [hook, body].filter(Boolean).join('\n\n').trim();
     return combined || rawText;
   } catch {
     return rawText;
@@ -801,9 +804,9 @@ async function executeWorkflowNodes(opts: {
           const apiKey = String(outboundCfg['apiKey'] ?? '').trim();
           if (!baseUrl) throw new Error('outbound.post requires plugin config outbound.baseUrl');
           if (!apiKey) throw new Error('outbound.post requires plugin config outbound.apiKey');
-
           const platform = String(toolArgs.platform ?? '').trim();
-          const text = String(toolArgs.text ?? '');
+          const textRaw = String(toolArgs.text ?? '');
+          const text = sanitizeOutboundPostText(textRaw);
           const idempotencyKey = String(toolArgs.idempotencyKey ?? `${task.runId}:${node.id}`).trim();
           const runContext = asRecord(toolArgs.runContext);
           const approval = toolArgs.approval ? asRecord(toolArgs.approval) : undefined;
@@ -837,6 +840,78 @@ async function executeWorkflowNodes(opts: {
           });
 
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2), 'utf8');
+
+          const completedTs = new Date().toISOString();
+          await appendRunLog(runLogPath, (cur) => ({
+            ...cur,
+            nextNodeIndex: i + 1,
+            nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
+            events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
+            nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath) }],
+          }));
+          nodeStates[String(node.id)] = { status: 'success', ts: completedTs };
+
+          continue;
+        }
+
+        if (toolName === 'marketing.post_all') {
+          // Approval-gated posting helper: publish via the outbound service.
+          // Keep any plugin-local exec posting disabled; this path is runner-native + network-only.
+          const pluginCfg = asRecord(asRecord(api)['pluginConfig']);
+          const outboundCfg = asRecord(pluginCfg['outbound']);
+
+          const baseUrl = String(outboundCfg['baseUrl'] ?? '').trim();
+          const apiKey = String(outboundCfg['apiKey'] ?? '').trim();
+          if (!baseUrl) throw new Error('marketing.post_all requires plugin config outbound.baseUrl');
+          if (!apiKey) throw new Error('marketing.post_all requires plugin config outbound.apiKey');
+
+          const platforms = Array.isArray(toolArgs.platforms) ? toolArgs.platforms.map((p: unknown) => String(p).trim()).filter(Boolean) : [];
+          const draftsFromNode = String(toolArgs.draftsFromNode ?? '').trim();
+          const dryRun = toolArgs.dryRun === true;
+
+          if (!platforms.length) throw new Error('marketing.post_all requires args.platforms');
+          if (!draftsFromNode) throw new Error('marketing.post_all requires args.draftsFromNode');
+
+          const results: Record<string, unknown> = {};
+          for (const platform of platforms) {
+            // Best-effort: pull platform-specific draft from prior node output JSON.
+            const proposed = await loadProposedPostTextFromPriorNode({
+              runDir,
+              nodeOutputsDir,
+              priorNodeId: draftsFromNode,
+              platform,
+            } as any);
+
+            const text = sanitizeOutboundPostText(proposed);
+            if (!text) {
+              results[platform] = { ok: false, error: 'empty_post_after_sanitize' };
+              continue;
+            }
+
+            const idempotencyKey = `${task.runId}:${node.id}:${platform}`;
+            const workflowId = String(workflow.id ?? '');
+
+            const res = await outboundPublish({
+              baseUrl,
+              apiKey,
+              platform: platform as OutboundPlatform,
+              idempotencyKey,
+              request: {
+                text,
+                runContext: {
+                  teamId,
+                  workflowId,
+                  workflowRunId: task.runId,
+                  nodeId: node.id,
+                },
+                dryRun,
+              },
+            });
+
+            results[platform] = res;
+          }
+
+          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result: results }, null, 2), 'utf8');
 
           const completedTs = new Date().toISOString();
           await appendRunLog(runLogPath, (cur) => ({
