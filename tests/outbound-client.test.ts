@@ -17,12 +17,16 @@ beforeAll(async () => {
         expect(req.headers['idempotency-key']).toBe('idem-123');
 
         const parsed = JSON.parse(body) as any;
-        expect(parsed.text).toBe('hello');
+        expect(['hello', 'bad']).toContain(parsed.text);
         expect(parsed.runContext.teamId).toBe('team_1');
 
         res.statusCode = 200;
         res.setHeader('content-type', 'application/json');
-        res.end(JSON.stringify({ ok: true, platform: 'x', id: '1', url: 'https://x.com/1' }));
+        if (parsed.text === 'bad') {
+          res.end(JSON.stringify({ ok: false, platform: 'x', error: 'not_configured', message: 'missing token' }));
+        } else {
+          res.end(JSON.stringify({ ok: true, platform: 'x', id: '1', url: 'https://x.com/1' }));
+        }
       } catch (e: any) {
         res.statusCode = 500;
         res.setHeader('content-type', 'text/plain');
@@ -59,4 +63,20 @@ test('outboundPublish posts JSON with auth + idempotency header', async () => {
 
   expect(res.ok).toBe(true);
   expect(res.platform).toBe('x');
+});
+
+
+test('outboundPublish throws when service returns 200 but ok=false', async () => {
+  await expect(
+    outboundPublish({
+      baseUrl,
+      apiKey: 'test-key',
+      platform: 'x',
+      idempotencyKey: 'idem-123',
+      request: {
+        text: 'bad',
+        runContext: { teamId: 'team_1', workflowId: 'wf', workflowRunId: 'run', nodeId: 'node' },
+      },
+    }),
+  ).rejects.toThrow(/ok=false/);
 });

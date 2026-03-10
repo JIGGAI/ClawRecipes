@@ -85,9 +85,18 @@ export async function outboundPublish(args: {
     throw new Error(`Outbound publish failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
   }
 
+  let json: OutboundPublishResponse;
   try {
-    return JSON.parse(text) as OutboundPublishResponse;
+    json = JSON.parse(text) as OutboundPublishResponse;
   } catch {
     throw new Error(`Outbound publish returned non-JSON: ${text.slice(0, 500)}`);
   }
+
+  if (json && json.ok === false) {
+    const err = json.error ? ` (${json.error})` : '';
+    const msg = json.message ? ` — ${json.message}` : '';
+    throw new Error(`Outbound publish returned ok=false${err}${msg}`);
+  }
+
+  return json;
 }
