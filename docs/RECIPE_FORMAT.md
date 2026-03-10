@@ -1,25 +1,57 @@
 # Recipe format
 
-Recipes are Markdown files with YAML frontmatter.
+ClawRecipes recipes are Markdown files with YAML frontmatter.
 
-They can be:
-- **agent** recipes: scaffold a single agent workspace
-- **team** recipes: scaffold a team workspace and multiple agents
+They come in two flavors:
+- **agent** recipes — scaffold one agent workspace
+- **team** recipes — scaffold a shared team workspace plus role agents
 
-## File locations
+This doc explains the format you actually need to write.
+
+---
+
+## Where recipes live
+
 Recipes are discovered from:
-- Built-in: `recipes/default/*.md` inside this plugin
-- Workspace-local: `<openclawWorkspace>/recipes/*.md` (default). `<openclawWorkspace>` is your OpenClaw workspace root (typically `~/.openclaw/workspace` or the directory configured in OpenClaw)
+- built-in plugin recipes: `recipes/default/*.md`
+- workspace recipes: `~/.openclaw/workspace/recipes/*.md`
 
-## Frontmatter (common)
+You can inspect available recipes with:
+
+```bash
+openclaw recipes list
+openclaw recipes show development-team
+```
+
+---
+
+## Smallest useful recipe
+
+```md
+---
+id: project-manager
+name: Project Manager
+kind: agent
+version: 0.1.0
+description: A lightweight planning agent
+---
+
+# Project Manager
+
+This is a simple recipe.
+```
+
+---
+
+## Common frontmatter fields
+
 ```yaml
 ---
 id: development-team
 name: Development Team
-kind: team # or agent
+kind: team
 version: 0.1.0
-description: ...
-
+description: File-first engineering team
 requiredSkills:
   - some-skill
 optionalSkills:
@@ -27,86 +59,166 @@ optionalSkills:
 ---
 ```
 
-### `requiredSkills` / `optionalSkills`
-These are **ClawHub skill slugs**.
+### Field meanings
+- `id` — stable recipe id
+- `name` — human-readable name
+- `kind` — `agent` or `team`
+- `version` — recipe version string
+- `description` — short summary
+- `requiredSkills` — skills the recipe really needs
+- `optionalSkills` — nice-to-have skills
 
-They’re used by:
-- `openclaw recipes status` (detect missing skills)
-- `openclaw recipes install-skill <recipeId>` (install the listed skills)
+---
 
-## Agent recipes
-Agent recipes use templates + files.
+## Agent recipe example
+
+```md
+---
+id: project-manager
+name: Project Manager
+kind: agent
+version: 0.1.0
+description: Keeps plans and tasks organized
+
+templates:
+  soul: |
+    # SOUL.md
+
+    You are a project manager.
+
+  agents: |
+    # AGENTS.md
+
+    Track work clearly.
+
+files:
+  - path: SOUL.md
+    template: soul
+    mode: createOnly
+  - path: AGENTS.md
+    template: agents
+    mode: createOnly
+
+tools:
+  profile: coding
+  allow: ["group:fs", "group:web"]
+  deny: ["exec"]
+---
+
+# Project Manager
+```
+
+Scaffold it with:
+
+```bash
+openclaw recipes scaffold project-manager --agent-id pm --apply-config
+```
+
+---
+
+## Team recipe example
+
+```md
+---
+id: my-team
+name: My Team
+kind: team
+version: 0.1.0
+description: Tiny file-first team
+
+team:
+  teamId: my-team
+  name: My Team
+
+agents:
+  - role: lead
+    name: Team Lead
+  - role: dev
+    name: Developer
+
+templates:
+  lead.soul: |
+    # SOUL.md
+    You are the lead.
+
+  dev.soul: |
+    # SOUL.md
+    You are the developer.
+
+files:
+  - path: SOUL.md
+    template: soul
+    mode: createOnly
+---
+
+# My Team
+```
+
+Scaffold it with:
+
+```bash
+openclaw recipes scaffold-team my-team --team-id my-team --apply-config
+```
+
+---
+
+## Team ids and agent ids
+
+Important rule:
+- team ids used with `scaffold-team` must end with `-team` in many real setups / conventions
+
+Role agent ids normally become:
+
+```text
+<teamId>-<role>
+```
+
+Examples:
+- `development-team-lead`
+- `development-team-dev`
+- `development-team-test`
+
+---
+
+## Templates and files
 
 ### `templates`
-A string map of template keys → template bodies.
+`templates` is a string map of template names to template bodies.
 
 ### `files`
-Each file entry writes a file under the agent’s workspace:
+`files` tells ClawRecipes which files to write into the scaffolded workspace.
+
+Example:
 
 ```yaml
 files:
   - path: SOUL.md
     template: soul
-    mode: createOnly # or overwrite
+    mode: createOnly
+  - path: AGENTS.md
+    template: agents
+    mode: overwrite
 ```
 
-Template rendering:
-- Simple `{{var}}` replacement.
-- No conditionals / no code execution.
+### Template rendering
+Rendering is intentionally simple:
+- `{{var}}` replacement only
+- no conditionals
+- no code execution
 
-Common vars:
+Common variables include:
 - `agentId`
 - `agentName`
+- `teamId`
+- `teamDir`
 
-## Team recipes
-Team recipes define a team plus multiple agents:
+---
 
-```yaml
-team:
-  teamId: development-team
-  name: Development Team
+## Tools policy
 
-agents:
-  - role: lead
-    name: Dev Team Lead
-  - role: dev
-    name: Software Engineer
-  - role: devops
-    name: DevOps / SRE
-```
+Recipes can write tool policy into agent config when you scaffold with `--apply-config`.
 
-### Team ID and agent IDs
-- **Team IDs must end with `-team`** (enforced by `scaffold-team`).
-- Agent IDs default to: `<teamId>-<role>`
-
-### Template namespacing for teams
-For team recipes, file templates are namespaced by role:
-- `lead.soul`, `dev.soul`, etc.
-
-If a `files[].template` key does not contain a `.`, ClawRecipes prefixes it with `<role>.`.
-
-## Cron jobs (optional)
-Recipes can optionally declare cron jobs to be reconciled during `scaffold` / `scaffold-team`.
-
-```yaml
-cronJobs:
-  - id: daily-review
-    schedule: "0 14 * * 1-5"  # 5-field cron
-    message: "Daily review: summarize inbox + calendar for today."
-    enabledByDefault: false
-    timezone: "America/New_York"   # optional
-    channel: "telegram"            # optional (default: last)
-    to: "<chatId or phone>"        # optional
-    description: "Weekday daily review"
-```
-
-Notes:
-- `cronJobs[].id` must be **stable** within the recipe; it’s used for idempotent updates.
-- Safe default behavior is conservative: when `cronInstallation=prompt`, the prompt default is **No**.
-- When the user opts out, jobs are installed **disabled** (so they can be enabled later).
-
-## Tool policy
-Recipes can include tool policy, which is written into `agents.list[].tools` when `--apply-config` is used:
+Example:
 
 ```yaml
 tools:
@@ -118,10 +230,64 @@ tools:
   deny: []
 ```
 
-Team recipes can override tools per-agent via `agents[].tools`.
+Team recipes can also define per-agent tool policies.
+
+---
+
+## Cron jobs
+
+Recipes can optionally define cron jobs.
+
+Example:
+
+```yaml
+cronJobs:
+  - id: daily-review
+    schedule: "0 14 * * 1-5"
+    message: "Review inbox and summarize priorities."
+    enabledByDefault: false
+    timezone: "America/New_York"
+```
+
+Notes:
+- use valid **5-field cron**
+- keep `id` stable
+- ClawRecipes can install/reconcile these during scaffold
+
+---
+
+## Skill declarations
+
+If a recipe declares skills, you can install them with:
+
+```bash
+openclaw recipes install-skill my-team --yes
+```
+
+That installs the recipe’s declared `requiredSkills` / `optionalSkills`.
+
+---
 
 ## Recommended conventions
-- Keep `requiredSkills` minimal; use `optionalSkills` for “nice to have”.
-- For teams, use file-first work queues:
-  - `work/backlog/0001-...md` style tickets
-  - filename ordering is the queue ordering
+
+- keep recipes small and readable
+- keep `requiredSkills` minimal
+- use `optionalSkills` for non-essential extras
+- prefer file-first workflows
+- make the generated workspace obvious to a human reader
+- include enough commands/examples in generated docs that a user can actually run the system
+
+---
+
+## Good next steps
+
+After reading this, do one of these:
+
+```bash
+openclaw recipes show development-team
+openclaw recipes show workflow-runner-addon
+```
+
+Then read:
+- [TUTORIAL_CREATE_RECIPE.md](TUTORIAL_CREATE_RECIPE.md)
+- [BUNDLED_RECIPES.md](BUNDLED_RECIPES.md)

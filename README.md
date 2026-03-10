@@ -1,189 +1,307 @@
-# ClawRecipes (OpenClaw Recipes Plugin)
-
+# ClawRecipes
 
 <p align="center">
   <img src="https://github.com/JIGGAI/ClawRecipes/blob/main/clawcipes_cook.jpg" alt="ClawRecipes logo" width="240" />
 </p>
 
-ClawRecipes is an OpenClaw plugin that provides **CLI-first recipes** for scaffolding specialist agents and teams from Markdown.
+ClawRecipes is an **OpenClaw plugin** for scaffolding agents, teams, and file-first workflows from Markdown recipes.
 
-If you like durable workflows, ClawRecipes is built around a **file-first team workspace** (inbox/backlog/in-progress/testing/done) that plays nicely with git.
+If you want the short version:
+- install the plugin
+- scaffold a team or agent
+- dispatch work into tickets
+- run the file-first workflow
+- optionally use **ClawKitchen** for a UI on top
 
-For those who prefer a beautiful user interface, install **[ClawKitchen](https://github.com/JIGGAI/ClawKitchen)** — our latest plugin where you can add, remove, update, and fully manage your teams in one place. It includes an agile workflow board, a goal tracker, and cron management for convenience.
+ClawRecipes is **CLI-first**. It works without a UI.
+
+---
+
+## What ClawRecipes does
+
+ClawRecipes gives you:
+- **recipes** written in Markdown
+- **agent scaffolding** (`openclaw recipes scaffold`)
+- **team scaffolding** (`openclaw recipes scaffold-team`)
+- **file-first ticket workflow** (`dispatch → backlog → in-progress → testing → done`)
+- **workflow runner utilities** for scheduled / approval-gated workflows
+- **workspace recipe installs** from the marketplace
+- **ClawHub skill installs** for agents or teams
+
+It is built for people who want durable artifacts on disk, not hidden app state.
+
+---
 
 ## Quickstart
-### 1) Install
-#### Option A (preferred): install from npm
-When published on npm:
+
+### 1) Install the plugin
+
+**From npm**
 
 ```bash
 openclaw plugins install @jiggai/recipes
-
-# If you use a plugin allowlist (plugins.allow), you must explicitly trust it:
-openclaw config get plugins.allow --json
-# then add "recipes" and set it back, e.g.
-openclaw config set plugins.allow --json '["memory-core","telegram","recipes"]'
-
 openclaw gateway restart
 openclaw plugins list
 ```
 
-#### Option B: install from GitHub
+**From a local checkout**
+
 ```bash
-git clone https://github.com/JIGGAI/ClawRecipes.git ~/clawrecipes
-openclaw plugins install --link ~/clawrecipes
+git clone https://github.com/JIGGAI/ClawRecipes.git ~/ClawRecipes
+openclaw plugins install --link ~/ClawRecipes
 openclaw gateway restart
 openclaw plugins list
 ```
 
-### 2) List available recipes
+Then verify the commands exist:
+
 ```bash
 openclaw recipes list
 ```
 
+More install details: [docs/INSTALLATION.md](docs/INSTALLATION.md)
+
+---
+
+### 2) See what recipes you have
+
+```bash
+openclaw recipes list
+openclaw recipes show development-team
+openclaw recipes status development-team
+```
+
+---
+
 ### 3) Scaffold a team
+
 ```bash
 openclaw recipes scaffold-team development-team \
-  --team-id development-team-team \
-  --overwrite \
+  --team-id development-team \
+  --apply-config \
+  --overwrite
+```
+
+This creates:
+- `~/.openclaw/workspace-development-team/`
+- team roles under `roles/`
+- ticket lanes under `work/`
+- optional OpenClaw agent config entries (when `--apply-config` is used)
+
+---
+
+### 4) Put work into the system
+
+```bash
+openclaw recipes dispatch \
+  --team-id development-team \
+  --owner lead \
+  --request "Add a new clinic-team recipe"
+```
+
+Then work the ticket flow:
+
+```bash
+openclaw recipes tickets --team-id development-team
+openclaw recipes take --team-id development-team --ticket 0001 --owner dev
+openclaw recipes handoff --team-id development-team --ticket 0001
+openclaw recipes complete --team-id development-team --ticket 0001
+```
+
+---
+
+## Workflow support
+
+ClawRecipes supports **file-first workflows** with:
+- workflow JSON files under `shared-context/workflows/`
+- workflow runs under `shared-context/workflow-runs/`
+- runner / worker execution model
+- approval-gated steps
+- tool nodes
+- LLM nodes
+
+### Basic workflow commands
+
+```bash
+# Run one workflow manually
+openclaw recipes workflows run \
+  --team-id development-team \
+  --workflow-file marketing.workflow.json
+
+# Scheduler / runner
+openclaw recipes workflows runner-once --team-id development-team
+openclaw recipes workflows runner-tick --team-id development-team --concurrency 2
+
+# Worker / executor
+openclaw recipes workflows worker-tick \
+  --team-id development-team \
+  --agent-id development-team-lead
+```
+
+### Approval flow commands
+
+```bash
+# approve
+openclaw recipes workflows approve \
+  --team-id development-team \
+  --run-id <runId> \
+  --approved true
+
+# reject with note
+openclaw recipes workflows approve \
+  --team-id development-team \
+  --run-id <runId> \
+  --approved false \
+  --note "Tighten the X post hook"
+
+# resume an awaiting run
+openclaw recipes workflows resume \
+  --team-id development-team \
+  --run-id <runId>
+```
+
+See also:
+- [docs/WORKFLOW_RUNS_FILE_FIRST.md](docs/WORKFLOW_RUNS_FILE_FIRST.md)
+- [docs/OUTBOUND_POSTING.md](docs/OUTBOUND_POSTING.md)
+
+---
+
+## Important workflow posting note
+
+This is the part most people trip over.
+
+### What ships by default
+Published ClawRecipes builds are intentionally conservative:
+- **workflow posting side effects are not automatically turned on for every install**
+- the old local `marketing.post_all` posting path is **not something users should assume is active** after install
+
+### What you should do after installing
+If you want workflows that actually publish content:
+
+**Recommended path**
+- use `outbound.post`
+- configure an outbound posting service
+- keep approval gates in the workflow
+
+**Local-controller / patched path**
+- if you are using a local controller-specific patch for workflow posting, you must **apply that patch after install/update**
+- and you may need to **explicitly tell your assistant to turn workflow posting back on** for your local environment
+
+In plain English:
+- installing ClawRecipes does **not** mean "workflow posting is live"
+- you must either:
+  1. configure the supported outbound posting path, or
+  2. reapply your local posting patch after install/update
+
+If you are using RJ's local controller flow, document and keep your patch handy.
+
+---
+
+## Common commands
+
+### Recipes
+
+```bash
+openclaw recipes list
+openclaw recipes show development-team
+openclaw recipes install clinic-team
+```
+
+### Agents and teams
+
+```bash
+# single agent
+openclaw recipes scaffold project-manager --agent-id pm --apply-config
+
+# team
+openclaw recipes scaffold-team development-team --team-id development-team --apply-config
+
+# add a role into an existing team
+openclaw recipes add-role \
+  --team-id development-team \
+  --role workflow-runner \
+  --recipe workflow-runner-addon \
   --apply-config
 ```
 
-### 4) Dispatch a request into work artifacts
+### Ticket workflow
+
 ```bash
-openclaw recipes dispatch \
-  --team-id development-team-team \
-  --request "Add a new recipe for a customer-support team" \
-  --owner lead
+openclaw recipes tickets --team-id development-team
+openclaw recipes move-ticket --team-id development-team --ticket 0007 --to in-progress
+openclaw recipes assign --team-id development-team --ticket 0007 --owner dev
+openclaw recipes take --team-id development-team --ticket 0007 --owner dev
+openclaw recipes handoff --team-id development-team --ticket 0007 --tester test
+openclaw recipes complete --team-id development-team --ticket 0007
+openclaw recipes cleanup-closed-assignments --team-id development-team
 ```
 
-## Commands (high level)
-- `openclaw recipes list|show|status`
-- `openclaw recipes scaffold` (agent → `workspace-<agentId>` + writes workspace recipe `~/.openclaw/workspace/recipes/<agentId>.md` by default)
-- `openclaw recipes scaffold-team` (team → `workspace-<teamId>` + `roles/<role>/` + writes workspace recipe `~/.openclaw/workspace/recipes/<teamId>.md` by default)
-- `openclaw recipes install-skill <idOrSlug> [--yes] [--global|--agent-id <id>|--team-id <id>]` (skills: global or scoped)
-- `openclaw recipes install <slug>` (marketplace recipe)
-- `openclaw recipes bind|unbind|bindings` (multi-agent routing)
-- `openclaw recipes dispatch ...` (request → inbox + ticket + assignment)
-- `openclaw recipes tickets|move-ticket|assign|take|handoff|complete` (file-first ticket workflow)
-- `openclaw recipes cleanup-workspaces` (safe cleanup of temporary test/scaffold workspaces)
+### Bindings
 
-For full details, see `docs/COMMANDS.md`.
+```bash
+openclaw recipes bindings
+openclaw recipes bind --agent-id dev --channel telegram --peer-kind dm --peer-id 6477250615
+openclaw recipes unbind --agent-id dev --channel telegram --peer-kind dm --peer-id 6477250615
+```
 
-## Configuration
-The plugin supports these config keys (with defaults):
-- `workspaceRecipesDir` (default: `recipes`)
-- `workspaceAgentsDir` (default: `agents`)
-- `workspaceSkillsDir` (default: `skills`)
-- `workspaceTeamsDir` (default: `teams`)
-- `autoInstallMissingSkills` (default: `false`)
-- `confirmAutoInstall` (default: `true`)
-- `cronInstallation` (default: `prompt`; values: `off|prompt|on`)
+### Cleanup / removal
 
-Cron note:
-- You do **not** enable cron via `tools.cron` in `openclaw.json` (that key is not part of the config schema).
-- ClawRecipes reconciles recipe cron jobs via the Gateway `cron.*` RPC surface when available; otherwise it **warns and skips** (scaffold/team creation must still succeed).
+```bash
+openclaw recipes cleanup-workspaces
+openclaw recipes cleanup-workspaces --prefix smoke- --yes
+openclaw recipes remove-team --team-id development-team --plan --json
+openclaw recipes remove-team --team-id development-team --yes
+```
 
-Config schema is defined in `openclaw.plugin.json`.
+Full reference: [docs/COMMANDS.md](docs/COMMANDS.md)
 
-## Documentation
-**For users:**
-- [Installation](docs/INSTALLATION.md) — install the plugin
-- [Agents & skills](docs/AGENTS_AND_SKILLS.md) — mental model, tool policies
-- [Tutorial](docs/TUTORIAL_CREATE_RECIPE.md) — create your first recipe
-- [Commands](docs/COMMANDS.md) — full command reference
-- [Team workflow](docs/TEAM_WORKFLOW.md) — file-first workflow
+---
 
-**For contributors:**
-- [Architecture](docs/ARCHITECTURE.md) — codebase structure
-- [Contributing](CONTRIBUTING.md) — setup, tests, PR workflow
+## Recommended docs order for humans
+
+If you are new, read these in order:
+
+1. [Installation](docs/INSTALLATION.md)
+2. [Commands](docs/COMMANDS.md)
+3. [Team workflow](docs/TEAM_WORKFLOW.md)
+4. [Workflow runs](docs/WORKFLOW_RUNS_FILE_FIRST.md)
+5. [Outbound posting](docs/OUTBOUND_POSTING.md)
+
+If you are building recipes:
+
+1. [Recipe format](docs/RECIPE_FORMAT.md)
+2. [Create recipe tutorial](docs/TUTORIAL_CREATE_RECIPE.md)
+3. [Bundled recipes](docs/BUNDLED_RECIPES.md)
+
+If you are contributing to the codebase:
+
+1. [Architecture](docs/ARCHITECTURE.md)
+2. [Contributing](CONTRIBUTING.md)
+3. [Releasing](docs/releasing.md)
+
+---
+
+## ClawKitchen
+
+If you want a UI for teams, workflows, goals, approvals, and management, use:
+- **ClawKitchen**: https://github.com/JIGGAI/ClawKitchen
+
+ClawKitchen is optional. ClawRecipes works without it.
+
+More: [docs/CLAWCIPES_KITCHEN.md](docs/CLAWCIPES_KITCHEN.md)
+
+---
 
 ## Development
-### Unit tests (vitest)
-Run:
-- `npm test`
-- `npm run test:coverage` — coverage with CI thresholds (see `vitest.config.ts`)
-- `npm run smell-check` — quality checks (ESLint, jscpd, pattern grep)
-
-### Pre-commit hooks
-Husky runs on commit. Run `npm ci` first to install hooks.
-
-### Scaffold smoke test (regression)
-A lightweight smoke check validates scaffold-team output contains the required testing workflow docs (ticket 0004).
-
-Run:
-- `npm run test:smoke` (or `npm run scaffold:smoke`)
-
-Notes:
-- Creates a temporary `workspace-smoke-<timestamp>-team` under `~/.openclaw/`.
-- If it does not delete cleanly (crash/interrupt), run cleanup:
-  - `openclaw recipes cleanup-workspaces --prefix smoke- --yes`
-- Exits non-zero on mismatch.
-- Requires OpenClaw and workspace config.
-
-### For contributors
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — codebase structure
-- [CONTRIBUTING.md](CONTRIBUTING.md) — setup, commands, pre-commit, CI
-
-Reference:
-- Commands: `docs/COMMANDS.md`
-- Recipe format: `docs/RECIPE_FORMAT.md`
-- Bundled recipes: `docs/BUNDLED_RECIPES.md`
-- Team workflow: `docs/TEAM_WORKFLOW.md`
-- ClawRecipes Kitchen (UI): `docs/CLAWCIPES_KITCHEN.md`
-
-(Also see: GitHub repo https://github.com/JIGGAI/ClawRecipes)
-## Notes / principles
-- Workspaces:
-  - Standalone agents: `~/.openclaw/workspace-<agentId>/`
-  - Teams: `~/.openclaw/workspace-<teamId>/` with `roles/<role>/...`
-- Skills:
-  - Global (shared): `~/.openclaw/skills/<skill>`
-  - Scoped (agent/team): `~/.openclaw/workspace-*/skills/<skill>`
-- Team IDs end with `-team`; agent IDs are namespaced: `<teamId>-<role>`.
-- Recipe template rendering is intentionally simple: `{{var}}` replacement only.
-
-## Removing (uninstalling) a scaffolded team
-ClawRecipes includes a safe uninstall command:
 
 ```bash
-openclaw recipes remove-team --team-id <teamId> --plan --json
-openclaw recipes remove-team --team-id <teamId> --yes
-openclaw gateway restart
+npm test
+npm run test:coverage
+npm run smell-check
 ```
 
-Notes:
-- The command is confirmation-gated by default (use `--yes` to apply).
-- Cron cleanup is conservative: it removes only cron jobs that are explicitly **stamped** with `recipes.teamId=<teamId>`.
-- If you need a manual fallback, you can still delete `~/.openclaw/workspace-<teamId>` and remove `<teamId>-*` agents from `agents.list[]` in `~/.openclaw/openclaw.json`.
-
-## Links
-- GitHub: https://github.com/JIGGAI/ClawRecipes
-- Docs:
-  - [Installation](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/INSTALLATION.md): `docs/INSTALLATION.md`
-  - [Commands](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/COMMANDS.md): `docs/COMMANDS.md`
-  - [Recipe format](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/RECIPE_FORMAT.md): `docs/RECIPE_FORMAT.md`
-  - [Team workflow](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/TEAM_WORKFLOW.md): `docs/TEAM_WORKFLOW.md`
-  - [Agents & Skills](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/AGENTS_AND_SKILLS.md): `docs/AGENTS_AND_SKILLS.md`
-  - [Architecture](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/ARCHITECTURE.md): `docs/ARCHITECTURE.md`
-  - [Bundled](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/BUNDLED_RECIPES.md): `docs/BUNDLED_RECIPES.md`
-  - [Create Recipe Tutorial](https://github.com/JIGGAI/ClawRecipes/blob/main/docs/TUTORIAL_CREATE_RECIPE.md): `docs/TUTORIAL_CREATE_RECIPE.md`
-  - [Contributing](https://github.com/JIGGAI/ClawRecipes/blob/main/CONTRIBUTING.md): `CONTRIBUTING.md`
-
-## Note
-ClawRecipes is meant to be *installed* and then used to build **agents + teams**.
-
-Most users should focus on:
-- authoring recipes in their OpenClaw workspace (`<workspace>/recipes/*.md`)
-- scaffolding teams (`openclaw recipes scaffold-team ...`)
-- running the file-first workflow (dispatch → backlog → in-progress → testing → done)
+---
 
 ## License
 
 ClawRecipes is licensed under **Apache-2.0**.
-
-Attribution requirement (practical): if you redistribute ClawRecipes (or a derivative work), you must retain the license and attribution notices (see `LICENSE` and `NOTICE`).
-
-Branding note: the license does not grant permission to use JIGGAI trademarks except as required for reasonable and customary attribution. See `TRADEMARK.md`.
-
-Contributions: we welcome PRs. By contributing, you agree that your contributions are licensed under the project’s Apache-2.0 license.

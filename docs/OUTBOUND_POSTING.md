@@ -1,35 +1,91 @@
-# Outbound posting (publish) via `outbound.post`
+# Outbound posting for workflows
 
-ClawRecipes intentionally avoids shipping “side-effect” tools (social posting, etc.) that require credentials inside a workflow.
+If you want ClawRecipes workflows to actually publish content, read this doc.
 
-Instead, workflows should call an **Outbound Posting Service** that owns credentials and enforces:
-- auth (API key)
-- idempotency (no double posts on retries)
-- audit logging
-- optional human approval proof
+This is the difference between:
+- "the workflow ran"
+- and
+- "the workflow posted something externally"
 
-ClawRecipes provides the runner-native tool **`outbound.post`** to call that service.
+Those are not the same thing.
 
-## Configure the Outbound Service (plugin config)
+---
 
-`outbound.post` requires two plugin config values:
+## The recommended way: `outbound.post`
 
-- `outbound.baseUrl` (e.g. `http://localhost:8787`)
-- `outbound.apiKey` (API key issued by your outbound service)
+ClawRecipes supports workflow publishing through the runner-native tool:
 
-Where you set this depends on your OpenClaw deployment. In general, configure these in the ClawRecipes plugin configuration used by your Kitchen / gateway.
+```text
+outbound.post
+```
 
-If either is missing, workflow execution will fail with a clear error:
-- `outbound.post requires plugin config outbound.baseUrl`
-- `outbound.post requires plugin config outbound.apiKey`
+This tool sends a request to a separate **Outbound Posting Service** that owns the actual platform credentials.
 
-## Tool arguments
+Why this is the preferred path:
+- better separation of concerns
+- credentials stay out of workflow files
+- easier audit logging
+- better idempotency / retry safety
+- approval proof can be enforced
 
-`outbound.post` expects:
+---
+
+## What you need to configure
+
+`outbound.post` needs two plugin config values:
+- `outbound.baseUrl`
+- `outbound.apiKey`
+
+If either is missing, the workflow will fail with a clear message.
+
+Example conceptual config values:
 
 ```json
 {
-  "platform": "x" ,
+  "outbound": {
+    "baseUrl": "http://localhost:8787",
+    "apiKey": "your-service-key"
+  }
+}
+```
+
+Exact config placement depends on how your OpenClaw deployment manages plugin config.
+
+---
+
+## Example workflow node
+
+```json
+{
+  "id": "publish_x",
+  "kind": "tool",
+  "assignedTo": { "agentId": "development-team-lead" },
+  "action": {
+    "tool": "outbound.post",
+    "args": {
+      "platform": "x",
+      "text": "Hello from ClawRecipes",
+      "idempotencyKey": "<workflowRunId>:publish_x",
+      "runContext": {
+        "teamId": "development-team",
+        "workflowId": "marketing",
+        "workflowRunId": "<workflowRunId>",
+        "nodeId": "publish_x"
+      }
+    }
+  }
+}
+```
+
+---
+
+## Tool arguments
+
+Expected arguments:
+
+```json
+{
+  "platform": "x",
   "text": "...",
   "idempotencyKey": "<stable string>",
   "runContext": {
@@ -46,53 +102,87 @@ If either is missing, workflow execution will fail with a clear error:
 ```
 
 Notes:
-- `platform`, `text`, and `idempotencyKey` are required.
-- `idempotencyKey` should be stable across retries. Recommended: `"<workflowRunId>:<nodeId>"`.
-- `runContext` is strongly recommended (used for audit logging + traceability).
-- `approval` is optional, but if your outbound service is configured to require approval proof, requests missing approval will be rejected.
+- `platform`, `text`, and `idempotencyKey` are required
+- use a stable `idempotencyKey` across retries
+- `approval` is optional unless your outbound service requires proof
 
-## Example workflow node
+A good default idempotency key:
 
-```json
-{
-  "id": "publish_x",
-  "kind": "tool",
-  "assignedTo": { "agentId": "{{team.id}}-lead" },
-  "action": {
-    "tool": "outbound.post",
-    "args": {
-      "platform": "x",
-      "text": "{{nodes.qc_brand.output.text}}",
-      "idempotencyKey": "{{run.id}}:publish_x",
-      "runContext": {
-        "teamId": "{{team.id}}",
-        "workflowId": "{{workflow.id}}",
-        "workflowRunId": "{{run.id}}",
-        "nodeId": "publish_x"
-      }
-    }
-  }
-}
+```text
+<workflowRunId>:<nodeId>
 ```
+
+---
+
+## Important note about installs and posting
+
+A normal ClawRecipes install does **not** automatically mean posting is active.
+
+### Supported path
+If you configure `outbound.post`, great — that is the supported path.
+
+### Local custom patch path
+If your controller relies on a custom local patch (for example, a local posting helper wired directly into workflow execution), that patch may need to be reapplied after install/update.
+
+That means after installing or updating ClawRecipes, you may need to:
+- reapply your local workflow posting patch, or
+- tell your assistant to turn workflow posting back on for your local controller
+
+This is especially important if:
+- workflows run successfully
+- approvals succeed
+- but nothing actually gets posted
+
+---
+
+## Example post-install checklist
+
+After a fresh install or update:
+
+```bash
+# 1) confirm plugin is installed
+openclaw plugins list
+
+# 2) confirm workflow commands exist
+openclaw recipes workflows --help
+
+# 3) confirm your posting path is configured or patched
+#    (depends on your environment)
+
+# 4) run a test workflow
+openclaw recipes workflows run \
+  --team-id development-team \
+  --workflow-file marketing.workflow.json
+```
+
+If you use a local patch, this is the moment to reapply it.
+
+---
 
 ## Expected outbound service API
 
-ClawRecipes expects an HTTP API shaped like:
+ClawRecipes expects something like:
 
 - `POST /v1/<platform>/publish`
-  - `Authorization: Bearer <apiKey>`
-  - `Idempotency-Key: <string>`
+- `Authorization: Bearer <apiKey>`
+- `Idempotency-Key: <string>`
 
-Success response (example):
+Example success response:
 
 ```json
-{ "ok": true, "platform": "x", "id": "...", "url": "https://..." }
+{
+  "ok": true,
+  "platform": "x",
+  "id": "123",
+  "url": "https://x.com/..."
+}
 ```
 
-If the same idempotency key is re-used with a different payload, the service should return a 409-style conflict error (to prevent accidental double posting).
+---
 
 ## Security notes
 
-- Do not store platform credentials in workflow files.
-- Prefer running the outbound service on the same machine/tailnet as OpenClaw.
-- For managed outbound service (SaaS), do **not** rely on filesystem-based approval proof. Use signed receipts (planned).
+- do **not** put platform credentials in workflow files
+- prefer a local/tailnet-only outbound service
+- treat outbound publishing as a side-effecting action that should usually be approval-gated
+- use idempotency keys so retries do not double-post

@@ -1,11 +1,28 @@
-# Team workflow (file-first)
+# Team workflow
 
-ClawRecipes’ differentiator is the **shared team workspace** + a simple, durable, file-first workflow.
+This is the practical guide to how a ClawRecipes team is meant to work.
 
-## Team workspace structure
-When you scaffold a team:
+If you scaffold a team and then ask, “okay, what do we actually do now?” this is the answer.
 
-```
+---
+
+## The core idea
+
+A ClawRecipes team is a **shared workspace** with a **file-first work queue**.
+
+That means:
+- requests land in files
+- tickets live in files
+- agents coordinate through files
+- nothing important depends on a specific UI being available
+
+---
+
+## Team workspace layout
+
+A scaffolded team usually looks like this:
+
+```text
 ~/.openclaw/workspace-<teamId>/
   inbox/
   outbox/
@@ -17,93 +34,188 @@ When you scaffold a team:
     testing/
     done/
     assignments/
-  TEAM.md
+  roles/
+    <role>/
 ```
 
-## The loop
+Common meaning:
+- `inbox/` — raw incoming requests
+- `work/backlog/` — ready-to-pick tickets
+- `work/in-progress/` — active work
+- `work/testing/` — QA / verification
+- `work/done/` — completed work
+- `work/assignments/` — assignment stubs / ownership breadcrumbs
+- `shared/` — shared artifacts
+- `notes/` — team notes, plans, status
 
-CLI commands: `dispatch`, `tickets`, `move-ticket`, `assign`, `take`, `handoff`, `complete`. See [COMMANDS.md](COMMANDS.md) for full reference.
+---
 
-1) **Intake**
-- New requests land in `inbox/`.
+## The normal workflow
 
-2) **(Optional) Nudge / automation**
-- A cron job can periodically ping the team lead to triage `inbox/` and keep work moving.
+### 1) Intake
+A new request lands in `inbox/`.
 
-3) **Plan / triage (lead)**
-- Convert the request into a numbered ticket in `work/backlog/`.
-- Fill out: Context, Requirements, Acceptance Criteria, Tasks, Owner, Status, and verification steps.
-- **Every ticket must include a `## Comments` section.** Agents must check/respond to comments on tickets they’re assigned to **or** where they are mentioned via `@<agentname>`.
-- Filename ordering is the priority queue.
-
-4) **Execute (dev/devops)**
-- Move ticket file to `work/in-progress/` (or use `take`).
-- Do work; write artifacts into `shared/` or agent workspaces.
-
-5) **Test**
-- Move ticket to `work/testing/`.
-- Assign `Owner: test` (or explicitly tag the tester role) and include clear “Verification steps” in the ticket.
-- Tester verifies and either:
-  - moves to `work/done/` (pass), or
-  - bounces back to `work/in-progress/` with a bug note (fail)
-
-6) **Complete**
-- Move ticket to `work/done/` (or use `complete`).
-- Add `Completed:` timestamp (automated by `complete` or `move-ticket --completed`).
-
-## Sub-agents + waking up the lead (important)
-Two concepts people often mix up:
-
-1) **Chatting with a role agent directly**
-- If an agent id exists (configured under `agents.list`), you can start a chat with it directly via UI/CLI.
-
-2) **Asking one agent (usually `main`) to wake/spawn/ping another agent**
-- This uses sub-agent/session tooling, and is gated by the requester’s allowlist.
-
-### Why the lead sometimes “never picks it up”
-Even if `openclaw recipes dispatch` created an inbox entry + backlog ticket, the lead won’t act unless:
-- a human opens the lead agent/chat, **or**
-- an automation loop runs (cron triage), **or**
-- a best-effort nudge reaches the lead session.
-
-By default, `openclaw recipes dispatch` will try to **enqueue a system event** to `agent:<teamId>-lead:main` (best-effort). If it can’t, the CLI prints explicit next steps (enable cron / run lead once / allowlist direct pings).
-
-### Allowlisting other agents (subagents.allowAgents)
-To allow `main` to target team role agents (like `development-team-lead`), add this to your OpenClaw config:
-
-```json5
-{
-  agents: {
-    list: [
-      {
-        id: "main",
-        subagents: {
-          allowAgents: ["development-team-lead"], // or ["*"] for any configured agent
-        },
-      },
-    ],
-  },
-}
-```
-
-Then restart the gateway.
-
-Tip: use the `agents_list` tool to see what’s currently allowed.
-
-## Dispatcher command
-The lead can convert a natural-language request into artifacts with [dispatch](COMMANDS.md#dispatch):
+This can happen by hand, or through:
 
 ```bash
-openclaw recipes dispatch --team-id <teamId> --request "..." --owner dev
+openclaw recipes dispatch \
+  --team-id development-team \
+  --owner lead \
+  --request "Add a new clinic-team recipe"
 ```
 
-This creates:
-- an inbox entry
-- a backlog ticket
+That usually creates:
+- an inbox item
+- a numbered backlog ticket
 - an assignment stub
 
-## Why file-first?
-- Works offline
-- Easy to version control
-- Easy to audit and search
-- Doesn’t depend on any single UI
+---
+
+### 2) Triage
+The lead reviews new requests and turns them into clean tickets.
+
+Good tickets should include:
+- context
+- requirements
+- acceptance criteria
+- tasks
+- owner
+- status
+- verification steps
+- `## Comments`
+
+Ticket comments matter. If an agent is assigned to a ticket or mentioned in comments, that agent should respond there.
+
+---
+
+### 3) Execution
+A dev or devops agent picks up a backlog ticket.
+
+Typical command:
+
+```bash
+openclaw recipes take --team-id development-team --ticket 0007 --owner dev
+```
+
+That assigns the ticket and moves it to `in-progress`.
+
+During execution, the working agent should:
+- do the work
+- update the ticket
+- leave verification notes
+- write any needed artifacts to `shared/` or team files
+
+---
+
+### 4) Testing
+When the change is ready for QA:
+
+```bash
+openclaw recipes handoff --team-id development-team --ticket 0007
+```
+
+That moves the ticket to `testing` and assigns it to the tester role.
+
+The tester should:
+- follow the verification steps
+- confirm expected behavior
+- move it to done if it passes
+- or bounce it back to in-progress if it fails
+
+---
+
+### 5) Completion
+When work is done:
+
+```bash
+openclaw recipes complete --team-id development-team --ticket 0007
+```
+
+That moves the ticket to `done` and stamps completion metadata.
+
+---
+
+## Helpful commands
+
+### See current tickets
+
+```bash
+openclaw recipes tickets --team-id development-team
+```
+
+### Move a ticket manually
+
+```bash
+openclaw recipes move-ticket --team-id development-team --ticket 0007 --to in-progress
+openclaw recipes move-ticket --team-id development-team --ticket 0007 --to testing
+openclaw recipes move-ticket --team-id development-team --ticket 0007 --to done --completed
+```
+
+### Assign without taking
+
+```bash
+openclaw recipes assign --team-id development-team --ticket 0007 --owner devops
+```
+
+### Clean up stale assignment stubs for closed work
+
+```bash
+openclaw recipes cleanup-closed-assignments --team-id development-team
+```
+
+---
+
+## Who picks what up?
+
+The simple rule:
+- **backlog** = ready for the implementation owner to pick up
+- **lead** = scope/triage/handoff
+- **dev/devops/test** = execute their lane of work
+
+If a ticket is sitting in backlog, it should not need repeated human pep talks to become real.
+
+---
+
+## How agents get nudged
+
+There are a few ways a team actually wakes up and does work:
+
+1. a human opens or messages the relevant agent
+2. a cron loop runs
+3. the lead sees inbox/backlog work and acts
+4. a best-effort system nudge reaches the lead session
+
+So if you say, “I dispatched a ticket but nobody picked it up,” the real question is usually: **what is waking the team up?**
+
+---
+
+## Why file-first is useful
+
+Because it gives you:
+- durable history
+- easy grep/search
+- easy git review
+- easy debugging
+- easy automation
+- less dependency on one UI or one database
+
+---
+
+## Recommended daily commands
+
+```bash
+# See current workload
+openclaw recipes tickets --team-id development-team
+
+# Create work from a request
+openclaw recipes dispatch --team-id development-team --owner lead --request "Do a thing"
+
+# Start work
+openclaw recipes take --team-id development-team --ticket 0001 --owner dev
+
+# Hand off to QA
+openclaw recipes handoff --team-id development-team --ticket 0001
+
+# Complete
+openclaw recipes complete --team-id development-team --ticket 0001
+```

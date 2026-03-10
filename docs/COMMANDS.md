@@ -1,351 +1,385 @@
-# Command reference
+# ClawRecipes command reference
 
-All commands live under:
+All commands are under:
 
 ```bash
 openclaw recipes <command>
 ```
 
-## `list`
-List available recipes (builtin + workspace).
+This page is organized by the jobs humans actually need to do.
+
+---
+
+## 1) Browse recipes
+
+### List all recipes
 
 ```bash
 openclaw recipes list
 ```
 
-Outputs JSON rows:
-- `id`, `name`, `kind`, `source`
-
-## `show <id>`
-Print the raw recipe markdown.
+### Show one recipe
 
 ```bash
 openclaw recipes show development-team
 ```
 
-## `status [id]`
-Check missing skills for a recipe (or all recipes).
+### Check recipe status / missing skills
 
 ```bash
 openclaw recipes status
 openclaw recipes status development-team
 ```
 
-## `scaffold <recipeId>`
-Scaffold a single agent workspace from an **agent** recipe.
+---
 
-```bash
-openclaw recipes scaffold project-manager --agent-id pm --name "Project Manager" --apply-config
-```
+## 2) Install recipes and skills
 
-Options:
-- `--agent-id <id>` (required)
-- `--name <name>`
-- `--recipe-id <recipeId>` (workspace recipe id to write; default: `<agentId>`)
-- `--auto-increment` (if the workspace recipe id is taken, pick `<agentId>-2/-3/...`)
-- `--overwrite-recipe` (overwrite the generated workspace recipe file if it already exists)
-- `--overwrite` (overwrite recipe-managed files)
-- `--apply-config` (write/update `agents.list[]` in OpenClaw config)
-- Cron: see Cron installation under scaffold-team.
-
-Also writes a workspace recipe file:
-- `~/.openclaw/workspace/recipes/<recipeId>.md`
-
-## `scaffold-team <recipeId>`
-
-Scaffold a shared **team workspace** + multiple agents from a **team** recipe.
-
-```bash
-openclaw recipes scaffold-team development-team \
-  --team-id development-team-team \
-  --overwrite \
-  --apply-config
-```
-
-Options:
-- `--team-id <teamId>` (required)
-  - **Must end with `-team`** (enforced)
-- `--recipe-id <recipeId>` (workspace recipe id to write; default: `<teamId>`)
-- `--auto-increment` (if the workspace recipe id is taken, pick `<teamId>-2/-3/...`)
-- `--overwrite-recipe` (overwrite the generated workspace recipe file if it already exists)
-- `--overwrite`
-- `--apply-config`
-
-Also writes a workspace recipe file:
-- `~/.openclaw/workspace/recipes/<recipeId>.md`
-
-Creates a shared team workspace root:
-
-- `~/.openclaw/workspace-<teamId>/...`
-
-Standard folders:
-- `inbox/`, `outbox/`, `shared/`, `notes/`
-- `work/{backlog,in-progress,testing,done,assignments}`
-- `roles/<role>/...` (role-specific recipe files)
-
-Also creates agent config entries under `agents.list[]` (when `--apply-config`), with agent ids:
-- `<teamId>-<role>`
-
-### Cron installation
-If a recipe declares `cronJobs`, scaffold and scaffold-team reconcile those jobs using the plugin config key:
-- `plugins.entries.recipes.config.cronInstallation`: `off | prompt | on`
-  - `off`: never install/reconcile
-  - `prompt` (default): prompt each run (default answer is **No**)
-  - `on`: install/reconcile; new jobs follow `enabledByDefault`
-
-Applies to both `scaffold` and `scaffold-team` when the recipe declares `cronJobs`.
-
-## `install-skill <idOrSlug> [--yes]`
-Install skills from ClawHub (confirmation-gated).
-
-Default: **global** into `~/.openclaw/skills`.
-
-```bash
-# Global (shared across all agents)
-openclaw recipes install-skill agentchat --yes
-
-# Agent-scoped (into workspace-<agentId>/skills)
-openclaw recipes install-skill agentchat --yes --agent-id dev
-
-# Team-scoped (into workspace-<teamId>/skills)
-openclaw recipes install-skill agentchat --yes --team-id development-team-team
-```
-
-Options:
-- `--yes` — skip confirmation
-- `--global` — install into global skills (default when no scope flags)
-- `--agent-id <id>` — install into agent workspace
-- `--team-id <id>` — install into team workspace
-
-Behavior:
-- If `idOrSlug` matches a recipe id, installs that recipe’s `requiredSkills` + `optionalSkills`.
-- Otherwise treats it as a ClawHub skill slug.
-- Installs via `npx clawhub@latest ...`. Confirmation-gated unless `--yes`. In non-interactive mode (no TTY), requires `--yes`.
-
-## `install <slug>`
-Install a marketplace recipe into your workspace recipes dir (by slug).
+### Install a marketplace recipe into your workspace
 
 ```bash
 openclaw recipes install development-team
-openclaw recipes install development-team --overwrite
+openclaw recipes install clinic-team --overwrite
+```
+
+Optional:
+- `--registry-base <url>`
+- `--overwrite`
+
+Alias:
+
+```bash
+openclaw recipes install-recipe development-team
+```
+
+### Install a skill from ClawHub
+
+```bash
+# global
+openclaw recipes install-skill agentchat --yes
+
+# scoped to one agent
+openclaw recipes install-skill agentchat --yes --agent-id dev
+
+# scoped to one team
+openclaw recipes install-skill agentchat --yes --team-id development-team
 ```
 
 Options:
-- `--registry-base <url>` — Marketplace API base URL (default: `https://clawkitchen.ai`)
-- `--overwrite` — overwrite existing recipe file
+- `--yes`
+- `--global`
+- `--agent-id <id>`
+- `--team-id <id>`
 
-Use `install-recipe` as an alias for this command.
+---
 
-## `bind`
-Add/update a multi-agent routing binding (writes `bindings[]` in `~/.openclaw/openclaw.json`).
+## 3) Scaffold agents and teams
 
-Examples:
-
-```bash
-# Route one Telegram DM to an agent
-openclaw recipes bind --agent-id dev --channel telegram --peer-kind dm --peer-id 6477250615
-
-# Route all Telegram traffic to an agent (broad match)
-openclaw recipes bind --agent-id dev --channel telegram
-```
-
-Notes:
-- `peer.kind` must be one of: `dm|group|channel`.
-- Peer-specific bindings are inserted first (more specific wins).
-
-## `unbind`
-Remove routing binding(s) from OpenClaw config (`bindings[]`).
-
-Examples:
+### Scaffold a single agent
 
 ```bash
-# Remove a specific DM binding for an agent
-openclaw recipes unbind --agent-id dev --channel telegram --peer-kind dm --peer-id 6477250615
-
-# Remove ALL bindings that match this peer (any agent)
-openclaw recipes unbind --channel telegram --peer-kind dm --peer-id 6477250615
+openclaw recipes scaffold project-manager \
+  --agent-id pm \
+  --name "Project Manager" \
+  --apply-config
 ```
 
-## `bindings`
-Print the current `bindings[]` from OpenClaw config.
+Useful options:
+- `--agent-id <id>`
+- `--name <name>`
+- `--recipe-id <recipeId>`
+- `--auto-increment`
+- `--overwrite-recipe`
+- `--overwrite`
+- `--apply-config`
+
+What it writes:
+- `~/.openclaw/workspace-<agentId>/...`
+- workspace recipe file under `~/.openclaw/workspace/recipes/`
+
+### Scaffold a team
 
 ```bash
-openclaw recipes bindings
+openclaw recipes scaffold-team development-team \
+  --team-id development-team \
+  --apply-config \
+  --overwrite
 ```
 
-## `migrate-team`
-Migrate a legacy team scaffold into the new `workspace-<teamId>` layout.
+Useful options:
+- `--team-id <teamId>`
+- `--recipe-id <recipeId>`
+- `--auto-increment`
+- `--overwrite-recipe`
+- `--overwrite`
+- `--apply-config`
+
+What it writes:
+- `~/.openclaw/workspace-<teamId>/...`
+- role folders under `roles/`
+- ticket lanes under `work/`
+- workspace recipe file under `~/.openclaw/workspace/recipes/`
+
+### Add a role to an existing team
 
 ```bash
-openclaw recipes migrate-team --team-id development-team-team --dry-run
-openclaw recipes migrate-team --team-id development-team-team --mode move
+openclaw recipes add-role \
+  --team-id development-team \
+  --role workflow-runner \
+  --recipe workflow-runner-addon \
+  --apply-config
 ```
 
-Options:
-- `--dry-run`
-- `--mode move|copy`
-- `--overwrite` (merge into existing destination)
+Useful options:
+- `--team-id <teamId>`
+- `--role <role>`
+- `--recipe <recipeId>`
+- `--agent-id <agentId>`
+- `--apply-config`
+- `--overwrite`
+- `--no-cron`
 
-## `remove-team`
-Safe uninstall: remove a scaffolded team workspace, agents from config, and stamped cron jobs.
+---
 
-```bash
-openclaw recipes remove-team --team-id development-team-team --plan --json
-openclaw recipes remove-team --team-id development-team-team --yes
+## 4) Work the file-first ticket flow
+
+The normal lane flow is:
+
+```text
+backlog → in-progress → testing → done
 ```
 
-Options:
-- `--team-id <teamId>` (required)
-- `--plan` — print plan and exit without applying
-- `--json` — output JSON
-- `--yes` — skip confirmation (apply destructive changes)
-- `--include-ambiguous` — also remove cron jobs that only loosely match the team (dangerous)
-
-Notes:
-- Confirmation-gated by default. Use `--yes` to apply without prompting.
-- Cron cleanup removes only cron jobs stamped with `recipes.teamId=<teamId>`.
-- Restart required after removal: `openclaw gateway restart`
-
-## `dispatch`
-Convert a natural-language request into file-first execution artifacts (inbox + backlog ticket + assignment stubs).
+### Turn a request into a ticket
 
 ```bash
 openclaw recipes dispatch \
-  --team-id development-team-team \
-  --request "Add a customer-support team recipe" \
-  --owner lead
+  --team-id development-team \
+  --owner lead \
+  --request "Add a customer-support team recipe"
 ```
 
 Options:
-- `--team-id <teamId>` (required)
-- `--request <text>` (optional; prompts in TTY)
-- `--owner dev|devops|lead|test` (default: `dev`)
-- `--yes` (skip review prompt)
+- `--team-id <teamId>`
+- `--request <text>`
+- `--owner dev|devops|lead|test`
+- `--yes`
 
-Creates:
-- `workspace-<teamId>/inbox/<timestamp>-<slug>.md`
-- `workspace-<teamId>/work/backlog/<NNNN>-<slug>.md`
-- `workspace-<teamId>/work/assignments/<NNNN>-assigned-<owner>.md`
-
-Ticket numbering:
-- Scans `work/backlog`, `work/in-progress`, `work/testing`, `work/done` and uses max+1.
-
-Review-before-write:
-- Prints a JSON plan and asks for confirmation unless `--yes`.
-
-## Ticket workflow commands
-
-The following commands manage the file-first ticket flow (`work/backlog` → `in-progress` → `testing` → `done`).
-
-### `tickets`
-List tickets for a team across the standard workflow stages.
+### List tickets
 
 ```bash
-openclaw recipes tickets --team-id <teamId>
-openclaw recipes tickets --team-id <teamId> --json
+openclaw recipes tickets --team-id development-team
+openclaw recipes tickets --team-id development-team --json
 ```
 
-## `cleanup-workspaces`
-List (dry-run, default) or delete (with `--yes`) temporary test/scaffold team workspaces under your OpenClaw home directory.
-
-Safety rails:
-- Only considers `workspace-<teamId>` directories where `<teamId>`:
-  - ends with `-team`
-  - starts with an allowed prefix (default: `smoke-`, `qa-`, `tmp-`, `test-`)
-- Refuses symlinks
-- Protected teams (at minimum: `development-team`) are never deleted
-
-Examples:
-```bash
-# Dry-run (default): list what would be deleted
-openclaw recipes cleanup-workspaces
-
-# Actually delete eligible workspaces
-openclaw recipes cleanup-workspaces --yes
-
-# Custom prefixes (repeatable)
-openclaw recipes cleanup-workspaces --prefix smoke- --prefix qa- --yes
-
-# JSON output
-openclaw recipes cleanup-workspaces --json
-```
-
-### `move-ticket`
-Move a ticket file between workflow stages and update the ticket’s `Status:` field.
+### Move a ticket between lanes
 
 ```bash
-openclaw recipes move-ticket --team-id <teamId> --ticket 0007 --to in-progress
-openclaw recipes move-ticket --team-id <teamId> --ticket 0007 --to testing
-openclaw recipes move-ticket --team-id <teamId> --ticket 0007 --to done --completed
+openclaw recipes move-ticket --team-id development-team --ticket 0007 --to in-progress
+openclaw recipes move-ticket --team-id development-team --ticket 0007 --to testing
+openclaw recipes move-ticket --team-id development-team --ticket 0007 --to done --completed
 ```
 
-Stages:
-- `backlog` → `Status: queued`
-- `in-progress` → `Status: in-progress`
-- `testing` → `Status: testing`
-- `done` → `Status: done` (optional `Completed:` timestamp)
+Options:
+- `--team-id <teamId>`
+- `--ticket <ticket>`
+- `--to backlog|in-progress|testing|done`
+- `--completed`
+- `--yes`
 
-### `assign`
-Assign a ticket to an owner (updates `Owner:` and creates an assignment stub).
+### Assign a ticket
 
 ```bash
-openclaw recipes assign --team-id <teamId> --ticket 0007 --owner dev
-openclaw recipes assign --team-id <teamId> --ticket 0007 --owner lead
+openclaw recipes assign --team-id development-team --ticket 0007 --owner dev
+openclaw recipes assign --team-id development-team --ticket 0007 --owner lead
 ```
 
-Owners (current): `dev|devops|lead|test`.
+Options:
+- `--team-id <teamId>`
+- `--ticket <ticket>`
+- `--owner dev|devops|lead|test`
+- `--overwrite`
+- `--yes`
 
-### `take`
-Shortcut: assign + move to in-progress.
+### Take a ticket
+
+Shortcut for assign + move to in-progress.
 
 ```bash
-openclaw recipes take --team-id <teamId> --ticket 0007 --owner dev
+openclaw recipes take --team-id development-team --ticket 0007 --owner dev
 ```
 
-### `handoff`
-QA handoff in one step: move a ticket to `work/testing/`, set `Status: testing`, assign to a tester (default `test`), and write/update the assignment stub.
+### Handoff to testing
 
 ```bash
-openclaw recipes handoff --team-id <teamId> --ticket 0007
-openclaw recipes handoff --team-id <teamId> --ticket 0007 --tester test
+openclaw recipes handoff --team-id development-team --ticket 0007
+openclaw recipes handoff --team-id development-team --ticket 0007 --tester test
 ```
 
-Notes:
-- Creates `work/testing/` if missing.
-- Idempotent: if the ticket is already in `work/testing/`, it won’t re-move it; it will ensure fields + assignment stub.
-
-### `complete`
-Shortcut: move to done + ensure `Status: done` + add `Completed:` timestamp. No confirmation prompt.
+### Complete a ticket
 
 ```bash
-openclaw recipes complete --team-id <teamId> --ticket 0007
+openclaw recipes complete --team-id development-team --ticket 0007
 ```
 
-## `workflows <subcommand>`
+### Clean up stale assignment stubs for done work
 
-Workflow runner utilities (file-first runs, runner/worker model).
+```bash
+openclaw recipes cleanup-closed-assignments --team-id development-team
+openclaw recipes cleanup-closed-assignments --team-id development-team --ticket 0050 0064
+```
+
+---
+
+## 5) Workflows
+
+Use these when you are running file-first workflows from `shared-context/workflows/`.
+
+### See workflow command help
 
 ```bash
 openclaw recipes workflows --help
 ```
 
-Common commands:
+### Run one workflow manually
 
 ```bash
-# Run a workflow once (manual trigger)
-openclaw recipes workflows run --team-id <teamId> --workflow-file <file.workflow.json>
-
-# Runner (scheduler)
-openclaw recipes workflows runner-once --team-id <teamId>
-openclaw recipes workflows runner-tick --team-id <teamId>
-
-# Worker (executor) — pull-based per-agent queue
-openclaw recipes workflows worker-tick --team-id <teamId> --agent-id <agentId>
-
-# Approval gating
-openclaw recipes workflows approve --team-id <teamId> --run-id <runId> --decision approve
-openclaw recipes workflows resume --team-id <teamId> --run-id <runId>
-openclaw recipes workflows poll-approvals --team-id <teamId>
+openclaw recipes workflows run \
+  --team-id development-team \
+  --workflow-file marketing.workflow.json
 ```
 
-See: `docs/WORKFLOW_RUNS_FILE_FIRST.md`
+### Runner commands
+
+```bash
+openclaw recipes workflows runner-once --team-id development-team
+
+openclaw recipes workflows runner-tick \
+  --team-id development-team \
+  --concurrency 2 \
+  --lease-seconds 120
+```
+
+### Worker commands
+
+```bash
+openclaw recipes workflows worker-tick \
+  --team-id development-team \
+  --agent-id development-team-lead \
+  --limit 10
+```
+
+### Approval commands
+
+```bash
+openclaw recipes workflows approve \
+  --team-id development-team \
+  --run-id <runId> \
+  --approved true
+
+openclaw recipes workflows approve \
+  --team-id development-team \
+  --run-id <runId> \
+  --approved false \
+  --note "Rewrite the hook"
+
+openclaw recipes workflows resume \
+  --team-id development-team \
+  --run-id <runId>
+
+openclaw recipes workflows poll-approvals \
+  --team-id development-team \
+  --limit 20
+```
+
+### Important workflow note
+
+After installing ClawRecipes, workflows may still need optional pieces turned on.
+
+Examples:
+- LLM workflows may require the built-in `llm-task` plugin to be enabled
+- publishing workflows may require `outbound.post` config or a local posting patch to be reapplied
+
+So if you install the plugin and then say "the workflow exists but does not fully work," check the optional workflow dependencies next.
+
+More:
+- [WORKFLOW_RUNS_FILE_FIRST.md](WORKFLOW_RUNS_FILE_FIRST.md)
+- [OUTBOUND_POSTING.md](OUTBOUND_POSTING.md)
+
+---
+
+## 6) Bindings
+
+Bindings route messages/traffic to the right agent.
+
+### Show bindings
+
+```bash
+openclaw recipes bindings
+```
+
+### Add a binding
+
+```bash
+openclaw recipes bind \
+  --agent-id dev \
+  --channel telegram \
+  --peer-kind dm \
+  --peer-id 6477250615
+```
+
+### Remove a binding
+
+```bash
+openclaw recipes unbind \
+  --agent-id dev \
+  --channel telegram \
+  --peer-kind dm \
+  --peer-id 6477250615
+```
+
+---
+
+## 7) Migrate / remove / clean up
+
+### Migrate a legacy team layout
+
+```bash
+openclaw recipes migrate-team --team-id development-team --dry-run
+openclaw recipes migrate-team --team-id development-team --mode move
+```
+
+### Remove a team safely
+
+```bash
+openclaw recipes remove-team --team-id development-team --plan --json
+openclaw recipes remove-team --team-id development-team --yes
+```
+
+### Clean up temporary workspaces
+
+```bash
+# dry-run
+openclaw recipes cleanup-workspaces
+
+# delete allowed temp prefixes
+openclaw recipes cleanup-workspaces --prefix smoke- --prefix qa- --yes
+
+# json output
+openclaw recipes cleanup-workspaces --json
+```
+
+---
+
+## Fastest useful command set
+
+If you only want the high-value commands:
+
+```bash
+openclaw recipes list
+openclaw recipes scaffold-team development-team --team-id development-team --apply-config
+openclaw recipes dispatch --team-id development-team --owner lead --request "Do a thing"
+openclaw recipes tickets --team-id development-team
+openclaw recipes take --team-id development-team --ticket 0001 --owner dev
+openclaw recipes handoff --team-id development-team --ticket 0001
+openclaw recipes complete --team-id development-team --ticket 0001
+```

@@ -1,25 +1,35 @@
 # Tutorial: create your first recipe
 
-This tutorial shows how to create a **team recipe** (shared workspace + multiple agents).
+This tutorial shows how to create a simple **team recipe** from scratch.
 
-You’ll learn:
-- where recipes live
-- how frontmatter works
-- how templates/files are written
-- how to scaffold a team and run the file-first workflow
+By the end, you will:
+- create a recipe file
+- scaffold a team
+- dispatch a ticket
+- move work through the file-first flow
+
+---
 
 ## Step 0 — confirm ClawRecipes is installed
+
 ```bash
 openclaw plugins list
 openclaw recipes list
 ```
 
-## Step 1 — create a recipe file in your OpenClaw workspace
-Create:
+If that fails, go back to [INSTALLATION.md](INSTALLATION.md).
 
-- `~/.openclaw/workspace/recipes/my-first-team.md`
+---
 
-Minimal example:
+## Step 1 — create a recipe file
+
+Create this file:
+
+```text
+~/.openclaw/workspace/recipes/my-first-team.md
+```
+
+Paste this in:
 
 ```md
 ---
@@ -28,12 +38,11 @@ name: My First Team
 kind: team
 version: 0.1.0
 description: A tiny demo team
-
-# Optional: skill slugs to install with `openclaw recipes install-skill my-first-team`
 requiredSkills: []
 
 team:
   teamId: my-first-team
+  name: My First Team
 
 agents:
   - role: lead
@@ -55,17 +64,17 @@ templates:
     # SOUL.md
 
     You are the lead for {{teamId}}.
-    Convert requests into tickets and assign work.
+    Turn requests into clear tickets.
 
   lead.agents: |
     # AGENTS.md
 
     Team directory: {{teamDir}}
 
-    Workflow:
-    - Intake: check `inbox/`
-    - Normalize: create tickets in `work/backlog/`
-    - Assign: write stubs in `work/assignments/`
+    Do this:
+    - check inbox/
+    - create backlog tickets
+    - assign work clearly
 
   worker.soul: |
     # SOUL.md
@@ -77,12 +86,11 @@ templates:
 
     Team directory: {{teamDir}}
 
-    How you work:
-    - Pick the lowest numbered ticket assigned to you.
-    - Move it to `work/in-progress/`.
-    - Do the work.
-    - When ready for QA, move it to `work/testing/` and assign Owner to `test`.
-    - After QA passes, move it to `work/done/` and write a short completion report.
+    Do this:
+    - pick assigned work
+    - move it to in-progress
+    - do the work
+    - hand off to testing when ready
 
 files:
   - path: SOUL.md
@@ -92,7 +100,6 @@ files:
     template: agents
     mode: createOnly
 
-# Default tools if an agent doesn’t override tools above
 tools:
   profile: coding
   allow: ["group:fs", "group:web"]
@@ -101,50 +108,109 @@ tools:
 
 # My First Team
 
-This is a demo recipe.
+This is a tutorial recipe.
 ```
+
+---
 
 ## Step 2 — scaffold the team
-Important: team ids must end with `-team`.
 
 ```bash
-openclaw recipes scaffold-team my-first-team --team-id my-first-team-team --apply-config
+openclaw recipes scaffold-team my-first-team \
+  --team-id my-first-team \
+  --apply-config
 ```
 
-You should now have:
-- `~/.openclaw/workspace-my-first-team-team/` (team shared workspace)
-- `~/.openclaw/workspace-my-first-team-team/roles/lead/`
-- `~/.openclaw/workspace-my-first-team-team/roles/worker/`
+You should now have a shared workspace like:
 
-## Step 3 — dispatch a request
+```text
+~/.openclaw/workspace-my-first-team/
+```
+
+Look around:
+
+```bash
+find ~/.openclaw/workspace-my-first-team -maxdepth 3 -type f | sort | head -n 50
+```
+
+---
+
+## Step 3 — create work
+
+Dispatch a request into the team:
+
 ```bash
 openclaw recipes dispatch \
-  --team-id my-first-team-team \
-  --request "Draft a README for the team" \
-  --owner worker
+  --team-id my-first-team \
+  --owner lead \
+  --request "Draft a welcome README for this team"
 ```
 
-This will propose (or write, with `--yes`) three artifacts:
-- an inbox entry
-- a backlog ticket
-- an assignment stub
+Now inspect tickets:
 
-## Step 4 — run the workflow
-Tickets move through lanes:
-- `work/backlog/` → `work/in-progress/` → `work/testing/` → `work/done/`
+```bash
+openclaw recipes tickets --team-id my-first-team
+```
 
-You can move tickets manually (edit files) or use the CLI:
-- `openclaw recipes take --team-id my-first-team-team --ticket 0001 --owner worker` — assign and move to in-progress
-- `openclaw recipes handoff --team-id my-first-team-team --ticket 0001` — move to testing, assign to test
-- `openclaw recipes complete --team-id my-first-team-team --ticket 0001` — move to done
+---
 
-See `docs/COMMANDS.md` for `move-ticket`, `assign`, and other ticket commands.
+## Step 4 — move work through the lanes
+
+Start the ticket:
+
+```bash
+openclaw recipes take --team-id my-first-team --ticket 0001 --owner worker
+```
+
+Hand it to testing:
+
+```bash
+openclaw recipes handoff --team-id my-first-team --ticket 0001
+```
+
+Complete it:
+
+```bash
+openclaw recipes complete --team-id my-first-team --ticket 0001
+```
+
+---
+
+## Step 5 — inspect the generated workspace
+
+Useful commands:
+
+```bash
+find ~/.openclaw/workspace-my-first-team/work -maxdepth 2 -type f | sort
+cat ~/.openclaw/workspace-my-first-team/work/done/0001-*.md
+```
+
+This is the whole point: the team’s work is visible and durable on disk.
+
+---
 
 ## Common mistakes
-- **Forgetting the `-team` suffix** on `--team-id` (required).
-- Using `deny: ["exec"]` on agents that need to run commands.
-- Not restarting the gateway after installing the plugin.
+
+### Using the wrong team id
+Use a stable team id and keep it consistent.
+
+### Forgetting `--apply-config`
+If you want agent config entries written automatically, include `--apply-config`.
+
+### Expecting magic after install
+ClawRecipes gives you the scaffolding and workflow system, but optional workflow features (LLM nodes, posting, etc.) may still require extra setup depending on your environment.
+
+---
 
 ## Next steps
-- Read `docs/RECIPE_FORMAT.md` for full frontmatter coverage.
-- Copy and modify a bundled recipe from `docs/BUNDLED_RECIPES.md`.
+
+Read these next:
+- [RECIPE_FORMAT.md](RECIPE_FORMAT.md)
+- [TEAM_WORKFLOW.md](TEAM_WORKFLOW.md)
+- [WORKFLOW_RUNS_FILE_FIRST.md](WORKFLOW_RUNS_FILE_FIRST.md)
+
+And inspect a bundled recipe:
+
+```bash
+openclaw recipes show development-team
+```
