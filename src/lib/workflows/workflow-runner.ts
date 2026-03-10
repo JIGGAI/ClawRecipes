@@ -11,6 +11,7 @@ import { dequeueNextTask, enqueueTask } from './workflow-queue';
 import { outboundPublish, type OutboundApproval, type OutboundMedia, type OutboundPlatform } from './outbound-client';
 import { sanitizeOutboundPostText } from './outbound-sanitize';
 import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow-node-output-readers';
+import { readJsonFile, readTextFile } from './workflow-runner-io';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v == 'object' && !Array.isArray(v);
@@ -188,7 +189,7 @@ async function moveRunTicket(opts: {
 
   // Best-effort: update Status: line.
   try {
-    const md = await fs.readFile(dest, 'utf8');
+    const md = await readTextFile(dest);
     const next = md.replace(/^Status: .*$/m, `Status: ${laneToStatus(toLane)}`);
     if (next !== md) await fs.writeFile(dest, next, 'utf8');
   } catch {
@@ -326,7 +327,7 @@ function pickNextRunnableNodeIndex(opts: { workflow: Workflow; run: RunLog }): n
 }
 
 async function appendRunLog(runLogPath: string, fn: (cur: RunLog) => RunLog) {
-  const raw = await fs.readFile(runLogPath, 'utf8');
+  const raw = await readTextFile(runLogPath);
   const cur = JSON.parse(raw) as RunLog;
   const next0 = fn(cur);
   const next = {
@@ -376,7 +377,7 @@ async function executeWorkflowNodes(opts: {
   let curTicketPath = opts.ticketPath;
 
   // Load the current run log so we can resume deterministically (approval resumes, partial runs, etc.).
-  const curRunRaw = await fs.readFile(runLogPath, 'utf8');
+  const curRunRaw = await readTextFile(runLogPath);
   const curRun = JSON.parse(curRunRaw) as RunLog;
 
   const nodeIndexById = new Map<string, number>();
@@ -504,7 +505,7 @@ async function executeWorkflowNodes(opts: {
       }
       await ensureDir(path.dirname(nodeOutputAbs));
 
-      const prompt = promptTemplateInline ? promptTemplateInline : await fs.readFile(promptPathAbs, 'utf8');
+      const prompt = promptTemplateInline ? promptTemplateInline : await readTextFile(promptPathAbs);
       const task = [
         `You are executing a workflow run for teamId=${teamId}.`,
         `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,
@@ -670,7 +671,7 @@ async function executeWorkflowNodes(opts: {
       for (const p of writebackPaths) {
         const abs = path.resolve(teamDir, p);
         await ensureDir(path.dirname(abs));
-        const prev = (await fileExists(abs)) ? await fs.readFile(abs, 'utf8') : '';
+        const prev = (await fileExists(abs)) ? await readTextFile(abs) : '';
         await fs.writeFile(abs, prev + content, 'utf8');
       }
 
@@ -852,12 +853,12 @@ function runFilePathFor(runsDir: string, runId: string) {
 async function loadRunFile(teamDir: string, runsDir: string, runId: string): Promise<{ path: string; run: RunLog }> {
   const runPath = runFilePathFor(runsDir, runId);
   if (!(await fileExists(runPath))) throw new Error(`Run file not found: ${path.relative(teamDir, runPath)}`);
-  const raw = await fs.readFile(runPath, 'utf8');
+  const raw = await readTextFile(runPath);
   return { path: runPath, run: JSON.parse(raw) as RunLog };
 }
 
 async function writeRunFile(runPath: string, fn: (cur: RunLog) => RunLog) {
-  const raw = await fs.readFile(runPath, 'utf8');
+  const raw = await readTextFile(runPath);
   const cur = JSON.parse(raw) as RunLog;
   const next = fn(cur);
   await fs.writeFile(runPath, JSON.stringify(next, null, 2), 'utf8');
@@ -876,7 +877,7 @@ export async function enqueueWorkflowRun(api: OpenClawPluginApi, opts: {
   const runsDir = path.join(sharedContextDir, 'workflow-runs');
 
   const workflowPath = path.join(workflowsDir, opts.workflowFile);
-  const raw = await fs.readFile(workflowPath, 'utf8');
+  const raw = await readTextFile(workflowPath);
   const workflow = normalizeWorkflow(JSON.parse(raw));
 
   if (!workflow.nodes?.length) throw new Error('Workflow has no nodes');
@@ -1000,7 +1001,7 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
     if (!runPath) continue;
 
     try {
-      const run = JSON.parse(await fs.readFile(runPath, 'utf8')) as RunLog;
+      const run = JSON.parse(await readTextFile(runPath)) as RunLog;
       if (run.status !== 'queued') continue;
       const exp = run.claimExpiresAt ? Date.parse(String(run.claimExpiresAt)) : 0;
       const claimed = !!run.claimedBy && exp > now;
@@ -1037,7 +1038,7 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
 
   const workflowFile = String(chosen.run.workflow.file);
   const workflowPath = path.join(workflowsDir, workflowFile);
-  const workflowRaw = await fs.readFile(workflowPath, 'utf8');
+  const workflowRaw = await readTextFile(workflowPath);
   const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
 
 
@@ -1154,7 +1155,7 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
     if (!runPath) continue;
 
     try {
-      const run = JSON.parse(await fs.readFile(runPath, 'utf8')) as RunLog;
+      const run = JSON.parse(await readTextFile(runPath)) as RunLog;
       if (run.status !== 'queued') continue;
       const exp = run.claimExpiresAt ? Date.parse(String(run.claimExpiresAt)) : 0;
       const claimed = !!run.claimedBy && exp > now;
@@ -1179,7 +1180,7 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
   const runnerIdBase = `workflow-runner:${process.pid}`;
 
   async function tryClaim(runPath: string): Promise<RunLog | null> {
-    const raw = await fs.readFile(runPath, 'utf8');
+    const raw = await readTextFile(runPath);
     const cur = JSON.parse(raw) as RunLog;
     if (cur.status !== 'queued') return null;
     const exp = cur.claimExpiresAt ? Date.parse(String(cur.claimExpiresAt)) : 0;
@@ -1216,7 +1217,7 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
   async function execClaimed(runPath: string, run: RunLog) {
     const workflowFile = String(run.workflow.file);
     const workflowPath = path.join(workflowsDir, workflowFile);
-    const workflowRaw = await fs.readFile(workflowPath, 'utf8');
+    const workflowRaw = await readTextFile(workflowPath);
     const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
 
     try {
@@ -1310,7 +1311,7 @@ export async function runWorkflowOnce(api: OpenClawPluginApi, opts: {
   const runsDir = path.join(sharedContextDir, 'workflow-runs');
 
   const workflowPath = path.join(workflowsDir, opts.workflowFile);
-  const raw = await fs.readFile(workflowPath, 'utf8');
+  const raw = await readTextFile(workflowPath);
   const workflow = normalizeWorkflow(JSON.parse(raw));
 
   if (!workflow.nodes?.length) throw new Error('Workflow has no nodes');
@@ -1448,7 +1449,7 @@ export async function pollWorkflowApprovals(api: OpenClawPluginApi, opts: {
   for (const approvalPath of limitedPaths) {
     let approval: ApprovalRecord;
     try {
-      approval = JSON.parse(await fs.readFile(approvalPath, 'utf8')) as ApprovalRecord;
+      approval = await readJsonFile<ApprovalRecord>(approvalPath);
     } catch (e) {
       skipped++;
       results.push({ runId: path.basename(path.dirname(path.dirname(approvalPath))), status: 'unknown', action: 'error', message: `Failed to parse: ${(e as Error).message}` });
@@ -1507,7 +1508,7 @@ export async function approveWorkflowRun(api: OpenClawPluginApi, opts: {
   if (!(await fileExists(approvalPath))) {
     throw new Error(`Approval file not found for runId=${runId}: ${path.relative(teamDir, approvalPath)}`);
   }
-  const raw = await fs.readFile(approvalPath, 'utf8');
+  const raw = await readTextFile(approvalPath);
   const cur = JSON.parse(raw) as ApprovalRecord;
   const next: ApprovalRecord = {
     ...cur,
@@ -1545,12 +1546,12 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
 
   const workflowFile = String(runLog.workflow.file);
   const workflowPath = path.join(workflowsDir, workflowFile);
-  const workflowRaw = await fs.readFile(workflowPath, 'utf8');
+  const workflowRaw = await readTextFile(workflowPath);
   const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
 
   const approvalPath = await approvalsPathFor(teamDir, runId);
   if (!(await fileExists(approvalPath))) throw new Error(`Missing approval file: ${path.relative(teamDir, approvalPath)}`);
-  const approvalRaw = await fs.readFile(approvalPath, 'utf8');
+  const approvalRaw = await readTextFile(approvalPath);
   const approval = JSON.parse(approvalRaw) as ApprovalRecord;
   if (approval.status === 'pending') {
     throw new Error(`Approval still pending. Update ${path.relative(teamDir, approvalPath)} first.`);
@@ -1743,7 +1744,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       // (If a worker crashed, the lock file can stick around and block retries/revisions forever.)
       let unlocked = false;
       try {
-        const raw = await fs.readFile(lockPath, 'utf8');
+        const raw = await readTextFile(lockPath);
         const parsed = JSON.parse(raw) as { claimedAt?: string };
         const claimedAtMs = parsed?.claimedAt ? Date.parse(String(parsed.claimedAt)) : NaN;
         const ageMs = Number.isFinite(claimedAtMs) ? Date.now() - claimedAtMs : NaN;
@@ -1782,7 +1783,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       const { run } = await loadRunFile(teamDir, runsDir, runId);
     const workflowFile = String(run.workflow.file);
     const workflowPath = path.join(workflowsDir, workflowFile);
-    const workflowRaw = await fs.readFile(workflowPath, 'utf8');
+    const workflowRaw = await readTextFile(workflowPath);
     const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
 
     const nodeIdx = workflow.nodes.findIndex((n) => String(n.id) === String(task.nodeId));
@@ -1845,7 +1846,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       }
       await ensureDir(path.dirname(nodeOutputAbs));
 
-      const prompt = promptTemplateInline ? promptTemplateInline : await fs.readFile(promptPathAbs, 'utf8');
+      const prompt = promptTemplateInline ? promptTemplateInline : await readTextFile(promptPathAbs);
       const taskText = [
         `You are executing a workflow run for teamId=${teamId}.`,
         `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,
