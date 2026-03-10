@@ -2,7 +2,7 @@
   "id": "recipes",
   "name": "Recipes",
   "description": "Markdown recipes that scaffold agents and teams (workspace-local).",
-  "version": "0.4.17",
+  "version": "0.4.18",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
