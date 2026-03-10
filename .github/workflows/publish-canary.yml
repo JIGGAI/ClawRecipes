@@ -1,8 +1,9 @@
 name: Publish Canary (PR)
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+# Temporary pause: disable automatic PR canary publishes until explicitly re-enabled.
 
 permissions:
   contents: read
