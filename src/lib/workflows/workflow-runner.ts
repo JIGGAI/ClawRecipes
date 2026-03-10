@@ -222,6 +222,73 @@ async function loadProposedPostTextFromPriorNode(opts: {
   }
 }
 
+async function loadPriorLlmInput(opts: {
+  runDir: string;
+  workflow: Workflow;
+  currentNode: WorkflowNode;
+  currentNodeIndex: number;
+}): Promise<Record<string, unknown>> {
+  const { runDir, workflow, currentNode, currentNodeIndex } = opts;
+  const nodeOutputsDir = path.join(runDir, 'node-outputs');
+  if (!(await fileExists(nodeOutputsDir))) return {};
+
+  const files = (await fs.readdir(nodeOutputsDir)).filter((f) => /^\d{3}-[a-z0-9_-]+\.json$/i.test(f)).sort();
+  const byNodeId = new Map<string, string>();
+  for (const f of files) {
+    const m = f.match(/^\d{3}-([a-z0-9_-]+)\.json$/i);
+    if (m) byNodeId.set(String(m[1]), path.join(nodeOutputsDir, f));
+  }
+
+  const upstreamNodeIds = new Set<string>();
+  for (const e of Array.isArray(workflow.edges) ? workflow.edges : []) {
+    if (String(e.to ?? '').trim() === String(currentNode.id ?? '').trim()) {
+      const from = String(e.from ?? '').trim();
+      if (from) upstreamNodeIds.add(from);
+    }
+  }
+  if (!upstreamNodeIds.size && currentNodeIndex > 0) {
+    const prev = workflow.nodes[currentNodeIndex - 1];
+    const prevId = String(prev?.id ?? '').trim();
+    if (prevId) upstreamNodeIds.add(prevId);
+  }
+
+  const parseNodeOutput = async (nodeId: string) => {
+    const p = byNodeId.get(nodeId);
+    if (!p) return null;
+    const raw = await fs.readFile(p, 'utf8');
+    const obj = JSON.parse(raw) as { text?: string; [k: string]: unknown };
+    const text = String(obj.text ?? '').trim();
+    let parsed: unknown = text;
+    try {
+      parsed = text ? JSON.parse(text) : null;
+    } catch {
+      // leave as string
+    }
+    return {
+      nodeId,
+      path: path.relative(runDir, p),
+      parsed,
+      text,
+      raw: obj,
+    };
+  };
+
+  const inputs = [] as Array<Record<string, unknown>>;
+  for (const nodeId of upstreamNodeIds) {
+    const loaded = await parseNodeOutput(nodeId);
+    if (loaded) inputs.push(loaded);
+  }
+
+  const latest = inputs.length ? inputs[inputs.length - 1] : null;
+  return {
+    priorNodeIds: Array.from(upstreamNodeIds),
+    upstream: inputs,
+    previousNode: latest,
+    previousNodeId: latest?.nodeId ?? null,
+    previousNodeOutput: latest?.parsed ?? null,
+  };
+}
+
 async function moveRunTicket(opts: {
   teamDir: string;
   ticketPath: string;
@@ -573,14 +640,14 @@ async function executeWorkflowNodes(opts: {
       let text = '';
       try {
         let llmRes: unknown;
+        const priorInput = await loadPriorLlmInput({ runDir, workflow, currentNode: node, currentNodeIndex: i });
         try {
           llmRes = await toolsInvoke<unknown>(api, {
             tool: 'llm-task-fixed',
             action: 'json',
             args: {
               prompt: task,
-              // Keep input minimal for now (file-first). Future: load inputFrom outputs.
-              input: { teamId, runId, nodeId: node.id, agentId },
+              input: { teamId, runId, nodeId: node.id, agentId, ...priorInput },
             },
           });
         } catch {
@@ -589,8 +656,7 @@ async function executeWorkflowNodes(opts: {
             action: 'json',
             args: {
               prompt: task,
-              // Keep input minimal for now (file-first). Future: load inputFrom outputs.
-              input: { teamId, runId, nodeId: node.id, agentId },
+              input: { teamId, runId, nodeId: node.id, agentId, ...priorInput },
             },
           });
         }
@@ -1913,13 +1979,14 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       let text = '';
       try {
         let llmRes: unknown;
+        const priorInput = await loadPriorLlmInput({ runDir, workflow, currentNode: node, currentNodeIndex: nodeIdx });
         try {
           llmRes = await toolsInvoke<unknown>(api, {
             tool: 'llm-task-fixed',
             action: 'json',
             args: {
               prompt: taskText,
-              input: { teamId, runId, nodeId: node.id, agentId },
+              input: { teamId, runId, nodeId: node.id, agentId, ...priorInput },
             },
           });
         } catch {
@@ -1928,7 +1995,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             action: 'json',
             args: {
               prompt: taskText,
-              input: { teamId, runId, nodeId: node.id, agentId },
+              input: { teamId, runId, nodeId: node.id, agentId, ...priorInput },
             },
           });
         }
