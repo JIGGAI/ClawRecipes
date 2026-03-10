@@ -1,27 +1,71 @@
-# ClawRecipes Kitchen (UI)
+# ClawKitchen and ClawRecipes
 
-ClawRecipes Kitchen is our UI for managing ClawRecipes workflows.
+ClawKitchen is the UI companion for ClawRecipes.
 
-## What it’s for
-- Activity feed (high-level semantic events)
-- Weekly scheduled-task view
-- Global search across workspace + memory/docs + tasks
-- Agent chat room
-- Goals system (file-based source of truth)
-- Approvals inbox + routing (e.g., Telegram)
+Use this doc if you want to understand the relationship between the two.
 
-## Status
-ClawRecipes Kitchen is under active development.
+---
 
-## Relationship to the plugin
-- The **ClawRecipes plugin** is CLI-first and works without any UI.
-- ClawRecipes Kitchen is an optional UI companion for:
-  - visibility (activity/search)
-  - approvals
-  - human review of plans and changes
+## Short version
 
-## Roadmap (high level)
-- Approvals UI (approve/deny + audit trail)
-- Recipe browser and scaffold flows
-- Team dashboards (backlog/in-progress/testing/done)
-- Publishing workflow integration
+- **ClawRecipes** = the plugin, commands, file-first workspaces, workflows, ticket flow
+- **ClawKitchen** = the UI on top
+
+You do **not** need ClawKitchen to use ClawRecipes.
+
+You **can** use ClawKitchen to make ClawRecipes easier to manage.
+
+---
+
+## What ClawKitchen is good at
+
+ClawKitchen is useful for:
+- browsing teams and roles
+- managing scaffolded teams
+- seeing ticket lanes visually
+- viewing workflow activity
+- reviewing approvals
+- guiding setup with a UI instead of raw files/CLI
+
+---
+
+## What still lives in ClawRecipes
+
+Even if you use ClawKitchen, the source of truth is still mostly file-first.
+
+ClawRecipes owns:
+- recipe scaffolding
+- workspace layout
+- ticket files
+- workflow files
+- workflow run artifacts
+- CLI commands
+
+ClawKitchen is the management layer, not a replacement for the plugin.
+
+---
+
+## Workflow note
+
+Workflows depend on ClawRecipes features being present and, for some setups, on optional plugin/tooling being enabled after install.
+
+Examples:
+- LLM nodes may require the built-in `llm-task` plugin to be enabled
+- publish/posting behavior may require outbound posting config or a local patch
+
+So when a user says "I installed everything, why doesn't the workflow fully work?" the answer is often:
+- the plugin is installed
+- but an optional workflow dependency still needs to be enabled/configured
+
+---
+
+## Good mental model
+
+Think of it like this:
+
+- ClawRecipes builds and runs the machine
+- ClawKitchen gives you the dashboard
+
+Both matter.
+
+But if you are debugging behavior, always confirm the underlying ClawRecipes files/commands first.

@@ -1,42 +1,135 @@
 # Releasing `@jiggai/recipes`
 
-This repo is published to npm as `@jiggai/recipes`.
+This repo publishes to npm as:
 
-## Prereqs (one-time)
+```text
+@jiggai/recipes
+```
 
-1) In GitHub repo settings, add an Actions secret:
+This is the practical release guide.
 
-- Name: `NPM_TOKEN`
-- Value: an npm access token with publish rights for the `@jiggai` scope
+---
 
-2) Ensure `package.json` has the correct name/version and `publishConfig.access = "public"`.
+## Before you release
 
-## Release flow (recommended)
+Make sure these are true:
+- `package.json` version is correct
+- `openclaw.plugin.json` version matches
+- tests pass
+- the branch/PR you intend to release is actually the one merged to `main`
 
-1) Update `package.json` version on `main` and commit it.
+Useful checks:
 
-Typical:
+```bash
+npm test
+npm view @jiggai/recipes version
+node -p "require('./package.json').version"
+cat openclaw.plugin.json
+```
 
-- `npm version patch` (or `minor` / `major`)
+---
 
-This creates a commit and a git tag (by default `vX.Y.Z`).
+## Recommended release flow
 
-2) Push the commit + tag:
+From `main`:
 
-- `git push origin main --follow-tags`
+```bash
+git checkout main
+git pull --ff-only
+npm version patch
+```
 
-3) GitHub Actions will run the `Publish` workflow on tag push and publish to npm.
+Or use `minor` / `major` when appropriate:
 
-## Manual publish (local machine)
+```bash
+npm version minor
+npm version major
+```
 
-If you have npm auth configured locally (i.e. `npm whoami` works), you can publish directly:
+Then push commit + tag:
 
-- `npm ci`
-- `npm run lint`
-- `npm test`
-- `npm publish`
+```bash
+git push origin main --follow-tags
+```
 
-## Verify
+GitHub Actions will run the normal publish workflow.
 
-- `npm view @jiggai/recipes version`
-- In a clean OpenClaw install, upgrade the extension and confirm the expected behavior is present.
+---
+
+## Manual local publish
+
+If you are intentionally publishing from your local machine:
+
+```bash
+npm ci
+npm run lint
+npm test
+npm publish
+```
+
+You will need local npm auth:
+
+```bash
+npm whoami
+```
+
+---
+
+## Verify after publishing
+
+Check the published version:
+
+```bash
+npm view @jiggai/recipes version
+```
+
+Then test a fresh install or upgrade path:
+
+```bash
+openclaw plugins install @jiggai/recipes
+openclaw gateway restart
+openclaw recipes list
+```
+
+---
+
+## Important note about local patches
+
+If you maintain a local controller-specific patch (for example, workflow posting behavior), publishing a clean package does **not** mean that patch is part of the public release unless you intentionally merged it.
+
+So after publishing, you may need to:
+- reapply your local patch
+- relink/reinstall the plugin
+- tell your assistant to turn the local posting path back on
+
+If you use a patch file or gist for that workflow, keep it handy as part of your release checklist.
+
+---
+
+## About canary publishes
+
+If canary publishing is paused in the repo workflow config, PR activity will not automatically publish canary builds.
+
+That is separate from the normal release workflow.
+
+---
+
+## Minimum safe release checklist
+
+```bash
+# sync to main
+git checkout main
+git pull --ff-only
+
+# run checks
+npm test
+
+# bump version
+npm version patch
+
+# push
+git push origin main --follow-tags
+
+# verify published version
+npm view @jiggai/recipes version
+```

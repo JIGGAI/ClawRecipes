@@ -1,246 +1,201 @@
-# Agents and skills (OpenClaw + ClawRecipes)
+# Agents and skills
 
-This doc explains the mental model: **what an agent is**, how **skills/tools** work, and how ClawRecipes helps you build agents + teams.
+This doc explains the practical mental model behind agents, teams, tools, and skills in ClawRecipes.
+
+---
 
 ## What is an agent?
-In OpenClaw, an **agent** is a configured assistant persona with:
-- a **workspace folder** (where it reads/writes files)
-- optional **identity** (name, avatar, emoji, tone)
-- a **tool policy** (what tools it is allowed to use)
-- a **model** configuration (defaults come from OpenClaw)
 
-In ClawRecipes, a **standalone** agent recipe scaffolds a dedicated workspace like:
+In OpenClaw, an agent is a configured assistant with:
+- a workspace
+- an identity/persona
+- tool permissions
+- a model/runtime configuration
 
-```
+In ClawRecipes, an **agent recipe** scaffolds that into a folder like:
+
+```text
 ~/.openclaw/workspace-<agentId>/
-  SOUL.md
-  AGENTS.md
-  TOOLS.md
-  ...other recipe files...
 ```
 
-### Why separate agents?
-- Separation of concerns (research vs writing vs devops)
-- Cleaner prompts/personas
-- Safer tool permissions (e.g., only DevOps gets automation)
-- Clear ownership of outputs (each agent writes to its own workspace)
+Typical files include:
+- `SOUL.md`
+- `AGENTS.md`
+- `TOOLS.md`
+
+---
+
+## What is a team?
+
+A team is a set of role agents sharing one workspace root.
+
+Example:
+
+```text
+~/.openclaw/workspace-development-team/
+```
+
+Inside that workspace you usually get:
+- `work/` ticket lanes
+- `roles/` role folders
+- `shared/` artifacts
+- `notes/` planning/status docs
+
+Role agent ids usually look like:
+
+```text
+development-team-lead
+development-team-dev
+development-team-test
+```
+
+---
 
 ## What is a skill?
-A **skill** is a packaged integration or capability (e.g. Gmail, Calendar, Places search, Twitter/X tooling).
 
-Skills can provide:
-- tools/actions (e.g., `gog gmail ...`, `local-places ...`)
-- configuration schemas / env vars
-- helper scripts or CLIs
+A skill is a packaged capability.
 
-In OpenClaw, skills are surfaced as tools the agent can use.
+Examples:
+- Gmail / Calendar tools
+- web / places integrations
+- social/X tooling
+- helper CLIs or packaged instructions
 
-## Tool policies (allow/deny)
-Every agent can have a tool policy in OpenClaw config (written via `--apply-config` when scaffolding).
+Skills can expose tools, configuration, scripts, or helper behavior.
+
+---
+
+## Tool policy: what an agent is allowed to do
+
+Recipes can define tool policy and apply it into OpenClaw config when you scaffold with `--apply-config`.
+
+Common patterns:
+
+### Safe-by-default
+
+```yaml
+tools:
+  profile: coding
+  allow: ["group:fs", "group:web"]
+  deny: ["exec"]
+```
+
+### Dev / devops style
+
+```yaml
+tools:
+  profile: coding
+  allow: ["group:fs", "group:web", "group:runtime"]
+  deny: []
+```
 
 ### About `exec`
-`exec` is the shell-command tool. It can be used for things like:
-- running tests/builds (`npm test`, `npm run build`)
-- git operations (`git status`, `git diff`)
-- codegen/migrations (`prisma migrate`, `pnpm lint`)
-- quick diagnostics (`curl`, `jq`, `rg`)
+`exec` is the shell-command tool.
 
-ClawRecipes **does not deny `exec` by default** (many recipes set `deny: []`).
+If an agent needs to run commands like:
+- `npm test`
+- `git status`
+- `pnpm build`
+- `pytest`
 
-If you want an agent to be able to run commands, you must explicitly allow runtime capabilities.
+then its runtime/tool policy must allow that capability.
 
-### Common patterns
-- Safe-by-default agents:
-  - `allow: ["group:fs", "group:web"]`
-  - `deny: ["exec"]` (optional hard block)
+---
 
-- Developer/devops-style agents:
-  - `allow: ["group:fs", "group:web", "group:runtime"]`
-  - `deny: []`
+## How to change an agent after scaffolding
 
-> Note: even when allowed, `exec` may still be gated by your OpenClaw exec approvals / allowlists.
+There are two layers.
 
-## How to add/update tool access (allow list)
-There are two common approaches.
+### 1) Workspace files
+Edit the agent/team files directly:
+- `SOUL.md`
+- `AGENTS.md`
+- `TOOLS.md`
+- notes/status docs
 
-### Option A (recommended): update the recipe, then re-apply config
-1) Edit the recipe markdown (either a workspace recipe or your own copy of a bundled recipe) and change `tools.allow` / `tools.deny`.
+### 2) OpenClaw config
+If you need to change permissions, identity, or config-level behavior, update the OpenClaw agent config.
 
-2) Re-run scaffold with `--apply-config`:
+A common way is to re-run scaffold with `--apply-config`.
 
-Team:
+Examples:
+
 ```bash
-openclaw recipes scaffold-team <recipeId> --team-id <teamId> --overwrite --apply-config
+openclaw recipes scaffold project-manager --agent-id pm --overwrite --apply-config
+openclaw recipes scaffold-team development-team --team-id development-team --overwrite --apply-config
 openclaw gateway restart
 ```
 
-Individual agent:
-```bash
-openclaw recipes scaffold <recipeId> --agent-id <agentId> --overwrite --apply-config
-openclaw gateway restart
-```
-
-### Option B: edit OpenClaw config directly
-1) Edit:
-- `~/.openclaw/openclaw.json`
-
-2) Find the matching agent under `agents.list[]` and edit:
-- `tools.allow`
-- `tools.deny`
-
-3) Restart:
-```bash
-openclaw gateway restart
-```
-
-> Tip: if you later re-run scaffold with `--apply-config`, the recipe’s tool policy may overwrite your manual edits. If you want a change to stick, encode it in the recipe.
+---
 
 ## Installing skills
-ClawRecipes favors **workspace-local** installs so each agent/team workspace is self-contained.
 
-### Install a skill slug
+### Install a single skill globally
+
 ```bash
-openclaw recipes install-skill <skill-slug>
-# or non-interactive:
-openclaw recipes install-skill <skill-slug> --yes
+openclaw recipes install-skill agentchat --yes
 ```
 
-By default, installs **globally** into `~/.openclaw/skills/`. Use flags to target a specific workspace:
-- `--global` — shared across all agents (default)
-- `--agent-id <id>` — `~/.openclaw/workspace-<agentId>/skills/<skill-slug>`
-- `--team-id <id>` — `~/.openclaw/workspace-<teamId>/skills/<skill-slug>`
-
-### Install the skills required by a recipe
-If a recipe declares skills in `requiredSkills` or `optionalSkills`:
+### Install a skill for one agent
 
 ```bash
-openclaw recipes install-skill <recipe-id>
+openclaw recipes install-skill agentchat --yes --agent-id dev
 ```
 
-That installs the recipe’s declared skills.
-
-### Removing a skill
-ClawRecipes currently does **not** implement a remove command.
-
-To remove a workspace-local skill:
-- delete the folder: `<workspace>/skills/<skill-slug>`
-- restart: `openclaw gateway restart`
-
-(We can add `openclaw recipes uninstall <slug>` later if you want it to be first-class.)
-
-## Removing (uninstalling) a scaffolded team
-ClawRecipes includes a safe uninstall command:
+### Install a skill for one team
 
 ```bash
-openclaw recipes remove-team --team-id <teamId> --plan --json
-openclaw recipes remove-team --team-id <teamId> --yes
+openclaw recipes install-skill agentchat --yes --team-id development-team
+```
+
+### Install the skills declared by a recipe
+
+```bash
+openclaw recipes install-skill development-team --yes
+```
+
+---
+
+## Where skills get installed
+
+By default:
+- global skills → `~/.openclaw/skills/`
+- agent-scoped skills → `~/.openclaw/workspace-<agentId>/skills/`
+- team-scoped skills → `~/.openclaw/workspace-<teamId>/skills/`
+
+---
+
+## Removing skills
+
+There is not currently a first-class ClawRecipes remove-skill command.
+
+For now, remove the skill folder manually and restart the gateway.
+
+---
+
+## Removing a team
+
+```bash
+openclaw recipes remove-team --team-id development-team --plan --json
+openclaw recipes remove-team --team-id development-team --yes
 openclaw gateway restart
 ```
 
-Notes:
-- Cron cleanup is conservative: it removes only cron jobs explicitly stamped with `recipes.teamId=<teamId>`.
-- You can still do it manually by deleting `~/.openclaw/workspace-<teamId>` and removing `<teamId>-*` entries from `agents.list[]` in `~/.openclaw/openclaw.json`.
+This is safer than manually deleting everything by hand.
 
-## Teams: shared workspace + multiple agents
-A **team** recipe scaffolds a **shared workspace root** plus role folders:
+---
 
-```
-~/.openclaw/workspace-<teamId>/
-  TEAM.md
-  inbox/
-  outbox/
-  shared/
-  notes/
-  work/
-    backlog/
-    in-progress/
-    testing/
-    done/
-    assignments/
-  roles/
-    <role>/
-      ...role-specific recipe files...
-```
+## Good practical advice
 
-Each role agent is a separate OpenClaw agent id (`<teamId>-<role>`), but they share the same workspace root (`workspace-<teamId>`) so collaboration is file-based.
+- keep high-risk tools limited to the roles that actually need them
+- encode durable tool-policy changes in the recipe, not just ad hoc config edits
+- use team workspaces when you want collaboration and durable ticket lanes
+- use single agents when you want one specialized role without the extra team machinery
 
-The shared workspace is the source of truth for:
-- intake (`inbox/`)
-- work queue (`work/backlog`, `work/in-progress`, `work/testing`, `work/done`)
-- assignments (`work/assignments`)
-- deliverables (`outbox/`)
+---
 
-## Updating agents after you scaffold them
-Once an agent exists, there are **two layers** you can update:
+## Useful next reads
 
-### 1) The agent’s files (workspace)
-Agents are just folders under:
-- standalone: `~/.openclaw/workspace-<agentId>/`
-- team roles: `~/.openclaw/workspace-<teamId>/roles/<role>/`
-
-**CWD note (teams):** Role agents may start in `roles/<role>/`. If your commands rely on team-root-relative paths like `work/` or `notes/`, first `cd` to the team root. Default team recipes include `scripts/team-root.sh` which prints the team root from any subdir, so you can run:
-
-```bash
-cd "$(bash ../../scripts/team-root.sh 2>/dev/null || bash ./scripts/team-root.sh)"
-```
-
-Common files:
-- `SOUL.md` — the persona / operating style
-- `AGENTS.md` — operating instructions / workflow
-- `TOOLS.md` — agent-local notes (paths, conventions, env quirks)
-- `STATUS.md` — current focus / next actions
-- `NOTES.md` — scratchpad
-
-To change behavior, edit these files and then just use the agent again.
-
-If the agent was created from a recipe, re-running scaffold with `--overwrite` will overwrite recipe-managed files:
-
-```bash
-openclaw recipes scaffold <recipeId> --agent-id <agentId> --overwrite
-```
-
-For teams, you typically re-run `scaffold-team` (role files live under `roles/<role>/`):
-
-```bash
-openclaw recipes scaffold-team <recipeId> --team-id <teamId> --overwrite
-```
-
-### 2) The agent’s OpenClaw config (tool permissions, identity, model)
-When you scaffold with `--apply-config`, ClawRecipes writes the agent entry into OpenClaw config:
-- `~/.openclaw/openclaw.json` → `agents.list[]`
-
-Re-run scaffold/scaffold-team with `--apply-config` any time you want the recipe’s tool policy (allow/deny) to be re-applied.
-
-```bash
-openclaw recipes scaffold-team <recipeId> --team-id <teamId> --apply-config
-openclaw gateway restart
-```
-
-## Where to find agent config in the OpenClaw UI
-OpenClaw exposes agent configuration in its UI (labels/paths depend on your build), typically under something like:
-- **Settings → Agents**
-
-From there you can:
-- select an agent
-- view/edit its identity
-- review tool permissions
-- confirm which workspace it uses
-
-If you prefer files, the source-of-truth config file is:
-- `~/.openclaw/openclaw.json`
-
-## How to create your own agents/teams
-You have three main options:
-
-1) Use a bundled recipe (fast start)
-- `openclaw recipes scaffold-team development-team --team-id my-dev-team-team --apply-config`
-
-2) Write your own recipe in your workspace
-- Create: `~/.openclaw/workspace/recipes/my-team.md`
-- Then: `openclaw recipes scaffold-team my-team --team-id my-team-team --apply-config`
-
-3) Copy a bundled recipe and modify it
-- Use `openclaw recipes show <id>` to view it
-- Copy into your workspace recipes dir and edit
-
-Next: read `docs/TUTORIAL_CREATE_RECIPE.md` for a step-by-step guide.
+- [TEAM_WORKFLOW.md](TEAM_WORKFLOW.md)
+- [RECIPE_FORMAT.md](RECIPE_FORMAT.md)
+- [COMMANDS.md](COMMANDS.md)
