@@ -20,6 +20,14 @@ function assertPathWithinDir(baseDir: string, candidatePath: string, label = 'pa
   }
 }
 
+function safeJsonStringify(v: unknown): string {
+  try {
+    return JSON.stringify(v, null, 2);
+  } catch {
+    return String(v ?? '');
+  }
+}
+
 export async function loadProposedPostTextFromPriorNode(opts: {
   runDir: string;
   nodeOutputsDir: string;
@@ -77,12 +85,16 @@ export async function loadPriorLlmInput(opts: {
   assertPathWithinDir(runDir, nodeOutputsDir, 'nodeOutputsDir');
 
   const files = (await fs.readdir(nodeOutputsDir)).filter((f) => /^\d{3}-[a-z0-9_-]+\.json$/i.test(f)).sort();
-  const byNodeId = new Map<string, string>();
+
+  // Map nodeId -> { idx, path } where idx is the numeric prefix from the filename.
+  const byNodeId = new Map<string, { idx: number; p: string }>();
   for (const f of files) {
-    const m = f.match(/^\d{3}-([a-z0-9_-]+)\.json$/i);
-    if (m) byNodeId.set(String(m[1]), path.join(nodeOutputsDir, f));
+    const m = f.match(/^(\d{3})-([a-z0-9_-]+)\.json$/i);
+    if (!m) continue;
+    byNodeId.set(String(m[2]), { idx: Number(m[1]), p: path.join(nodeOutputsDir, f) });
   }
 
+  // Determine upstream nodes.
   const upstreamNodeIds = new Set<string>();
   for (const e of Array.isArray(workflow.edges) ? workflow.edges : []) {
     if (String(e.to ?? '').trim() === String(currentNode.id ?? '').trim()) {
@@ -90,6 +102,7 @@ export async function loadPriorLlmInput(opts: {
       if (from) upstreamNodeIds.add(from);
     }
   }
+  // Sequential fallback for legacy/no-edge workflows.
   if (!upstreamNodeIds.size && currentNodeIndex > 0) {
     const prev = workflow.nodes[currentNodeIndex - 1];
     const prevId = String(prev?.id ?? '').trim();
@@ -97,20 +110,25 @@ export async function loadPriorLlmInput(opts: {
   }
 
   const parseNodeOutput = async (nodeId: string) => {
-    const p = byNodeId.get(nodeId);
-    if (!p) return null;
+    const hit = byNodeId.get(nodeId);
+    if (!hit) return null;
+    const { idx, p } = hit;
+
     assertPathWithinDir(runDir, p, 'node output');
     const raw = await fs.readFile(p, 'utf8');
     const obj = JSON.parse(raw) as { text?: string; [k: string]: unknown };
     const text = String(obj.text ?? '').trim();
+
     let parsed: unknown = text;
     try {
       parsed = text ? JSON.parse(text) : null;
     } catch {
       // leave as string
     }
+
     return {
       nodeId,
+      idx,
       path: path.relative(runDir, p),
       parsed,
       text,
@@ -118,18 +136,30 @@ export async function loadPriorLlmInput(opts: {
     };
   };
 
-  const inputs: Array<Record<string, unknown>> = [];
+  const inputs: Array<Record<string, unknown> & { idx: number; nodeId: string }> = [];
   for (const nodeId of upstreamNodeIds) {
     const loaded = await parseNodeOutput(nodeId);
-    if (loaded) inputs.push(loaded);
+    if (loaded) inputs.push(loaded as any);
   }
 
+  // IMPORTANT: when there are multiple upstream nodes, pick the most recently-executed one
+  // (highest idx from node-output filename) as "previousNode".
+  inputs.sort((a, b) => (a.idx ?? 0) - (b.idx ?? 0));
   const latest = inputs.length ? inputs[inputs.length - 1] : null;
+
+  const previousNodeOutput = latest?.parsed ?? null;
+
+  // Back-compat / prompt ergonomics: many prompt templates refer to INPUT_JSON explicitly.
+  // Provide it as a JSON string of the immediate prior node output.
+  const INPUT_JSON = latest ? safeJsonStringify(previousNodeOutput) : '';
+
   return {
     priorNodeIds: Array.from(upstreamNodeIds),
     upstream: inputs,
     previousNode: latest,
     previousNodeId: latest?.nodeId ?? null,
-    previousNodeOutput: latest?.parsed ?? null,
+    previousNodeOutput,
+    INPUT_JSON,
+    inputJson: previousNodeOutput,
   };
 }

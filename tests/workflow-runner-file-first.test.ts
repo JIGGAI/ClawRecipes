@@ -275,4 +275,97 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       await fs.rm(base, { recursive: true, force: true });
     }
   });
+
+
+  test("llm node chaining passes prior node output forward (INPUT_JSON + previousNodeOutput)", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-llm-chain";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      toolCalls.length = 0;
+
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "llm-chain.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+
+      const workflow = {
+        id: "llm-chain",
+        name: "Demo: LLM chaining",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "draft_assets",
+            kind: "llm",
+            assignedTo: { agentId: "agent-writer" },
+            action: { promptTemplate: "Return JSON." },
+          },
+          {
+            id: "qc_brand",
+            kind: "llm",
+            assignedTo: { agentId: "agent-qc" },
+            action: { promptTemplate: "Use INPUT_JSON." },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "draft_assets", on: "success" },
+          { from: "draft_assets", to: "qc_brand", on: "success" },
+          { from: "qc_brand", to: "end", on: "success" },
+        ],
+      };
+
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi();
+
+      const enq = await enqueueWorkflowRun(api, { teamId, workflowFile });
+      expect(enq.ok).toBe(true);
+
+      // Runner/worker handshake:
+      // - runner claims run + enqueues first runnable node to its agent
+      // - worker executes node
+      // - runner resumes + enqueues next node
+      const r1 = await runWorkflowRunnerOnce(api, { teamId });
+      expect(r1.ok).toBe(true);
+
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 5, workerId: "w-writer" });
+      expect(w1.ok).toBe(true);
+
+      const r2 = await runWorkflowRunnerOnce(api, { teamId });
+      expect(r2.ok).toBe(true);
+
+      const w2 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-qc", limit: 5, workerId: "w-qc" });
+      expect(w2.ok).toBe(true);
+
+      const r3 = await runWorkflowRunnerOnce(api, { teamId });
+      expect(r3.ok).toBe(true);
+
+      const llmCalls = toolCalls.filter((c) => c.tool === "llm-task-fixed" || c.tool === "llm-task");
+      expect(llmCalls.length).toBe(2);
+
+      const firstInput = llmCalls[0]!.args?.input;
+      const secondInput = llmCalls[1]!.args?.input;
+
+      // First node has no prior context.
+      expect(firstInput?.previousNodeOutput ?? null).toBe(null);
+
+      // Second node should receive prior node output in structured form + back-compat INPUT_JSON string.
+      expect(secondInput?.previousNodeId).toBe("draft_assets");
+      expect(secondInput?.previousNodeOutput).toEqual({ ok: true, mocked: true });
+      expect(typeof secondInput?.INPUT_JSON).toBe("string");
+      expect(String(secondInput?.INPUT_JSON)).toContain('"ok": true');
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
 });
