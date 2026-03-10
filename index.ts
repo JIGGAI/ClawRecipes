@@ -44,6 +44,7 @@ import {
   executeMigrateTeamPlan,
 } from "./src/handlers/team";
 import { handleScaffold, scaffoldAgentFromRecipe } from "./src/handlers/scaffold";
+import { handleAddRoleToTeam } from "./src/handlers/team-add-role";
 import { reconcileRecipeCronJobs } from "./src/handlers/cron";
 import { handleWorkflowsApprove, handleWorkflowsPollApprovals, handleWorkflowsResume, handleWorkflowsRun, handleWorkflowsRunnerOnce, handleWorkflowsRunnerTick, handleWorkflowsWorkerTick } from "./src/handlers/workflows";
 import { listRecipeFiles, loadRecipeById, workspacePath } from "./src/lib/recipes";
@@ -899,6 +900,31 @@ workflows
             });
             logScaffoldResult(res, recipeId);
           });
+
+        cmd
+          .command("add-role")
+          .description("Install a role add-on into an existing team workspace (scaffolds roles/<role>/ + optional cron)")
+          .requiredOption("--team-id <teamId>", "Team id (workspace-<teamId>)")
+          .requiredOption("--role <role>", "Role name (e.g. workflow-runner)")
+          .requiredOption("--recipe <recipeId>", "Agent recipe id to scaffold into roles/<role>/")
+          .option("--agent-id <agentId>", "Optional explicit agent id (default: <teamId>-<role>)")
+          .option("--overwrite", "Overwrite existing recipe-managed files in the role directory")
+          .option("--apply-config", "Write the agent into openclaw config (agents.list)")
+          .option("--no-cron", "Do not install/patch cron jobs from the add-on recipe")
+          .action(async (options: { teamId?: string; role?: string; recipe?: string; agentId?: string; overwrite?: boolean; applyConfig?: boolean; cron?: boolean }) => {
+            if (!options.teamId || !options.role || !options.recipe) throw new Error("--team-id, --role, and --recipe are required");
+            const res = await handleAddRoleToTeam(api, {
+              teamId: String(options.teamId),
+              role: String(options.role),
+              recipeId: String(options.recipe),
+              agentId: typeof options.agentId === "string" ? String(options.agentId) : undefined,
+              overwrite: !!options.overwrite,
+              applyConfig: !!options.applyConfig,
+              installCron: options.cron !== false,
+            });
+            logScaffoldResult(res, String(options.recipe));
+          });
+
       },
       { commands: ["recipes"] },
     );

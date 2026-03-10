@@ -1060,6 +1060,8 @@ templates:
     - When work is ready for QA, move the ticket to `work/testing/` and assign it to the tester.
     - When QA passes a ticket, QA will keep it in `work/testing/` but set `Owner: lead` (ready-for-pr).
     - As lead, create the PR **only** for testing-lane tickets with `Owner: lead` + `QA: PASS` evidence.
+      - PRs must stay specific to a single ticket/problem.
+      - If a PR depends on another ticket/PR, the PR description must clearly say so (for example: `Depends on 0xxx`).
       - On PR creation, link PR in the ticket and add `[pr-watcher:close]` if eligible for auto-close on merge.
     - After PR merge, pr-watcher may move ticket to DONE if `[pr-watcher:close]` is present and tasks are complete.
 
@@ -1131,6 +1133,9 @@ templates:
     Notes:
     - Do NOT move tickets to `work/done/`.
     - Do NOT open PRs. Lead opens PR only after QA PASS.
+    - Keep PR scope specific to the current ticket only.
+    - If you discover a second issue, track it separately and keep it out of the current PR unless the dependency is explicit.
+    - If one PR depends on another ticket/PR, make that dependency explicit in the PR description (for example: `Depends on 0xxx`).
 
   devops.soul: |
     # SOUL.md
