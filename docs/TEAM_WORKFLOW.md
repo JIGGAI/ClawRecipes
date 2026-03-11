@@ -199,6 +199,10 @@ Because it gives you:
 - easy automation
 - less dependency on one UI or one database
 
+Related:
+- [MEMORY_SYSTEM.md](MEMORY_SYSTEM.md)
+- [SWARM_ORCHESTRATOR.md](SWARM_ORCHESTRATOR.md)
+
 ---
 
 ## Recommended daily commands

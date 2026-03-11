@@ -265,7 +265,10 @@ If you are new, read these in order:
 2. [Commands](docs/COMMANDS.md)
 3. [Team workflow](docs/TEAM_WORKFLOW.md)
 4. [Workflow runs](docs/WORKFLOW_RUNS_FILE_FIRST.md)
-5. [Outbound posting](docs/OUTBOUND_POSTING.md)
+5. [Workflow examples](docs/WORKFLOW_EXAMPLES.md)
+6. [Outbound posting](docs/OUTBOUND_POSTING.md)
+7. [Memory system](docs/MEMORY_SYSTEM.md)
+8. [Swarm Orchestrator](docs/SWARM_ORCHESTRATOR.md)
 
 If you are building recipes:
 

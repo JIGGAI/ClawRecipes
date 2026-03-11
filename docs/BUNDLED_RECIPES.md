@@ -188,6 +188,9 @@ Inspect it first:
 openclaw recipes show swarm-orchestrator
 ```
 
+More:
+- [SWARM_ORCHESTRATOR.md](SWARM_ORCHESTRATOR.md)
+
 ---
 
 ## Best way to choose a recipe
