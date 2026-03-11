@@ -179,6 +179,90 @@ describe("workflow-runner (file-first + runner/worker)", () => {
     }
   });
 
+  test("marketing.post_all dryRun writes POST_LOG artifact without outbound deps", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-post";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "post-dry-run.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+
+      const workflow = {
+        id: "post-dry-run",
+        name: "Demo: marketing.post_all dry-run",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "post",
+            kind: "tool",
+            assignedTo: { agentId: "agent-a" },
+            action: {
+              tool: "marketing.post_all",
+              args: {
+                dryRun: true,
+                draftsFromNode: "qc_brand",
+              },
+            },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "post", on: "success" },
+          { from: "post", to: "end", on: "success" },
+        ],
+      };
+
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi();
+
+      const enq = await enqueueWorkflowRun(api, { teamId, workflowFile });
+      expect(enq.ok).toBe(true);
+
+      // Pre-seed a prior node output (marketing.post_all reads node-outputs/<idx>-<nodeId>.json with {text}).
+      const nodeOutputsDir = path.join(teamDir, "shared-context", "workflow-runs", enq.runId, "node-outputs");
+      await fs.mkdir(nodeOutputsDir, { recursive: true });
+      await fs.writeFile(
+        path.join(nodeOutputsDir, "001-qc_brand.json"),
+        JSON.stringify({ text: "Hello from qc_brand (draft only)\nDo not post without approval" }, null, 2) + "\n",
+        "utf8",
+      );
+
+      const r1 = await runWorkflowRunnerOnce(api, { teamId });
+      expect(r1.ok).toBe(true);
+      expect(r1.claimed).toBe(1);
+
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 5, workerId: "worker-a" });
+      expect(w1.ok).toBe(true);
+
+      // Runner must tick again to observe completed worker node and advance to end.
+      const r2 = await runWorkflowRunnerOnce(api, { teamId });
+      expect(r2.ok).toBe(true);
+
+      const postLog = await fs.readFile(path.join(teamDir, "shared-context", "marketing", "POST_LOG.md"), "utf8");
+      expect(postLog).toContain("[DRY_RUN]");
+      expect(postLog).toContain(`run=${enq.runId}`);
+
+      const runRaw = await fs.readFile(enq.runLogPath, "utf8");
+      const run = JSON.parse(runRaw) as { status: string };
+      expect(run.status).toBe("completed");
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+
 
   test("needs_revision clears downstream completion so revised node re-enqueues downstream nodes", async () => {
     const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
