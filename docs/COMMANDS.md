@@ -302,8 +302,9 @@ Examples:
 So if you install the plugin and then say "the workflow exists but does not fully work," check the optional workflow dependencies next.
 
 More:
-- [WORKFLOW_RUNS_FILE_FIRST.md](WORKFLOW_RUNS_FILE_FIRST.md)
-- [OUTBOUND_POSTING.md](OUTBOUND_POSTING.md)
+- [WORKFLOW_RUNS_FILE_FIRST.md](WORKFLOW_RUNS_FILE_FIRST.md) — node kinds, triggers, runs, edges, runner/worker model, approvals
+- [WORKFLOW_EXAMPLES.md](WORKFLOW_EXAMPLES.md) — copy-paste workflow patterns
+- [OUTBOUND_POSTING.md](OUTBOUND_POSTING.md) — publishing/posting behavior and setup
 
 ---
 
