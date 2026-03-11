@@ -2069,11 +2069,62 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
 
         } else if (toolName === 'marketing.post_all') {
-          // Disabled by default: do not ship plugins that spawn local processes for posting.
-          // Use an approval-gated workflow node that calls a dedicated posting tool/plugin instead.
-          throw new Error(
-            'marketing.post_all is disabled in this build (install safety). Use an external posting tool/plugin (approval-gated) instead.'
-          );
+          // Local-only controller patch for RJ: re-enable X posting via xurl. Supports args.dryRun=true.
+          const { execFile } = await import('node:child_process');
+          const { promisify } = await import('node:util');
+          const execFileP = promisify(execFile);
+
+          const platforms = Array.isArray((toolArgs as Record<string, unknown>)?.['platforms'])
+            ? (((toolArgs as Record<string, unknown>)['platforms'] as unknown[]) ?? []).map(String)
+            : ['x'];
+          if (!platforms.includes('x')) {
+            throw new Error('marketing.post_all currently supports X-only on this controller.');
+          }
+
+          const nodeOutputsDir = path.join(runDir, 'node-outputs');
+          const draftsFromNode = String((toolArgs as Record<string, unknown>)?.['draftsFromNode'] ?? '').trim() || 'qc_brand';
+          let text = await loadProposedPostTextFromPriorNode({ runDir, nodeOutputsDir, priorNodeId: draftsFromNode });
+          if (!text?.trim()) throw new Error('marketing.post_all: missing draft text');
+
+          const dryRun = Boolean((toolArgs as Record<string, unknown>)?.['dryRun']);
+
+          // Never publish internal draft/instruction/disclaimer copy.
+          text = text
+            .split(/\r?\n/)
+            .filter((line) => !/draft\s*only/i.test(line))
+            .filter((line) => !/do\s+not\s+post\s+without\s+approval/i.test(line))
+            .filter((line) => !/clawrecipes\s+before\s+openclaw/i.test(line))
+            .filter((line) => !/nothing\s+posts\s+without\s+approval/i.test(line))
+            .join('\n')
+            .trim();
+
+          if (dryRun) {
+            const logRel = path.join('shared-context', 'marketing', 'POST_LOG.md');
+            const logAbs = path.join(teamDir, logRel);
+            await ensureDir(path.dirname(logAbs));
+            await fs.appendFile(
+              logAbs,
+              `- ${new Date().toISOString()} [DRY_RUN] run=${runId} node=${node.id} tool=${toolName} platforms=x\n  - text: ${JSON.stringify(text)}\n`,
+              'utf8',
+            );
+
+            const result = { dryRun: true, platformsWouldPost: ['x'], draftText: text, logPath: logRel };
+            await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
+          } else {
+            const who = await execFileP('xurl', ['whoami'], { timeout: 60_000, env: { ...process.env, NO_COLOR: '1' } });
+            const whoJson = JSON.parse(String((who as { stdout?: string }).stdout ?? ''));
+            const username = String((whoJson as { data?: { username?: string } })?.data?.username ?? '').trim();
+            if (!username) throw new Error('marketing.post_all: could not resolve X username');
+
+            const postRes = await execFileP('xurl', ['post', text], { timeout: 60_000, env: { ...process.env, NO_COLOR: '1' } });
+            const postJson = JSON.parse(String((postRes as { stdout?: string }).stdout ?? ''));
+            const postId = String((postJson as { data?: { id?: string } })?.data?.id ?? '').trim();
+            if (!postId) throw new Error('marketing.post_all: xurl post did not return an id');
+
+            const url = `https://x.com/${username}/status/${postId}`;
+            const result = { platformsPosted: ['x'], x: { postId, url, username } };
+            await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
+          }
         } else {
           const toolRes = await toolsInvoke<unknown>(api, {
             tool: toolName,
