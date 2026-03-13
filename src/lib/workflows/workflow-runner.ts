@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-import { resolveWorkspaceRoot } from '../workspace';
+import { resolveTeamDir } from '../workspace';
 import type { ToolTextResult } from '../../toolsInvoke';
 import { toolsInvoke } from '../../toolsInvoke';
 import { loadOpenClawConfig } from '../recipes-config';
@@ -870,8 +870,7 @@ export async function enqueueWorkflowRun(api: OpenClawPluginApi, opts: {
   trigger?: { kind: string; at?: string };
 }) {
   const teamId = String(opts.teamId);
-  const workspaceRoot = resolveWorkspaceRoot(api);
-  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const teamDir = resolveTeamDir(api, teamId);
   const sharedContextDir = path.join(teamDir, 'shared-context');
   const workflowsDir = path.join(sharedContextDir, 'workflows');
   const runsDir = path.join(sharedContextDir, 'workflow-runs');
@@ -968,8 +967,7 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
   leaseSeconds?: number;
 }) {
   const teamId = String(opts.teamId);
-  const workspaceRoot = resolveWorkspaceRoot(api);
-  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const teamDir = resolveTeamDir(api, teamId);
   const sharedContextDir = path.join(teamDir, 'shared-context');
   const runsDir = path.join(sharedContextDir, 'workflow-runs');
   const workflowsDir = path.join(sharedContextDir, 'workflows');
@@ -1121,8 +1119,7 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
   leaseSeconds?: number;
 }) {
   const teamId = String(opts.teamId);
-  const workspaceRoot = resolveWorkspaceRoot(api);
-  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const teamDir = resolveTeamDir(api, teamId);
   const sharedContextDir = path.join(teamDir, 'shared-context');
   const runsDir = path.join(sharedContextDir, 'workflow-runs');
   const workflowsDir = path.join(sharedContextDir, 'workflows');
@@ -1304,8 +1301,7 @@ export async function runWorkflowOnce(api: OpenClawPluginApi, opts: {
   trigger?: { kind: string; at?: string };
 }) {
   const teamId = String(opts.teamId);
-  const workspaceRoot = resolveWorkspaceRoot(api);
-  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const teamDir = resolveTeamDir(api, teamId);
   const sharedContextDir = path.join(teamDir, 'shared-context');
   const workflowsDir = path.join(sharedContextDir, 'workflows');
   const runsDir = path.join(sharedContextDir, 'workflow-runs');
@@ -1422,8 +1418,7 @@ export async function pollWorkflowApprovals(api: OpenClawPluginApi, opts: {
   limit?: number;
 }) {
   const teamId = String(opts.teamId);
-  const workspaceRoot = resolveWorkspaceRoot(api);
-  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const teamDir = resolveTeamDir(api, teamId);
   const runsDir = path.join(teamDir, 'shared-context', 'workflow-runs');
 
   if (!(await fileExists(runsDir))) {
@@ -1501,8 +1496,7 @@ export async function approveWorkflowRun(api: OpenClawPluginApi, opts: {
 }) {
   const teamId = String(opts.teamId);
   const runId = String(opts.runId);
-  const workspaceRoot = resolveWorkspaceRoot(api);
-  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const teamDir = resolveTeamDir(api, teamId);
 
   const approvalPath = await approvalsPathFor(teamDir, runId);
   if (!(await fileExists(approvalPath))) {
@@ -1527,8 +1521,7 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
 }) {
   const teamId = String(opts.teamId);
   const runId = String(opts.runId);
-  const workspaceRoot = resolveWorkspaceRoot(api);
-  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const teamDir = resolveTeamDir(api, teamId);
   const sharedContextDir = path.join(teamDir, 'shared-context');
   const runsDir = path.join(sharedContextDir, 'workflow-runs');
   const workflowsDir = path.join(sharedContextDir, 'workflows');
@@ -1728,8 +1721,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
   if (!teamId) throw new Error('--team-id is required');
   if (!agentId) throw new Error('--agent-id is required');
 
-  const workspaceRoot = resolveWorkspaceRoot(api);
-  const teamDir = path.resolve(workspaceRoot, '..', `workspace-${teamId}`);
+  const teamDir = resolveTeamDir(api, teamId);
   const sharedContextDir = path.join(teamDir, 'shared-context');
   const workflowsDir = path.join(sharedContextDir, 'workflows');
   const runsDir = path.join(sharedContextDir, 'workflow-runs');

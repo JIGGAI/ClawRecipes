@@ -389,6 +389,72 @@ describe("workflow-runner (file-first + runner/worker)", () => {
     }
   });
 
+  test("approval update + resume work when agent workspace is nested under the team dir", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base } = await mkTmpWorkspace();
+    delete process.env.OPENCLAW_WORKSPACE;
+
+    const teamId = "t-nested-workspace";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const agentWorkspace = path.join(teamDir, "roles", "lead");
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(agentWorkspace, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "nested-approval.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+      const workflow = {
+        id: "nested-approval",
+        name: "Nested workspace approval flow",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "draft",
+            kind: "tool",
+            assignedTo: { agentId: "agent-writer" },
+            action: { tool: "fs.append", args: { path: "shared-context/DRAFT.md", content: "draft\n" } },
+          },
+          { id: "approval", kind: "human_approval", action: { provider: "telegram", target: "123" } },
+          {
+            id: "publish",
+            kind: "tool",
+            assignedTo: { agentId: "agent-publisher" },
+            action: { tool: "fs.append", args: { path: "shared-context/PUBLISH.md", content: "publish\n" } },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "draft", on: "success" },
+          { from: "draft", to: "approval", on: "success" },
+          { from: "approval", to: "publish", on: "success" },
+          { from: "publish", to: "end", on: "success" },
+        ],
+      };
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi({ config: { agents: { defaults: { workspace: agentWorkspace } } } as any });
+      const enq = await enqueueWorkflowRun(api, { teamId, workflowFile });
+      expect(enq.ok).toBe(true);
+
+      await runWorkflowRunnerOnce(api, { teamId });
+      await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
+
+      const approved = await approveWorkflowRun(api, { teamId, runId: enq.runId, approved: true });
+      expect(approved.ok).toBe(true);
+      const resumed = await resumeWorkflowRun(api, { teamId, runId: enq.runId });
+      expect(resumed.ok).toBe(true);
+      expect(resumed.status).toBe("waiting_workers");
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
   test("worker skips recovered stale task when run already advanced past that node", async () => {
     const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
 
