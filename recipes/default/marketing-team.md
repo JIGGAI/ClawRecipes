@@ -109,73 +109,61 @@ agents:
     tools:
       profile: "coding"
       allow: ["group:fs", "group:web", "group:runtime"]
-      deny: ["exec"]
   - role: seo
     name: SEO Strategist
     tools:
       profile: "coding"
       allow: ["group:fs", "group:web"]
-      deny: ["exec"]
   - role: copywriter
     name: Copywriter
     tools:
       profile: "coding"
       allow: ["group:fs", "group:web"]
-      deny: ["exec"]
   - role: ads
     name: Paid Ads Specialist
     tools:
       profile: "coding"
       allow: ["group:fs", "group:web"]
-      deny: ["exec"]
   - role: social
     name: Social & Community
     tools:
       profile: "coding"
       allow: ["group:fs", "group:web"]
-      deny: ["exec"]
   - role: designer
     name: Creative / Designer
     tools:
       profile: "coding"
       allow: ["group:fs", "group:web"]
-      deny: ["exec"]
   - role: analyst
     name: Marketing Analyst
     tools:
       profile: "coding"
       allow: ["group:fs", "group:web"]
-      deny: ["exec"]
   - role: video
     name: Video Director / Creator
     tools:
       profile: "coding"
       allow: ["group:fs", "group:web"]
-      deny: ["exec"]
   - role: compliance
     name: Brand / Compliance
     tools:
       profile: "coding"
       allow: ["group:fs", "group:web"]
-      deny: ["exec"]
   - role: offer
     name: Offer Architect
     tools:
       profile: "coding"
       allow: ["group:fs", "group:web"]
-      deny: ["exec"]
   - role: funnel
     name: Funnel Strategist
     tools:
       profile: "coding"
       allow: ["group:fs", "group:web"]
-      deny: ["exec"]
   - role: lifecycle
     name: Lifecycle Strategist
     tools:
       profile: "coding"
       allow: ["group:fs", "group:web"]
-      deny: ["exec"]
 
 templates:
   sharedContext.memoryPolicy: |
