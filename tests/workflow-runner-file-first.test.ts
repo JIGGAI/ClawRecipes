@@ -24,6 +24,7 @@ import {
   runWorkflowRunnerOnce,
   runWorkflowWorkerTick,
 } from "../src/lib/workflows/workflow-runner";
+import { enqueueTask } from "../src/lib/workflows/workflow-queue";
 
 async function mkTmpWorkspace() {
   const base = await fs.mkdtemp(path.join(os.tmpdir(), "clawrecipes-workflow-runner-test-"));
@@ -270,6 +271,118 @@ describe("workflow-runner (file-first + runner/worker)", () => {
 
       const types = (run2.events ?? []).map((e) => e?.type).filter(Boolean);
       expect(types).toContain("node.enqueued");
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("worker releases claim when lock contention causes requeue", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-lock";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+
+    try {
+      await enqueueTask(teamDir, "agent-a", {
+        teamId,
+        runId: "run-lock",
+        nodeId: "node-lock",
+        kind: "execute_node",
+      });
+
+      const lockDir = path.join(teamDir, "shared-context", "workflow-runs", "run-lock", "locks");
+      await fs.mkdir(lockDir, { recursive: true });
+      const lockPath = path.join(lockDir, "node-lock.lock");
+      await fs.writeFile(
+        lockPath,
+        JSON.stringify({ workerId: "other-worker", taskId: "existing", claimedAt: new Date().toISOString() }, null, 2),
+        "utf8"
+      );
+
+      const api = stubApi();
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 1, workerId: "worker-a" });
+      expect(w1.ok).toBe(true);
+      expect(w1.results[0]?.status).toBe("skipped_locked");
+
+      const claimsDir = path.join(teamDir, "shared-context", "workflow-queues", "claims");
+      const claimFiles = await fs.readdir(claimsDir).catch(() => []);
+      expect(claimFiles.length).toBe(0);
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("resume after approval follows graph runnable node (not approval index + 1)", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-resume-graph";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "resume-graph.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+      const workflow = {
+        id: "resume-graph",
+        name: "Resume uses graph successor",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "draft",
+            kind: "tool",
+            assignedTo: { agentId: "agent-writer" },
+            action: { tool: "fs.append", args: { path: "shared-context/DRAFT.md", content: "draft\n" } },
+          },
+          { id: "approval", kind: "human_approval", action: { provider: "telegram", target: "123" } },
+          { id: "end", kind: "end" },
+          {
+            id: "publish",
+            kind: "tool",
+            assignedTo: { agentId: "agent-publisher" },
+            action: { tool: "fs.append", args: { path: "shared-context/PUBLISH.md", content: "publish\n" } },
+          },
+        ],
+        edges: [
+          { from: "start", to: "draft", on: "success" },
+          { from: "draft", to: "approval", on: "success" },
+          { from: "approval", to: "publish", on: "success" },
+          { from: "publish", to: "end", on: "success" },
+        ],
+      };
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi();
+      const enq = await enqueueWorkflowRun(api, { teamId, workflowFile });
+      expect(enq.ok).toBe(true);
+
+      const r1 = await runWorkflowRunnerOnce(api, { teamId });
+      expect(r1.ok).toBe(true);
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
+      expect(w1.ok).toBe(true);
+
+      await approveWorkflowRun(api, { teamId, runId: enq.runId, approved: true });
+      const resumed = await resumeWorkflowRun(api, { teamId, runId: enq.runId });
+      expect(resumed.ok).toBe(true);
+      expect(resumed.status).toBe("waiting_workers");
+
+      const w2 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-publisher", limit: 10, workerId: "worker-publisher" });
+      expect(w2.ok).toBe(true);
+
+      const runRaw = await fs.readFile(enq.runLogPath, "utf8");
+      const run = JSON.parse(runRaw) as { status: string };
+      expect(run.status).toBe("completed");
     } finally {
       process.env.OPENCLAW_WORKSPACE = prevWorkspace;
       await fs.rm(base, { recursive: true, force: true });
