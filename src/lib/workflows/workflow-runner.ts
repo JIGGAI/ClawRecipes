@@ -1810,6 +1810,25 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     if (nodeIdx < 0) throw new Error(`Node not found in workflow: ${task.nodeId}`);
     const node = workflow.nodes[nodeIdx]!;
 
+    // Stale-task guard: expired claim recovery can surface older queue entries from behind the
+    // cursor. Before executing a dequeued task, verify that this node is still actually runnable
+    // for the current run state. Otherwise we can resurrect pre-approval work and overwrite
+    // canonical node outputs for runs that already advanced.
+    const currentRun = (await loadRunFile(teamDir, runsDir, task.runId)).run;
+    const currentNodeStates = loadNodeStatesFromRun(currentRun);
+    const currentStatus = currentNodeStates[String(node.id)]?.status;
+    const currentlyRunnableIdx = pickNextRunnableNodeIndex({ workflow, run: currentRun });
+    if (
+      currentStatus === 'success' ||
+      currentStatus === 'error' ||
+      currentStatus === 'waiting' ||
+      currentlyRunnableIdx === null ||
+      String(workflow.nodes[currentlyRunnableIdx]?.id ?? '') !== String(node.id)
+    ) {
+      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_stale' });
+      continue;
+    }
+
     // Determine current lane + ticket path.
     const laneRaw = String(run.ticket.lane);
     assertLane(laneRaw);
