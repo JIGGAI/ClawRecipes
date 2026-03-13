@@ -1559,10 +1559,9 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
 
   const ticketPath = path.join(teamDir, runLog.ticket.file);
 
-  // Find the approval node index; resume after it.
+  // Find the approval node index.
   const approvalIdx = workflow.nodes.findIndex((n) => n.kind === 'human_approval' && String(n.id) === String(approval.nodeId));
   if (approvalIdx < 0) throw new Error(`Approval node not found in workflow: nodeId=${approval.nodeId}`);
-  const startNodeIndex = approvalIdx + 1;
 
   if (approval.status === 'rejected') {
     // Denial flow: mark run as needs_revision and loop back to the draft step (or closest prior llm node).
@@ -1571,9 +1570,6 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
     const approvalNote = String(approval.note ?? '').trim();
 
     // Find a reasonable "revise" node: prefer a node with id=draft_assets, else the closest prior llm node.
-    const approvalIdx = workflow.nodes.findIndex((n) => n.kind === 'human_approval' && String(n.id) === String(approval.nodeId));
-    if (approvalIdx < 0) throw new Error(`Approval node not found in workflow: nodeId=${approval.nodeId}`);
-
     let reviseIdx = workflow.nodes.findIndex((n, idx) => idx < approvalIdx && String(n.id) === 'draft_assets');
     if (reviseIdx < 0) {
       for (let i = approvalIdx - 1; i >= 0; i--) {
@@ -1667,9 +1663,28 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
       : [...cur.events, { ts: approvedTs, type: 'node.approved', nodeId: approval.nodeId }],
   }));
 
-  // Pull-based execution: enqueue the next node and return.
-  const idx0 = Math.max(0, Number(startNodeIndex ?? 0));
-  if (idx0 >= (workflow.nodes?.length ?? 0)) {
+  // Pull-based execution: enqueue the next runnable node and return.
+  let updated = (await loadRunFile(teamDir, runsDir, runId)).run;
+  let enqueueIdx = pickNextRunnableNodeIndex({ workflow, run: updated });
+
+  // Auto-complete start/end nodes.
+  while (enqueueIdx !== null) {
+    const n = workflow.nodes[enqueueIdx]!;
+    const k = String(n.kind ?? '');
+    if (k !== 'start' && k !== 'end') break;
+    const ts = new Date().toISOString();
+    await appendRunLog(runLogPath, (cur) => ({
+      ...cur,
+      nextNodeIndex: enqueueIdx! + 1,
+      nodeStates: { ...(cur.nodeStates ?? {}), [n.id]: { status: 'success', ts } },
+      events: [...cur.events, { ts, type: 'node.completed', nodeId: n.id, kind: k, noop: true }],
+      nodeResults: [...(cur.nodeResults ?? []), { nodeId: n.id, kind: k, noop: true }],
+    }));
+    updated = (await loadRunFile(teamDir, runsDir, runId)).run;
+    enqueueIdx = pickNextRunnableNodeIndex({ workflow, run: updated });
+  }
+
+  if (enqueueIdx === null) {
     await writeRunFile(runLogPath, (cur) => ({
       ...cur,
       updatedAt: new Date().toISOString(),
@@ -1679,9 +1694,10 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
     return { ok: true as const, runId, status: 'completed' as const, ticketPath, runLogPath };
   }
 
-  const node = workflow.nodes[idx0]!;
+  const node = workflow.nodes[enqueueIdx]!;
+  const nextKind = String(node.kind ?? '');
   const nextAgentId = String(node?.assignedTo?.agentId ?? '').trim();
-  if (!nextAgentId) throw new Error(`Node ${node.id} missing assignedTo.agentId (required for pull-based execution)`);
+  if (!nextAgentId) throw new Error(`Next runnable node ${node.id} (${nextKind}) missing assignedTo.agentId (required for pull-based execution)`);
 
   await enqueueTask(teamDir, nextAgentId, {
     teamId,
@@ -1694,7 +1710,7 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
     ...cur,
     updatedAt: new Date().toISOString(),
     status: 'waiting_workers',
-    nextNodeIndex: idx0,
+    nextNodeIndex: enqueueIdx,
     events: [...cur.events, { ts: new Date().toISOString(), type: 'node.enqueued', nodeId: node.id, agentId: nextAgentId }],
   }));
 
@@ -1728,56 +1744,60 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     if (!dq.ok || !dq.task) break;
 
     const { task } = dq.task;
-    if (task.kind !== 'execute_node') continue;
-
     const runPath = runFilePathFor(runsDir, task.runId);
     const runDir = path.dirname(runPath);
     const lockDir = path.join(runDir, 'locks');
-    await ensureDir(lockDir);
-
-    // Node-level lock to prevent double execution.
     const lockPath = path.join(lockDir, `${task.nodeId}.lock`);
-    try {
-      await fs.writeFile(lockPath, JSON.stringify({ workerId, taskId: task.id, claimedAt: new Date().toISOString() }, null, 2), { encoding: 'utf8', flag: 'wx' });
-    } catch {
-      // Lock exists. Treat it as contention unless it looks stale.
-      // (If a worker crashed, the lock file can stick around and block retries/revisions forever.)
-      let unlocked = false;
-      try {
-        const raw = await readTextFile(lockPath);
-        const parsed = JSON.parse(raw) as { claimedAt?: string };
-        const claimedAtMs = parsed?.claimedAt ? Date.parse(String(parsed.claimedAt)) : NaN;
-        const ageMs = Number.isFinite(claimedAtMs) ? Date.now() - claimedAtMs : NaN;
-        const stale = Number.isFinite(ageMs) && ageMs > 10 * 60 * 1000;
-        if (stale) {
-          await fs.unlink(lockPath);
-          unlocked = true;
-        }
-      } catch {
-        // ignore
-      }
+    let lockHeld = false;
 
-      if (unlocked) {
+    try {
+      if (task.kind !== 'execute_node') continue;
+
+      await ensureDir(lockDir);
+
+      // Node-level lock to prevent double execution.
+      try {
+        await fs.writeFile(lockPath, JSON.stringify({ workerId, taskId: task.id, claimedAt: new Date().toISOString() }, null, 2), { encoding: 'utf8', flag: 'wx' });
+        lockHeld = true;
+      } catch {
+        // Lock exists. Treat it as contention unless it looks stale.
+        // (If a worker crashed, the lock file can stick around and block retries/revisions forever.)
+        let unlocked = false;
         try {
-          await fs.writeFile(lockPath, JSON.stringify({ workerId, taskId: task.id, claimedAt: new Date().toISOString() }, null, 2), { encoding: 'utf8', flag: 'wx' });
+          const raw = await readTextFile(lockPath);
+          const parsed = JSON.parse(raw) as { claimedAt?: string };
+          const claimedAtMs = parsed?.claimedAt ? Date.parse(String(parsed.claimedAt)) : NaN;
+          const ageMs = Number.isFinite(claimedAtMs) ? Date.now() - claimedAtMs : NaN;
+          const stale = Number.isFinite(ageMs) && ageMs > 10 * 60 * 1000;
+          if (stale) {
+            await fs.unlink(lockPath);
+            unlocked = true;
+          }
         } catch {
+          // ignore
+        }
+
+        if (unlocked) {
+          try {
+            await fs.writeFile(lockPath, JSON.stringify({ workerId, taskId: task.id, claimedAt: new Date().toISOString() }, null, 2), { encoding: 'utf8', flag: 'wx' });
+            lockHeld = true;
+          } catch {
+            results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_locked' });
+            continue;
+          }
+        } else {
+          // Requeue to avoid task loss since dequeueNextTask already advanced the queue cursor.
+          await enqueueTask(teamDir, agentId, {
+            teamId,
+            runId: task.runId,
+            nodeId: task.nodeId,
+            kind: 'execute_node',
+          });
           results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_locked' });
           continue;
         }
-      } else {
-        // Requeue to avoid task loss since dequeueNextTask already advanced the queue cursor.
-        await enqueueTask(teamDir, agentId, {
-          teamId,
-          runId: task.runId,
-          nodeId: task.nodeId,
-          kind: 'execute_node',
-        });
-        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_locked' });
-        continue;
       }
-    }
 
-    try {
       const runId = task.runId;
 
       const { run } = await loadRunFile(teamDir, runsDir, runId);
@@ -2206,12 +2226,14 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       events: [...cur.events, { ts: new Date().toISOString(), type: 'node.enqueued', nodeId: nextNode.id, agentId: nextAgentId }],
     }));
 
-    results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'ok' });
+      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'ok' });
     } finally {
-      try {
-        await fs.unlink(lockPath);
-      } catch {
-        // ignore
+      if (lockHeld) {
+        try {
+          await fs.unlink(lockPath);
+        } catch {
+          // ignore
+        }
       }
       try {
         await releaseTaskClaim(teamDir, agentId, task.id);
