@@ -43,6 +43,30 @@ function claimPathFor(teamDir: string, agentId: string, taskId: string) {
   return path.join(claimsDir(teamDir), `${agentId}.${taskId}.json`);
 }
 
+async function loadClaim(teamDir: string, agentId: string, taskId: string) {
+  const p = claimPathFor(teamDir, agentId, taskId);
+  try {
+    const raw = await fs.readFile(p, 'utf8');
+    return JSON.parse(raw) as { workerId?: string; claimedAt?: string; leaseSeconds?: number };
+  } catch {
+    return null;
+  }
+}
+
+function isExpiredClaim(claim: { claimedAt?: string; leaseSeconds?: number } | null | undefined, fallbackLeaseSeconds?: number) {
+  if (!claim) return false;
+  const effectiveLease = typeof claim.leaseSeconds === 'number' ? claim.leaseSeconds : fallbackLeaseSeconds;
+  const claimedAtMs = claim.claimedAt ? Date.parse(String(claim.claimedAt)) : NaN;
+  return typeof effectiveLease === 'number' && Number.isFinite(claimedAtMs) && Date.now() - claimedAtMs > effectiveLease * 1000;
+}
+
+export async function releaseTaskClaim(teamDir: string, agentId: string, taskId: string) {
+  try {
+    await fs.unlink(claimPathFor(teamDir, agentId, taskId));
+  } catch {
+    // ignore missing claims
+  }
+}
 
 export function queuePathFor(teamDir: string, agentId: string) {
   return path.join(queueDir(teamDir), `${agentId}.jsonl`);
@@ -150,109 +174,116 @@ export async function dequeueNextTask(
   }
 
   const st = await loadState(teamDir, agentId);
+  const workerId = String(opts?.workerId ?? `worker:${process.pid}`);
+  const leaseSeconds = typeof opts?.leaseSeconds === 'number' ? opts.leaseSeconds : undefined;
+
+  async function tryClaimTask(t: QueueTask, startOffsetBytes: number, endOffsetBytes: number, advanceState: boolean) {
+    await ensureDir(claimsDir(teamDir));
+    const claimPath = claimPathFor(teamDir, agentId, t.id);
+
+    async function writeClaim(overwrite: boolean) {
+      const claim = {
+        taskId: t.id,
+        agentId,
+        workerId,
+        claimedAt: new Date().toISOString(),
+        leaseSeconds,
+      };
+      await fs.writeFile(claimPath, JSON.stringify(claim, null, 2), { encoding: 'utf8', flag: overwrite ? 'w' : 'wx' });
+    }
+
+    try {
+      await writeClaim(false);
+    } catch {
+      const existing = await loadClaim(teamDir, agentId, t.id);
+      if (String(existing?.workerId ?? '') !== workerId) {
+        if (!isExpiredClaim(existing, leaseSeconds)) {
+          if (advanceState) {
+            await writeState(teamDir, agentId, { offsetBytes: endOffsetBytes, updatedAt: new Date().toISOString() });
+          }
+          return null;
+        }
+        await writeClaim(true);
+      }
+    }
+
+    if (advanceState) {
+      await writeState(teamDir, agentId, { offsetBytes: endOffsetBytes, updatedAt: new Date().toISOString() });
+    }
+    return {
+      ok: true as const,
+      task: { task: t, startOffsetBytes, endOffsetBytes },
+    };
+  }
+
   const fh = await fs.open(qPath, 'r');
   try {
     const stat = await fh.stat();
-    if (st.offsetBytes >= stat.size) {
-      return { ok: true as const, task: null as DequeuedTask | null, message: 'No new tasks.' };
-    }
+    if (st.offsetBytes < stat.size) {
+      const toRead = Math.min(stat.size - st.offsetBytes, 256 * 1024);
+      const buf = Buffer.alloc(toRead);
+      const { bytesRead } = await fh.read(buf, 0, toRead, st.offsetBytes);
+      const chunk = buf.subarray(0, bytesRead).toString('utf8');
 
-    const toRead = Math.min(stat.size - st.offsetBytes, 256 * 1024);
-    const buf = Buffer.alloc(toRead);
-    const { bytesRead } = await fh.read(buf, 0, toRead, st.offsetBytes);
-    const chunk = buf.subarray(0, bytesRead).toString('utf8');
+      const lines = chunk.split('\n');
+      const fullLines = lines.slice(0, -1);
+      let cursor = st.offsetBytes;
 
-    const lines = chunk.split('\n');
-    const fullLines = lines.slice(0, -1);
-    let cursor = st.offsetBytes;
+      for (const line of fullLines) {
+        const lineBytes = Buffer.byteLength(line + '\n');
+        const startOffsetBytes = cursor;
+        const endOffsetBytes = cursor + lineBytes;
+        cursor = endOffsetBytes;
 
-    for (const line of fullLines) {
-      const lineBytes = Buffer.byteLength(line + '\n');
-      const startOffsetBytes = cursor;
-      const endOffsetBytes = cursor + lineBytes;
-      cursor = endOffsetBytes;
+        if (!line.trim()) {
+          await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
+          continue;
+        }
 
-      if (!line.trim()) {
-        await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
-        continue;
-      }
-
-      let t: QueueTask | null = null;
-      try {
-        t = JSON.parse(line) as QueueTask;
-      } catch {
-        // Malformed: skip it so we don't get stuck.
-        await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
-        continue;
-      }
-
-      if (!t || !t.id || !t.runId || !t.nodeId) {
-        await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
-        continue;
-      }
-
-      await ensureDir(claimsDir(teamDir));
-      const claimPath = claimPathFor(teamDir, agentId, t.id);
-
-      // Claim behavior:
-      // - If unclaimed: create claim file.
-      // - If already claimed by *this* workerId: allow re-processing (idempotent recovery).
-      // - If claimed by another workerId:
-      //    - if lease is expired: allow this worker to steal the claim
-      //    - otherwise: skip
-      const workerId = String(opts?.workerId ?? `worker:${process.pid}`);
-      const leaseSeconds = typeof opts?.leaseSeconds === 'number' ? opts.leaseSeconds : undefined;
-      const now = Date.now();
-
-      async function writeClaim(overwrite: boolean) {
-        const claim = {
-          taskId: t!.id,
-          agentId,
-          workerId,
-          claimedAt: new Date().toISOString(),
-          leaseSeconds,
-        };
-        await fs.writeFile(claimPath, JSON.stringify(claim, null, 2), { encoding: 'utf8', flag: overwrite ? 'w' : 'wx' });
-      }
-
-      try {
-        await writeClaim(false);
-      } catch {
+        let t: QueueTask | null = null;
         try {
-          const raw = await fs.readFile(claimPath, 'utf8');
-          const existing = JSON.parse(raw) as { workerId?: string; claimedAt?: string; leaseSeconds?: number };
-
-          // Same worker: allow idempotent re-processing.
-          if (String(existing?.workerId ?? '') === workerId) {
-            // proceed
-          } else {
-            const existingLease = typeof existing?.leaseSeconds === 'number' ? existing.leaseSeconds : undefined;
-            const effectiveLease = typeof leaseSeconds === 'number' ? leaseSeconds : existingLease;
-            const claimedAtMs = existing?.claimedAt ? Date.parse(String(existing.claimedAt)) : NaN;
-            const expired = typeof effectiveLease === 'number' && Number.isFinite(claimedAtMs) && now - claimedAtMs > effectiveLease * 1000;
-
-            if (!expired) {
-              await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
-              continue;
-            }
-
-            // Lease expired: steal.
-            await writeClaim(true);
-          }
+          t = JSON.parse(line) as QueueTask;
         } catch {
           await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
           continue;
         }
-      }
 
-      await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
-      return {
-        ok: true as const,
-        task: { task: t, startOffsetBytes, endOffsetBytes },
-      };
+        if (!t || !t.id || !t.runId || !t.nodeId) {
+          await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
+          continue;
+        }
+
+        const claimed = await tryClaimTask(t, startOffsetBytes, endOffsetBytes, true);
+        if (claimed) return claimed;
+      }
     }
 
-    return { ok: true as const, task: null as DequeuedTask | null, message: 'No full line available yet.' };
+    // Recovery scan: if the cursor has already advanced, revisit older tasks that still have
+    // a live claim file and whose lease has expired. This prevents claimed-then-crashed workers
+    // from permanently orphaning tasks behind offsetBytes.
+    const fullRaw = await fs.readFile(qPath, 'utf8');
+    let cursor = 0;
+    for (const line of fullRaw.split('\n')) {
+      const lineBytes = Buffer.byteLength(line + '\n');
+      const startOffsetBytes = cursor;
+      const endOffsetBytes = cursor + lineBytes;
+      cursor = endOffsetBytes;
+      if (!line.trim()) continue;
+      let t: QueueTask | null = null;
+      try {
+        t = JSON.parse(line) as QueueTask;
+      } catch {
+        continue;
+      }
+      if (!t || !t.id || !t.runId || !t.nodeId) continue;
+      const existing = await loadClaim(teamDir, agentId, t.id);
+      if (!existing) continue;
+      if (String(existing.workerId ?? '') !== workerId && !isExpiredClaim(existing, leaseSeconds)) continue;
+      const claimed = await tryClaimTask(t, startOffsetBytes, endOffsetBytes, false);
+      if (claimed) return claimed;
+    }
+
+    return { ok: true as const, task: null as DequeuedTask | null, message: 'No new or recoverable tasks.' };
   } finally {
     await fh.close();
   }

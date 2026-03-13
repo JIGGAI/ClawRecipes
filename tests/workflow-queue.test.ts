@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { dequeueNextTask, enqueueTask, queuePathFor } from "../src/lib/workflows/workflow-queue";
+import { dequeueNextTask, enqueueTask, queuePathFor, releaseTaskClaim } from "../src/lib/workflows/workflow-queue";
 
 async function tmpTeamDir() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "workflow-queue-test-"));
@@ -19,10 +19,12 @@ describe("workflow-queue", () => {
       const dq1 = await dequeueNextTask(teamDir, "agent-a", { workerId: "w1" });
       expect(dq1.ok).toBe(true);
       expect(dq1.task?.task.runId).toBe("r1");
+      await releaseTaskClaim(teamDir, "agent-a", dq1.task!.task.id);
 
       const dq2 = await dequeueNextTask(teamDir, "agent-a", { workerId: "w1" });
       expect(dq2.ok).toBe(true);
       expect(dq2.task?.task.runId).toBe("r2");
+      await releaseTaskClaim(teamDir, "agent-a", dq2.task!.task.id);
 
       const dq3 = await dequeueNextTask(teamDir, "agent-a", { workerId: "w1" });
       expect(dq3.ok).toBe(true);
@@ -81,6 +83,46 @@ describe("workflow-queue", () => {
       const raw = await fs.readFile(claimPath, "utf8");
       const claim = JSON.parse(raw) as { workerId: string };
       expect(claim.workerId).toBe("worker-b");
+    } finally {
+      await fs.rm(teamDir, { recursive: true, force: true });
+    }
+  });
+
+  test("dequeueNextTask recovers expired claimed task behind the cursor", async () => {
+    const teamDir = await tmpTeamDir();
+    try {
+      const enq = await enqueueTask(teamDir, "agent-a", { teamId: "t1", runId: "r1", nodeId: "n1", kind: "execute_node" });
+      const dq1 = await dequeueNextTask(teamDir, "agent-a", { workerId: "worker-a", leaseSeconds: 1 });
+      expect(dq1.task?.task.id).toBe(enq.task.id);
+
+      const claimsDir = path.join(teamDir, "shared-context", "workflow-queues", "claims");
+      const claimPath = path.join(claimsDir, `agent-a.${enq.task.id}.json`);
+      const old = new Date(Date.now() - 10_000).toISOString();
+      await fs.writeFile(
+        claimPath,
+        JSON.stringify({ taskId: enq.task.id, agentId: "agent-a", workerId: "worker-a", claimedAt: old, leaseSeconds: 1 }, null, 2),
+        "utf8"
+      );
+
+      const dq2 = await dequeueNextTask(teamDir, "agent-a", { workerId: "worker-b", leaseSeconds: 1 });
+      expect(dq2.ok).toBe(true);
+      expect(dq2.task?.task.id).toBe(enq.task.id);
+    } finally {
+      await fs.rm(teamDir, { recursive: true, force: true });
+    }
+  });
+
+  test("releaseTaskClaim removes a completed claim so finished work is not recovered", async () => {
+    const teamDir = await tmpTeamDir();
+    try {
+      const enq = await enqueueTask(teamDir, "agent-a", { teamId: "t1", runId: "r1", nodeId: "n1", kind: "execute_node" });
+      const dq1 = await dequeueNextTask(teamDir, "agent-a", { workerId: "worker-a", leaseSeconds: 1 });
+      expect(dq1.task?.task.id).toBe(enq.task.id);
+      await releaseTaskClaim(teamDir, "agent-a", enq.task.id);
+
+      const dq2 = await dequeueNextTask(teamDir, "agent-a", { workerId: "worker-b", leaseSeconds: 1 });
+      expect(dq2.ok).toBe(true);
+      expect(dq2.task).toBeNull();
     } finally {
       await fs.rm(teamDir, { recursive: true, force: true });
     }

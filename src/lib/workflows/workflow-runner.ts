@@ -7,7 +7,7 @@ import type { ToolTextResult } from '../../toolsInvoke';
 import { toolsInvoke } from '../../toolsInvoke';
 import { loadOpenClawConfig } from '../recipes-config';
 import type { Workflow, WorkflowEdge, WorkflowLane, WorkflowNode } from './workflow-types';
-import { dequeueNextTask, enqueueTask } from './workflow-queue';
+import { dequeueNextTask, enqueueTask, releaseTaskClaim } from './workflow-queue';
 import { outboundPublish, type OutboundApproval, type OutboundMedia, type OutboundPlatform } from './outbound-client';
 import { sanitizeOutboundPostText } from './outbound-sanitize';
 import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow-node-output-readers';
@@ -2210,6 +2210,11 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     } finally {
       try {
         await fs.unlink(lockPath);
+      } catch {
+        // ignore
+      }
+      try {
+        await releaseTaskClaim(teamDir, agentId, task.id);
       } catch {
         // ignore
       }
