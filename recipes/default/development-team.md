@@ -440,7 +440,7 @@ templates:
 
     lane_from_rel() {
       # expects work/<lane>/<file>.md
-      echo "$1" | sed -E 's#^work/([^/]+)/.*$##'
+      echo "$1" | sed -E 's#^work/([^/]+)/.*$#\\1#'
     }
 
     field_from_md() {
@@ -578,7 +578,7 @@ templates:
 
     lane_from_rel() {
       # expects work/<lane>/<file>.md
-      echo "$1" | sed -E 's#^work/([^/]+)/.*$##'
+      echo "$1" | sed -E 's#^work/([^/]+)/.*$#\\1#'
     }
 
     field_from_md() {
@@ -728,7 +728,7 @@ templates:
 
     lane_from_rel() {
       # expects work/<lane>/<file>.md
-      echo "$1" | sed -E 's#^work/([^/]+)/.*$##'
+      echo "$1" | sed -E 's#^work/([^/]+)/.*$#\\1#'
     }
 
     field_from_md() {
@@ -863,7 +863,7 @@ templates:
 
     lane_from_rel() {
       # expects work/<lane>/<file>.md
-      echo "$1" | sed -E 's#^work/([^/]+)/.*$##'
+      echo "$1" | sed -E 's#^work/([^/]+)/.*$#\\1#'
     }
 
     field_from_md() {
