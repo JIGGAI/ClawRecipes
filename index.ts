@@ -92,12 +92,31 @@ type ApprovalReply = {
 };
 
 function parseApprovalReply(text: string): ApprovalReply | null {
-  const m = String(text ?? '').match(/(?:^|\n)\s*(approve|decline)\s+([A-Z0-9]{4,8})(?:\s+(.+))?\s*$/i);
-  if (!m) return null;
+  const raw = String(text ?? '');
+  const lines = raw
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .reverse();
 
-  const verb = String(m[1] ?? '').toLowerCase();
-  const code = String(m[2] ?? '').toUpperCase();
-  const note = asString(m[3]).trim();
+  for (const line of lines) {
+    const m = line.match(/\b(approve|decline)\b\s+([A-Z0-9]{4,8})(?:\s+(.+))?$/i);
+    if (!m) continue;
+    const verb = String(m[1] ?? '').toLowerCase();
+    const code = String(m[2] ?? '').toUpperCase();
+    const note = asString(m[3]).trim();
+    return {
+      approved: verb === 'approve',
+      code,
+      ...(note ? { note } : {}),
+    };
+  }
+
+  const fallback = raw.match(/\b(approve|decline)\b\s+([A-Z0-9]{4,8})(?:\s+(.+))?/i);
+  if (!fallback) return null;
+  const verb = String(fallback[1] ?? '').toLowerCase();
+  const code = String(fallback[2] ?? '').toUpperCase();
+  const note = asString(fallback[3]).trim();
   return {
     approved: verb === 'approve',
     code,
@@ -123,9 +142,7 @@ const recipesPlugin = {
     // Auto-approval via chat reply (MVP):
     // If a human replies `approve <code>` or `decline <code>` in the bound channel,
     // record the decision and resume the run.
-    api.on(
-      "message:received" as never,
-      async (evt: unknown, ctx: unknown) => {
+    const approvalReplyHandler = async (evt: unknown, ctx: unknown) => {
         try {
           const e = isRecord(evt) ? evt : {};
           const c = isRecord(ctx) ? ctx : {};
@@ -222,9 +239,10 @@ const recipesPlugin = {
         } catch (e) {
           console.error(`[recipes] approval reply handler error: ${(e as Error).message}`);
         }
-      },
-      { priority: 50 } as unknown as { priority: number }
-    );
+    };
+
+    api.on("message_received" as never, approvalReplyHandler as never, { priority: 50 } as unknown as { priority: number });
+    api.on("message:received" as never, approvalReplyHandler as never, { priority: 50 } as unknown as { priority: number });
 
 
     // On plugin load, ensure multi-agent config has an explicit agents.list with main at top.
