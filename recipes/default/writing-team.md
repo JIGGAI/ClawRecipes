@@ -57,16 +57,16 @@ templates:
 
     ## Where to write things
     - Ticket = source of truth for a unit of work.
-    - `notes/plan.md` + `shared-context/priorities.md` are **lead-curated**.
-    - `notes/status.md` is **append-only** and updated after each work session (3–5 bullets).
-    - `shared-context/agent-outputs/` is **append-only** logs/output.
+    - `../notes/plan.md` + `../shared-context/priorities.md` are **lead-curated**.
+    - `../notes/status.md` is **append-only** and updated after each work session (3–5 bullets).
+    - `../shared-context/agent-outputs/` is **append-only** logs/output.
 
     ## End-of-session checklist (everyone)
     After meaningful work:
     1) Update the ticket with what changed + how to verify + rollback.
     2) Add a dated note in the ticket `## Comments`.
-    3) Append 3–5 bullets to `notes/status.md`.
-    4) Append logs/output to `shared-context/agent-outputs/`.
+    3) Append 3–5 bullets to `../notes/status.md`.
+    4) Append logs/output to `../shared-context/agent-outputs/`.
 
   sharedContext.plan: |
     # Plan (lead-curated)
@@ -99,16 +99,16 @@ templates:
     - `roles/<role>/memory/YYYY-MM-DD.md` (daily log)
 
     ## Plan vs status (team coordination)
-    - `notes/plan.md` + `shared-context/priorities.md` are lead-curated
-    - `notes/status.md` is append-only roll-up (everyone appends)
+    - `../notes/plan.md` + `../shared-context/priorities.md` are lead-curated
+    - `../notes/status.md` is append-only roll-up (everyone appends)
 
     ## Outputs / artifacts
     - `roles/<role>/agent-outputs/` (append-only)
-    - `shared-context/agent-outputs/` (optional team-level)
+    - `../shared-context/agent-outputs/` (team-level, read/write from role via `../`)
 
     ## Role work loop contract (safe-idle)
     - No-op unless explicit queued work exists for the role.
-    - If work happens, write back in order: ticket → `notes/status.md` → `roles/<role>/agent-outputs/`.
+    - If work happens, write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
 
   sharedContext.priorities: |
     # Priorities (lead-curated)
@@ -141,24 +141,24 @@ templates:
 
     Before you act:
     1) Read:
-       - `notes/plan.md`
-       - `notes/status.md`
-       - `shared-context/priorities.md`
+       - `../notes/plan.md`
+       - `../notes/status.md`
+       - `../shared-context/priorities.md`
        - the relevant ticket(s)
 
     After you act:
     1) Write back:
        - Update tickets with decisions/assignments.
-       - Keep `notes/status.md` current (3–5 bullets per active ticket).
+       - Keep `../notes/status.md` current (3–5 bullets per active ticket).
 
     ## Curator model
 
     You are the curator of:
-    - `notes/plan.md`
-    - `shared-context/priorities.md`
+    - `../notes/plan.md`
+    - `../shared-context/priorities.md`
 
     Everyone else should append to:
-    - `shared-context/agent-outputs/` (append-only)
+    - `../shared-context/agent-outputs/` (append-only)
     - `shared-context/feedback/`
 
     Your job is to periodically distill those inputs into the curated files.
@@ -173,8 +173,8 @@ templates:
     - `work/in-progress/` — tickets currently being executed
     - `work/testing/` — tickets awaiting QA verification
     - `work/done/` — completed tickets + completion notes
-    - `notes/plan.md` — current plan / priorities (curated)
-    - `notes/status.md` — current status snapshot
+    - `../notes/plan.md` — current plan / priorities (curated)
+    - `../notes/status.md` — current status snapshot
     - `shared-context/` — shared context + append-only outputs
 
     ### Ticket numbering (critical)
@@ -191,8 +191,8 @@ templates:
 
     ### Your responsibilities
     - For every new request in `inbox/`, create a normalized ticket in `work/backlog/`.
-    - Curate `notes/plan.md` and `shared-context/priorities.md`.
-    - Keep `notes/status.md` updated.
+    - Curate `../notes/plan.md` and `../shared-context/priorities.md`.
+    - Keep `../notes/status.md` updated.
     - When work is ready for QA, move the ticket to `work/testing/` and assign it to the tester.
     - Only after QA verification, move the ticket to `work/done/` (or use `openclaw recipes complete`).
     - When a completion appears in `work/done/`, write a short summary into `outbox/`.
@@ -213,8 +213,8 @@ templates:
     ## Guardrails (read → act → write)
     Before you act:
     1) Read:
-       - `notes/plan.md`
-       - `notes/status.md`
+       - `../notes/plan.md`
+       - `../notes/status.md`
        - relevant ticket(s) in `work/in-progress/`
        - any relevant shared context under `shared-context/`
 
@@ -243,8 +243,8 @@ templates:
     ## Guardrails (read → act → write)
     Before you act:
     1) Read:
-       - `notes/plan.md`
-       - `notes/status.md`
+       - `../notes/plan.md`
+       - `../notes/status.md`
        - relevant ticket(s) in `work/in-progress/`
        - any relevant shared context under `shared-context/`
 
@@ -273,8 +273,8 @@ templates:
     ## Guardrails (read → act → write)
     Before you act:
     1) Read:
-       - `notes/plan.md`
-       - `notes/status.md`
+       - `../notes/plan.md`
+       - `../notes/status.md`
        - relevant ticket(s) in `work/in-progress/`
        - any relevant shared context under `shared-context/`
 

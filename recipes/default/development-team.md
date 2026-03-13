@@ -241,12 +241,12 @@ templates:
 
     ## Where to write things
     - Ticket = source of truth for a unit of work.
-    - `notes/plan.md` + `shared-context/priorities.md` are **lead-curated**.
-    - `notes/status.md` is **append-only** and updated after each work session (3–5 bullets).
+    - `../notes/plan.md` + `../shared-context/priorities.md` are **lead-curated**.
+    - `../notes/status.md` is **append-only** and updated after each work session (3–5 bullets).
 
     ## Outputs / artifacts
     - Role-level raw output (append-only): `roles/<role>/agent-outputs/`
-    - Team-level raw output (append-only, optional): `shared-context/agent-outputs/`
+    - Team-level raw output (append-only, optional): `../shared-context/agent-outputs/`
 
     Guardrail: do **not** create or rely on `roles/<role>/shared-context/**`.
 
@@ -255,7 +255,7 @@ templates:
     - **No-op unless explicit queued work exists** for that role (ticket assigned/owned by role, or workflow run nodes assigned to the role agentId).
     - If work happens, write back in this order:
       1) Update the relevant ticket(s) (source of truth).
-      2) Append 1–3 bullets to `notes/status.md` (team roll-up).
+      2) Append 1–3 bullets to `../notes/status.md` (team roll-up).
       3) Write raw logs/artifacts under `roles/<role>/agent-outputs/` and reference them from the ticket.
     - Team memory JSONL policy:
       - Non-lead roles must **not** write directly to `shared-context/memory/pinned.jsonl`.
@@ -266,7 +266,7 @@ templates:
     After meaningful work:
     1) Update the ticket with what changed + how to verify + rollback.
     2) Add a dated note in the ticket `## Comments`.
-    3) Append 3–5 bullets to `notes/status.md`.
+    3) Append 3–5 bullets to `../notes/status.md`.
     4) Append logs/output to `roles/<role>/agent-outputs/`.
 
   tickets: |
@@ -374,16 +374,16 @@ templates:
     - `roles/<role>/memory/YYYY-MM-DD.md` (daily log)
 
     ## Plan vs status (team coordination)
-    - `notes/plan.md` + `shared-context/priorities.md` are lead-curated
-    - `notes/status.md` is append-only roll-up (everyone appends)
+    - `../notes/plan.md` + `../shared-context/priorities.md` are lead-curated
+    - `../notes/status.md` is append-only roll-up (everyone appends)
 
     ## Outputs / artifacts
     - `roles/<role>/agent-outputs/` (append-only)
-    - `shared-context/agent-outputs/` (optional team-level)
+    - `../shared-context/agent-outputs/` (team-level, read/write from role via `../`)
 
     ## Role work loop contract (safe-idle)
     - No-op unless explicit queued work exists for the role.
-    - If work happens, write back in order: ticket → `notes/status.md` → `roles/<role>/agent-outputs/`.
+    - If work happens, write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
 
   sharedContext.priorities: |
     # Priorities (lead-curated)
@@ -1001,9 +1001,9 @@ templates:
        - `memory/YYYY-MM-DD.md` (today; create if missing)
 
     2) Read (team context):
-       - `notes/plan.md`
-       - `notes/status.md`
-       - `shared-context/priorities.md`
+       - `../notes/plan.md`
+       - `../notes/status.md`
+       - `../shared-context/priorities.md`
        - the relevant ticket(s)
 
     Optional (team knowledge memory, Kitchen UI):
@@ -1013,16 +1013,16 @@ templates:
     After you act:
     1) Write back:
        - Update tickets with decisions/assignments.
-       - Keep `notes/status.md` current (3–5 bullets per active ticket).
+       - Keep `../notes/status.md` current (3–5 bullets per active ticket).
 
     ## Curator model
 
     You are the curator of:
-    - `notes/plan.md`
-    - `shared-context/priorities.md`
+    - `../notes/plan.md`
+    - `../shared-context/priorities.md`
 
     Everyone else should append to:
-    - `shared-context/agent-outputs/` (append-only)
+    - `../shared-context/agent-outputs/` (append-only)
     - `shared-context/feedback/`
 
     Your job is to periodically distill those inputs into the curated files.
@@ -1037,8 +1037,8 @@ templates:
     - `work/in-progress/` — tickets currently being executed
     - `work/testing/` — tickets awaiting QA verification
     - `work/done/` — completed tickets + completion notes
-    - `notes/plan.md` — current plan / priorities (curated)
-    - `notes/status.md` — current status snapshot
+    - `../notes/plan.md` — current plan / priorities (curated)
+    - `../notes/status.md` — current status snapshot
     - `shared-context/` — shared context + append-only outputs
 
     ### Ticket numbering (critical)
@@ -1055,8 +1055,8 @@ templates:
 
     ### Your responsibilities
     - For every new request in `inbox/`, create a normalized ticket in `work/backlog/`.
-    - Curate `notes/plan.md` and `shared-context/priorities.md`.
-    - Keep `notes/status.md` updated.
+    - Curate `../notes/plan.md` and `../shared-context/priorities.md`.
+    - Keep `../notes/status.md` updated.
     - When work is ready for QA, move the ticket to `work/testing/` and assign it to the tester.
     - When QA passes a ticket, QA will keep it in `work/testing/` but set `Owner: lead` (ready-for-pr).
     - As lead, create the PR **only** for testing-lane tickets with `Owner: lead` + `QA: PASS` evidence.
@@ -1089,9 +1089,9 @@ templates:
        - `memory/YYYY-MM-DD.md` (today; create if missing)
 
     2) Read (team context):
-       - `notes/plan.md`
-       - `notes/status.md`
-       - `shared-context/priorities.md`
+       - `../notes/plan.md`
+       - `../notes/status.md`
+       - `../shared-context/priorities.md`
        - the current ticket you’re working on
 
     Optional (team knowledge memory, Kitchen UI):
@@ -1105,11 +1105,11 @@ templates:
     After you finish a work session (even if not done):
     1) Write back:
        - Update the ticket with what you did and what’s next.
-       - Add **3–5 bullets** to `notes/status.md` (what changed / what’s blocked).
-       - Append detailed output to `shared-context/agent-outputs/` (append-only).
+       - Add **3–5 bullets** to `../notes/status.md` (what changed / what’s blocked).
+       - Append detailed output to `../shared-context/agent-outputs/` (append-only).
 
     Curator model:
-    - Lead curates `notes/plan.md` and `shared-context/priorities.md`.
+    - Lead curates `../notes/plan.md` and `../shared-context/priorities.md`.
     - You should NOT edit curated files; propose changes via `agent-outputs/`.
 
     ## How you work (pull system)
@@ -1156,9 +1156,9 @@ templates:
        - `memory/YYYY-MM-DD.md` (today; create if missing)
 
     2) Read (team context):
-       - `notes/plan.md`
-       - `notes/status.md`
-       - `shared-context/priorities.md`
+       - `../notes/plan.md`
+       - `../notes/status.md`
+       - `../shared-context/priorities.md`
        - the current ticket you’re working on
 
     Optional (team knowledge memory, Kitchen UI):
@@ -1168,11 +1168,11 @@ templates:
     After you finish a work session:
     1) Write back:
        - Update the ticket with what you did + verification steps.
-       - Add **3–5 bullets** to `notes/status.md`.
-       - Append detailed output/logs to `shared-context/agent-outputs/` (append-only).
+       - Add **3–5 bullets** to `../notes/status.md`.
+       - Append detailed output/logs to `../shared-context/agent-outputs/` (append-only).
 
     Curator model:
-    - Lead curates `notes/plan.md` and `shared-context/priorities.md`.
+    - Lead curates `../notes/plan.md` and `../shared-context/priorities.md`.
     - You should NOT edit curated files; propose changes via `agent-outputs/`.
 
     ## How you work (pull system)
@@ -1251,7 +1251,7 @@ templates:
     ## Startup (read)
     - `MEMORY.md`
     - `memory/YYYY-MM-DD.md` (today; create if missing)
-    - `notes/status.md` (for current known issues)
+    - `../notes/status.md` (for current known issues)
 
     Optional:
     - `shared-context/memory/pinned.jsonl`
@@ -1266,7 +1266,7 @@ templates:
     ## How to operate
     - Prefer the CLI runner tick:
       `openclaw recipes workflows runner-tick --team-id {{teamId}} --concurrency 2 --lease-seconds 45`
-    - If anything looks wrong (schema mismatch, repeated failures), STOP and write a note to notes/status.md.
+    - If anything looks wrong (schema mismatch, repeated failures), STOP and write a note to `../notes/status.md`.
 
   workflow-runner.tools: |
     # TOOLS.md
@@ -1311,9 +1311,9 @@ templates:
        - `memory/YYYY-MM-DD.md` (today; create if missing)
 
     2) Read (team context):
-       - `notes/plan.md`
-       - `notes/status.md`
-       - `shared-context/priorities.md`
+       - `../notes/plan.md`
+       - `../notes/status.md`
+       - `../shared-context/priorities.md`
        - the ticket under test
 
     Optional (team knowledge memory, Kitchen UI):
@@ -1323,11 +1323,11 @@ templates:
     After each verification pass:
     1) Write back:
        - Add a short verification note to the ticket (pass/fail + evidence).
-       - Add **3–5 bullets** to `notes/status.md` (what’s verified / what’s blocked).
-       - Append detailed findings to `shared-context/feedback/` or `shared-context/agent-outputs/`.
+       - Add **3–5 bullets** to `../notes/status.md` (what’s verified / what’s blocked).
+       - Append detailed findings to `../shared-context/feedback/` or `../shared-context/agent-outputs/`.
 
     Curator model:
-    - Lead curates `notes/plan.md` and `shared-context/priorities.md`.
+    - Lead curates `../notes/plan.md` and `../shared-context/priorities.md`.
     - You should NOT edit curated files; propose changes via feedback/outputs.
 
     ## How you work
