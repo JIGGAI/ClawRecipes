@@ -389,6 +389,97 @@ describe("workflow-runner (file-first + runner/worker)", () => {
     }
   });
 
+  test("worker skips recovered stale task when run already advanced past that node", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-stale-recovery";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "stale-recovery.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+      const workflow = {
+        id: "stale-recovery",
+        name: "Recovered stale tasks should not replay old nodes",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "research",
+            kind: "tool",
+            assignedTo: { agentId: "agent-a" },
+            action: { tool: "fs.append", args: { path: "shared-context/RESEARCH.md", content: "research\n" } },
+          },
+          {
+            id: "draft",
+            kind: "tool",
+            assignedTo: { agentId: "agent-b" },
+            action: { tool: "fs.append", args: { path: "shared-context/DRAFT.md", content: "draft\n" } },
+          },
+          { id: "approval", kind: "human_approval", action: { provider: "telegram", target: "123" } },
+          {
+            id: "publish",
+            kind: "tool",
+            assignedTo: { agentId: "agent-c" },
+            action: { tool: "fs.append", args: { path: "shared-context/PUBLISH.md", content: "publish\n" } },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "research", on: "success" },
+          { from: "research", to: "draft", on: "success" },
+          { from: "draft", to: "approval", on: "success" },
+          { from: "approval", to: "publish", on: "success" },
+          { from: "publish", to: "end", on: "success" },
+        ],
+      };
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi();
+      const enq = await enqueueWorkflowRun(api, { teamId, workflowFile });
+      expect(enq.ok).toBe(true);
+      await runWorkflowRunnerOnce(api, { teamId });
+      await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 10, workerId: "worker-a" });
+      await runWorkflowWorkerTick(api, { teamId, agentId: "agent-b", limit: 10, workerId: "worker-b" });
+
+      await approveWorkflowRun(api, { teamId, runId: enq.runId, approved: true });
+      const resumed = await resumeWorkflowRun(api, { teamId, runId: enq.runId });
+      expect(resumed.ok).toBe(true);
+
+      const staleTask = await enqueueTask(teamDir, "agent-a", {
+        teamId,
+        runId: enq.runId,
+        nodeId: "research",
+        kind: "execute_node",
+      });
+      const claimsDir = path.join(teamDir, "shared-context", "workflow-queues", "claims");
+      await fs.mkdir(claimsDir, { recursive: true });
+      await fs.writeFile(
+        path.join(claimsDir, `agent-a.${staleTask.task.id}.json`),
+        JSON.stringify({ taskId: staleTask.task.id, agentId: "agent-a", workerId: "dead-worker", claimedAt: new Date(Date.now() - 10_000).toISOString(), leaseSeconds: 1 }, null, 2),
+        "utf8"
+      );
+
+      const w3 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 10, workerId: "worker-a2" });
+      expect(w3.ok).toBe(true);
+      expect(w3.results.some((r) => r.status === "skipped_stale" && r.nodeId === "research")).toBe(true);
+
+      const publishQueue = path.join(teamDir, "shared-context", "workflow-queues", "agent-c.jsonl");
+      const publishQueueRaw = await fs.readFile(publishQueue, "utf8");
+      expect(publishQueueRaw).toContain(`"nodeId":"publish"`);
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
 
   test("llm node chaining passes prior node output forward (INPUT_JSON + previousNodeOutput)", async () => {
     const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
