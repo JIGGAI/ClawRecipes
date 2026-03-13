@@ -105,6 +105,11 @@ function parseApprovalReply(text: string): ApprovalReply | null {
   };
 }
 
+function shouldProcessApprovalReply(channelHints: string[]): boolean {
+  if (!channelHints.length) return true;
+  return channelHints.some((v) => v.includes("telegram"));
+}
+
 const recipesPlugin = {
   id: "recipes",
   name: "Recipes",
@@ -148,9 +153,10 @@ const recipesPlugin = {
           ]
             .map((v) => asString(v).toLowerCase())
             .filter(Boolean);
-          const isTelegram = channelHints.some((v) => v.includes("telegram"));
+          const isTelegram = shouldProcessApprovalReply(channelHints);
 
-          // Only enable for Telegram for now (matches RJ's request).
+          // Only reject when the event explicitly identifies a different channel.
+          // Some Telegram inbound payloads arrive without provider/channel metadata.
           if (!isTelegram) {
             console.error(`[recipes] approval reply ignored: non-telegram channel hints=${JSON.stringify(channelHints)} text=${JSON.stringify(text)}`);
             return;
@@ -1009,6 +1015,7 @@ workflows
 export const __internal = {
   extractEventText,
   parseApprovalReply,
+  shouldProcessApprovalReply,
   ensureMainFirstInAgentsList,
   upsertBindingInConfig,
   removeBindingsInConfig,
