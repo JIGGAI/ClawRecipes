@@ -202,12 +202,12 @@ templates:
 
     ## Where to write things
     - Ticket = source of truth for a unit of work.
-    - `notes/plan.md` + `shared-context/priorities.md` are **lead-curated**.
-    - `notes/status.md` is **append-only** and updated after each work session (3–5 bullets).
+    - `../notes/plan.md` + `../shared-context/priorities.md` are **lead-curated**.
+    - `../notes/status.md` is **append-only** and updated after each work session (3–5 bullets).
 
     ## Outputs / artifacts
     - Role-level raw output (append-only): `roles/<role>/agent-outputs/`
-    - Team-level raw output (append-only, optional): `shared-context/agent-outputs/`
+    - Team-level raw output (append-only, optional): `../shared-context/agent-outputs/`
 
     Guardrail: do **not** create or rely on `roles/<role>/shared-context/**`.
 
@@ -216,7 +216,7 @@ templates:
     - **No-op unless explicit queued work exists** for that role (ticket assigned/owned by role, or workflow run nodes assigned to the role agentId).
     - If work happens, write back in this order:
       1) Update the relevant ticket(s) (source of truth).
-      2) Append 1–3 bullets to `notes/status.md` (team roll-up).
+      2) Append 1–3 bullets to `../notes/status.md` (team roll-up).
       3) Write raw logs/artifacts under `roles/<role>/agent-outputs/` and reference them from the ticket.
     - Team memory JSONL policy:
       - Non-lead roles must **not** write directly to `shared-context/memory/pinned.jsonl`.
@@ -227,7 +227,7 @@ templates:
     After meaningful work:
     1) Update the ticket with what changed + how to verify + rollback.
     2) Add a dated note in the ticket `## Comments`.
-    3) Append 3–5 bullets to `notes/status.md`.
+    3) Append 3–5 bullets to `../notes/status.md`.
     4) Append logs/output to `roles/<role>/agent-outputs/`.
 
   sharedContext.plan: |
@@ -261,16 +261,16 @@ templates:
     - `roles/<role>/memory/YYYY-MM-DD.md` (daily log)
 
     ## Plan vs status (team coordination)
-    - `notes/plan.md` + `shared-context/priorities.md` are lead-curated
-    - `notes/status.md` is append-only roll-up (everyone appends)
+    - `../notes/plan.md` + `../shared-context/priorities.md` are lead-curated
+    - `../notes/status.md` is append-only roll-up (everyone appends)
 
     ## Outputs / artifacts
     - `roles/<role>/agent-outputs/` (append-only)
-    - `shared-context/agent-outputs/` (optional team-level)
+    - `../shared-context/agent-outputs/` (team-level, read/write from role via `../`)
 
     ## Role work loop contract (safe-idle)
     - No-op unless explicit queued work exists for the role.
-    - If work happens, write back in order: ticket → `notes/status.md` → `roles/<role>/agent-outputs/`.
+    - If work happens, write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
 
   sharedContext.priorities: |
     # Priorities (lead-curated)
@@ -377,7 +377,7 @@ templates:
     Secondary KPI: CAC after launch
     ---
     ## How to test
-    - Verify offer brief exists in shared-context/agent-outputs/
+    - Verify offer brief exists in `../shared-context/agent-outputs/`
     - Verify funnel structure documented
     - Verify KPI definition present
 
@@ -437,20 +437,20 @@ templates:
     ---
     ## GUARDRAILS (read → act → write)
     Before acting, every agent reads:
-    - notes/plan.md
-    - notes/status.md
-    - shared-context/priorities.md
+    - ../notes/plan.md
+    - ../notes/status.md
+    - ../shared-context/priorities.md
     - relevant ticket(s)
     After acting, every agent:
     - updates the ticket with decisions, outputs, and next actions
-    - appends deliverables to shared-context/agent-outputs/ (append-only) unless explicitly instructed otherwise
+    - appends deliverables to `../shared-context/agent-outputs/` (append-only) unless explicitly instructed otherwise
     ---
     ## CURATION RULES (non-negotiable)
     Only lead may directly modify:
-    - notes/plan.md
-    - shared-context/priorities.md
+    - ../notes/plan.md
+    - ../shared-context/priorities.md
     Everyone else appends-only to:
-    - shared-context/agent-outputs/
+    - ../shared-context/agent-outputs/
     - shared-context/feedback/
     lead periodically distills append-only inputs into curated files.
     ---
@@ -485,7 +485,7 @@ templates:
     Analyst is source of truth for performance claims.
     ---
     ## OUTPUT LOCATIONS (defaults)
-    - All deliverables: shared-context/agent-outputs/ (append-only, dated or ticket-referenced)
+    - All deliverables: `../shared-context/agent-outputs/` (append-only, dated or ticket-referenced)
     - Feedback/critique: shared-context/feedback/ (append-only)
     - Decisions + assignments: ticket body
     - Curated priorities/plan: lead only
@@ -679,14 +679,14 @@ templates:
     - work/in-progress/
     - work/testing/
     - work/done/
-    - notes/plan.md
-    - notes/status.md
+    - ../notes/plan.md
+    - ../notes/status.md
     - shared-context/
     You are the curator of:
-    - `notes/plan.md`
-    - `shared-context/priorities.md`
+    - `../notes/plan.md`
+    - `../shared-context/priorities.md`
     Everyone else appends-only to:
-    - `shared-context/agent-outputs/`
+    - `../shared-context/agent-outputs/`
     - `shared-context/feedback/`
     ---
     ## LANE MODEL (Functional Domain)
@@ -728,7 +728,7 @@ templates:
     When ticket reaches done:
     - Write short completion summary in `outbox/`
     - Ensure KPI baseline captured (if applicable)
-    - Update `notes/status.md`
+    - Update `../notes/status.md`
     ---
     You own alignment.
     You own structure.
@@ -748,9 +748,9 @@ templates:
       - Existing ICP or positioning definitions
       - Current resource constraints
     2) Check:
-      - `notes/plan.md`
-      - `notes/status.md`
-      - `shared-context/priorities.md`
+      - `../notes/plan.md`
+      - `../notes/status.md`
+      - `../shared-context/priorities.md`
     No strategic shifts without context.
     ---
     ## TICKET VALIDATION TOOL USE
@@ -778,8 +778,8 @@ templates:
     ---
     ## CURATION AUTHORITY
     Only you may modify:
-    - `notes/plan.md`
-    - `shared-context/priorities.md`
+    - `../notes/plan.md`
+    - `../shared-context/priorities.md`
     All others are append-only.
     ---
     ## PERFORMANCE REVIEW LOOP
@@ -868,9 +868,9 @@ templates:
     ---
     ## OUTPUT LOCATION
     All research and briefs:
-    - Append to shared-context/agent-outputs/
+    - Append to ../shared-context/agent-outputs/
     - Update assigned ticket with summary and acceptance coverage
-    Never modify curated files.
+    Never modify curated files in `../notes/plan.md` or `../shared-context/priorities.md`.
     ---
     ## QUALITY STANDARD
     - Intent clarity before volume
@@ -943,7 +943,7 @@ templates:
     ## REQUIRED BEFORE FINAL RECOMMENDATION
     - Check memory for existing keyword targets.
     - Check past SEO performance from Analyst reports.
-    - Confirm ICP alignment from `notes/plan.md`.
+    - Confirm ICP alignment from `../notes/plan.md`.
     ---
     ## ALLOWED TOOLS
     - Web search (SERP analysis)
@@ -1025,7 +1025,7 @@ templates:
     
     Rules:
     - Read the current ticket first.
-    - Write deliverables to shared-context/agent-outputs/ and summarize in the ticket.
+    - Write deliverables to `../shared-context/agent-outputs/` and summarize in the ticket.
     - Do not publish; route through lead + approval gate.
     
 
@@ -1078,15 +1078,15 @@ templates:
     ---
     ## GUARDRAILS (Read → Act → Write)
     Before acting read:
-    - notes/plan.md
-    - shared-context/priorities.md
+    - ../notes/plan.md
+    - ../shared-context/priorities.md
     - assigned ticket
     - offer + ICP definition
     - compliance constraints (claims/disclaimers)
     After acting:
-    - append builds/variants/notes to shared-context/agent-outputs/
+    - append builds/variants/notes to ../shared-context/agent-outputs/
     - update ticket with settings, hypotheses, and acceptance criteria coverage
-    Never modify curated files.
+    Never modify curated files in `../notes/plan.md` or `../shared-context/priorities.md`.
     ---
     ## REQUIRED INPUT BEFORE LAUNCH
     - objective (lead gen/sales/trials)
@@ -1230,16 +1230,16 @@ templates:
     ---
     ## GUARDRAILS (Read → Act → Write)
     Before acting read:
-    - notes/plan.md
-    - notes/status.md
-    - shared-context/priorities.md
+    - ../notes/plan.md
+    - ../notes/status.md
+    - ../shared-context/priorities.md
     - assigned ticket
     - ICP definition
     - brand guidelines
     After acting write back:
-    - append outputs to shared-context/agent-outputs/ (append-only)
+    - append outputs to ../shared-context/agent-outputs/ (append-only)
     - update ticket with summary, channel plan, and acceptance coverage
-    Never modify curated files (notes/plan.md, shared-context/priorities.md).
+    Never modify curated files (`../notes/plan.md`, `../shared-context/priorities.md`).
     ---
     ## REQUIRED INPUT BEFORE CONTENT CREATION
     - channel(s)
@@ -1308,7 +1308,7 @@ templates:
     1) Request engagement and traffic readout from analyst.
     2) Identify themes with highest quality engagement (not just likes).
     3) Recommend iteration in ticket.
-    4) Document learnings in shared-context/agent-outputs/.
+    4) Document learnings in ../shared-context/agent-outputs/.
     
 
   social.status: |
@@ -1372,16 +1372,16 @@ templates:
     ---
     ## GUARDRAILS (Read → Act → Write)
     Before acting read:
-    - notes/plan.md
-    - notes/status.md
-    - shared-context/priorities.md
+    - ../notes/plan.md
+    - ../notes/status.md
+    - ../shared-context/priorities.md
     - assigned ticket
     - any brand guidelines / approved palettes / logo rules
     - copy brief from lead/copywriter/ads/social (as applicable)
     After acting write back:
-    - append deliverables + specs to shared-context/agent-outputs/ (append-only)
+    - append deliverables + specs to ../shared-context/agent-outputs/ (append-only)
     - update ticket with deliverables list, export specs, and acceptance coverage
-    Never modify curated files (notes/plan.md, shared-context/priorities.md).
+    Never modify curated files (`../notes/plan.md`, `../shared-context/priorities.md`).
     ---
     ## REQUIRED INPUT BEFORE DESIGN
     Must be present in ticket or referenced docs:
@@ -1441,7 +1441,7 @@ templates:
     After publishing:
     1) request analyst readout (CTR, CVR, engagement quality, conversion)
     2) propose next variant set with one change per variant when feasible
-    3) document learnings in ticket + append notes to shared-context/agent-outputs/
+    3) document learnings in ticket + append notes to ../shared-context/agent-outputs/
 
   designer.status: |
     # STATUS.md
@@ -1503,15 +1503,15 @@ templates:
     ---
     ## GUARDRAILS (Read → Act → Write)
     Before acting read:
-    - notes/plan.md
-    - notes/status.md
-    - shared-context/priorities.md
+    - ../notes/plan.md
+    - ../notes/status.md
+    - ../shared-context/priorities.md
     - assigned ticket
     - relevant agent outputs
     After acting write back:
-    - append structured analysis to shared-context/agent-outputs/ (append-only)
+    - append structured analysis to ../shared-context/agent-outputs/ (append-only)
     - update ticket with findings, metric definitions, and recommendations
-    Never modify curated files.
+    Never modify curated files in `../notes/plan.md` or `../shared-context/priorities.md`.
     ---
     ## REQUIRED BEFORE REPORTING
     - define metric being evaluated
@@ -1575,7 +1575,7 @@ templates:
     2) Measure against baseline.
     3) Identify strongest and weakest levers.
     4) Provide structured recommendation.
-    5) Document learnings in shared-context/agent-outputs/.
+    5) Document learnings in ../shared-context/agent-outputs/.
 
   analyst.status: |
     # STATUS.md
@@ -1641,17 +1641,17 @@ templates:
     ---
     ## GUARDRAILS (Read → Act → Write)
     Before acting read:
-    - notes/plan.md
-    - notes/status.md
-    - shared-context/priorities.md
+    - ../notes/plan.md
+    - ../notes/status.md
+    - ../shared-context/priorities.md
     - assigned ticket
     - ICP definition
     - offer summary
     - brand guidelines
     After acting write back:
-    - append scripts, outlines, shot lists, and notes to shared-context/agent-outputs/ (append-only)
+    - append scripts, outlines, shot lists, and notes to ../shared-context/agent-outputs/ (append-only)
     - update ticket with asset plan and acceptance coverage
-    Never modify curated files.
+    Never modify curated files in `../notes/plan.md` or `../shared-context/priorities.md`.
     ---
     ## REQUIRED INPUT BEFORE SCRIPTING
     - channel/platform
@@ -1717,7 +1717,7 @@ templates:
     1) Request analyst readout (retention %, watch time, CTR, conversion).
     2) Identify drop-off points or hook weaknesses.
     3) Propose structured iteration plan in ticket.
-    4) Document learnings in shared-context/agent-outputs/.
+    4) Document learnings in ../shared-context/agent-outputs/.
 
   video.status: |
     # STATUS.md
@@ -1786,11 +1786,11 @@ templates:
     ---
     ## GUARDRAILS (Read → Act → Write)
     Before acting read:
-    - notes/plan.md
+    - ../notes/plan.md
     - assigned ticket
-    - relevant asset output in shared-context/agent-outputs/
+    - relevant asset output in `../shared-context/agent-outputs/`
     After acting write back:
-    - append review summary to shared-context/agent-outputs/ (append-only)
+    - append review summary to ../shared-context/agent-outputs/ (append-only)
     - update ticket with approval status (approved / approved with edits / rejected)
     Never modify curated plan files.
     ---
@@ -1841,7 +1841,7 @@ templates:
     ---
     ## REVIEW LOOP
     For recurring issues:
-    1) document pattern in shared-context/agent-outputs/
+    1) document pattern in ../shared-context/agent-outputs/
     2) notify lead for systemic correction
     3) recommend guideline update if necessary
 
@@ -1899,15 +1899,15 @@ templates:
     ---
     ## GUARDRAILS (Read → Act → Write)
     Before acting read:
-    - notes/plan.md
-    - shared-context/priorities.md
+    - ../notes/plan.md
+    - ../shared-context/priorities.md
     - assigned ticket
     - ICP definition
     - competitor references (if provided)
     After acting:
-    - append structured offer brief to shared-context/agent-outputs/
+    - append structured offer brief to ../shared-context/agent-outputs/
     - update ticket with recommendations + acceptance criteria
-    Never modify curated files.
+    Never modify curated files in `../notes/plan.md` or `../shared-context/priorities.md`.
     ---
     ## OUTPUT STRUCTURE (Required)
     - Target ICP
@@ -1953,7 +1953,7 @@ templates:
     1) request analyst conversion + revenue readout
     2) evaluate price sensitivity
     3) recommend structural adjustments
-    4) document learnings in shared-context/agent-outputs/
+    4) document learnings in ../shared-context/agent-outputs/
 
   offer.notes: |
     # NOTES.md
@@ -2007,14 +2007,14 @@ templates:
     ---
     ## GUARDRAILS (Read → Act → Write)
     Before acting read:
-    - notes/plan.md
+    - ../notes/plan.md
     - assigned ticket
     - offer brief (from Offer Architect)
     - ICP definition
     After acting:
-    - append funnel map to shared-context/agent-outputs/
+    - append funnel map to ../shared-context/agent-outputs/
     - update ticket with flow diagram + KPI checkpoints
-    Never modify curated files.
+    Never modify curated files in `../notes/plan.md` or `../shared-context/priorities.md`.
     ---
     ## OUTPUT STRUCTURE
     - Funnel type (direct response / webinar / content-led / hybrid)
@@ -2111,14 +2111,14 @@ templates:
     ---
     ## GUARDRAILS (Read → Act → Write)
     Before acting read:
-    - notes/plan.md
+    - ../notes/plan.md
     - assigned ticket
     - offer structure
     - ICP + customer stage
     After acting:
-    - append lifecycle map to shared-context/agent-outputs/
+    - append lifecycle map to ../shared-context/agent-outputs/
     - update ticket with sequence outline + KPI plan
-    Never modify curated files.
+    Never modify curated files in `../notes/plan.md` or `../shared-context/priorities.md`.
     ---
     ## OUTPUT STRUCTURE
     - Customer stage

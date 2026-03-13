@@ -77,18 +77,40 @@ const recipesPlugin = {
     // record the decision and resume the run.
     api.on(
       "message_received" as never,
-      async (evt: unknown) => {
+      async (evt: unknown, ctx: unknown) => {
         try {
           const e = isRecord(evt) ? evt : {};
-          const channel = asString(e["messageProvider"] ?? e["channelId"] ?? e["channel"]);
-          const text = asString(e["text"] ?? e["message"] ?? e["body"]).trim();
+          const c = isRecord(ctx) ? ctx : {};
+          const metadata = isRecord(e["metadata"]) ? (e["metadata"] as Record<string, unknown>) : {};
+          const text = asString(
+            e["content"] ?? e["text"] ?? e["message"] ?? e["body"] ?? metadata["content"] ?? metadata["text"] ?? metadata["message"]
+          ).trim();
           if (!text) return;
-
-          // Only enable for Telegram for now (matches RJ's request).
-          if (channel !== "telegram") return;
 
           const m = text.match(/^(approve|decline)\s+([A-Z0-9]{4,8})\s*$/i);
           if (!m) return;
+
+          const channelHints = [
+            c["channelId"],
+            c["channel"],
+            metadata["channelId"],
+            metadata["channel"],
+            metadata["provider"],
+            metadata["source"],
+            e["messageProvider"],
+            e["channelId"],
+            e["channel"],
+            e["source"],
+          ]
+            .map((v) => asString(v).toLowerCase())
+            .filter(Boolean);
+          const isTelegram = channelHints.some((v) => v.includes("telegram"));
+
+          // Only enable for Telegram for now (matches RJ's request).
+          if (!isTelegram) {
+            console.error(`[recipes] approval reply ignored: non-telegram channel hints=${JSON.stringify(channelHints)} text=${JSON.stringify(text)}`);
+            return;
+          }
           const verb = String(m[1] ?? "").toLowerCase();
           const code = String(m[2] ?? "").toUpperCase();
           const approved = verb === "approve";
@@ -97,11 +119,20 @@ const recipesPlugin = {
           const parent = path.resolve(workspaceRoot, "..");
 
           // Scan workspace-*/shared-context/workflow-runs/*/approvals/approval.json for a matching code.
-          const teamDirs = (await fs.readdir(parent, { withFileTypes: true }))
-            .filter((d) => d.isDirectory() && d.name.startsWith("workspace-"))
-            .map((d) => path.join(parent, d.name));
+          const roots = Array.from(new Set([parent, workspaceRoot, path.join(workspaceRoot, "workspace")]));
+          const teamDirs: string[] = [];
+          for (const root of roots) {
+            try {
+              const entries = await fs.readdir(root, { withFileTypes: true });
+              for (const d of entries) {
+                if (d.isDirectory() && d.name.startsWith("workspace-")) teamDirs.push(path.join(root, d.name));
+              }
+            } catch {
+              // ignore root read errors
+            }
+          }
 
-          let found: { teamId: string; runId: string } | null = null;
+          let found: { teamId: string; runId: string; approvalPath: string } | null = null;
 
           for (const teamDir of teamDirs) {
             const teamId = path.basename(teamDir).replace(/^workspace-/, "");
@@ -120,8 +151,8 @@ const recipesPlugin = {
               try {
                 const raw = await fs.readFile(approvalPath, "utf8");
                 const a = JSON.parse(raw) as { code?: string; status?: string; runId?: string; teamId?: string };
-                if (String(a?.code ?? "").toUpperCase() === code && String(a?.status ?? "") === "pending") {
-                  found = { teamId: String(a?.teamId ?? teamId), runId: String(a?.runId ?? runId) };
+                if (String(a?.code ?? "").trim().toUpperCase() === code && String(a?.status ?? "") === "pending") {
+                  found = { teamId: String(a?.teamId ?? teamId), runId: String(a?.runId ?? runId), approvalPath };
                   break;
                 }
               } catch {
@@ -131,8 +162,12 @@ const recipesPlugin = {
             if (found) break;
           }
 
-          if (!found) return;
+          if (!found) {
+            console.error(`[recipes] approval reply not matched: code=${code} text=${JSON.stringify(text)} hints=${JSON.stringify(channelHints)} roots=${JSON.stringify(roots)}`);
+            return;
+          }
 
+          console.error(`[recipes] approval reply matched: code=${code} team=${found.teamId} run=${found.runId} path=${found.approvalPath} approved=${approved}`);
           await handleWorkflowsApprove(api, { teamId: found.teamId, runId: found.runId, approved, note: `Approved via Telegram (${code})` });
           // Resume is best-effort: the worker may have already flipped the run status.
           try {

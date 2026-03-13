@@ -42,7 +42,7 @@ templates:
     ## How to operate
     - Prefer the CLI runner tick:
       `openclaw recipes workflows runner-tick --team-id {{teamId}} --concurrency 2 --lease-seconds 45`
-    - If anything looks wrong (schema mismatch, repeated failures), STOP and write a note to notes/status.md.
+    - If anything looks wrong (schema mismatch, repeated failures), STOP and write a note to `../notes/status.md`.
 
   tools: |
     # TOOLS.md
