@@ -68,6 +68,20 @@ describe("index.ts handlers (remove-team)", () => {
     });
   });
 
+  describe("shouldProcessApprovalReply", () => {
+    test("accepts replies with no channel hints", () => {
+      expect(__internal.shouldProcessApprovalReply([])).toBe(true);
+    });
+
+    test("accepts telegram channel hints", () => {
+      expect(__internal.shouldProcessApprovalReply(["telegram", "dm"])).toBe(true);
+    });
+
+    test("rejects explicit non-telegram channel hints", () => {
+      expect(__internal.shouldProcessApprovalReply(["slack", "dm"])).toBe(false);
+    });
+  });
+
   describe("handleRemoveTeam", () => {
     test("returns plan when --plan", async () => {
       const base = await fs.mkdtemp(path.join(os.tmpdir(), "remove-team-test-"));
