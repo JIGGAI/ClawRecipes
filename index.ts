@@ -73,23 +73,33 @@ const recipesPlugin = {
   },
   register(api: OpenClawPluginApi) {
     // Auto-approval via chat reply (MVP):
-    // If a human replies `approve <runId>` or `decline <runId>` in the bound channel,
+    // If a human replies `approve <code>` or `decline <code>` in the bound channel,
     // record the decision and resume the run.
     api.on(
-      "message_received" as never,
+      "message:received" as never,
       async (evt: unknown, ctx: unknown) => {
         try {
           const e = isRecord(evt) ? evt : {};
           const c = isRecord(ctx) ? ctx : {};
           const metadata = isRecord(e["metadata"]) ? (e["metadata"] as Record<string, unknown>) : {};
           const text = asString(
-            e["content"] ?? e["text"] ?? e["message"] ?? e["body"] ?? metadata["content"] ?? metadata["text"] ?? metadata["message"]
+            e["content"] ??
+              c["content"] ??
+              e["text"] ??
+              e["message"] ??
+              e["body"] ??
+              metadata["content"] ??
+              metadata["text"] ??
+              metadata["message"]
           ).trim();
           if (!text) return;
 
           const m = text.match(/^(approve|decline)\s+([A-Z0-9]{4,8})\s*$/i);
           if (!m) return;
 
+          const workspaceRoot = resolveWorkspaceRoot(api);
+          const parent = path.resolve(workspaceRoot, "..");
+          const roots = Array.from(new Set([parent, workspaceRoot, path.join(workspaceRoot, "workspace")]));
           const channelHints = [
             c["channelId"],
             c["channel"],
@@ -111,15 +121,11 @@ const recipesPlugin = {
             console.error(`[recipes] approval reply ignored: non-telegram channel hints=${JSON.stringify(channelHints)} text=${JSON.stringify(text)}`);
             return;
           }
+
           const verb = String(m[1] ?? "").toLowerCase();
           const code = String(m[2] ?? "").toUpperCase();
           const approved = verb === "approve";
 
-          const workspaceRoot = resolveWorkspaceRoot(api);
-          const parent = path.resolve(workspaceRoot, "..");
-
-          // Scan workspace-*/shared-context/workflow-runs/*/approvals/approval.json for a matching code.
-          const roots = Array.from(new Set([parent, workspaceRoot, path.join(workspaceRoot, "workspace")]));
           const teamDirs: string[] = [];
           for (const root of roots) {
             try {
@@ -169,7 +175,6 @@ const recipesPlugin = {
 
           console.error(`[recipes] approval reply matched: code=${code} team=${found.teamId} run=${found.runId} path=${found.approvalPath} approved=${approved}`);
           await handleWorkflowsApprove(api, { teamId: found.teamId, runId: found.runId, approved, note: `Approved via Telegram (${code})` });
-          // Resume is best-effort: the worker may have already flipped the run status.
           try {
             await handleWorkflowsResume(api, { teamId: found.teamId, runId: found.runId });
           } catch {
@@ -181,6 +186,7 @@ const recipesPlugin = {
       },
       { priority: 50 } as unknown as { priority: number }
     );
+
 
     // On plugin load, ensure multi-agent config has an explicit agents.list with main at top.
     // This is idempotent and only writes if a change is required.
