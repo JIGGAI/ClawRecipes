@@ -62,6 +62,49 @@ function asString(v: unknown, fallback = ''): string {
   return typeof v === 'string' ? v : (v == null ? fallback : String(v));
 }
 
+function extractEventText(evt: Record<string, unknown>, ctx: Record<string, unknown>, metadata: Record<string, unknown>): string {
+  const msg = isRecord(evt["message"]) ? (evt["message"] as Record<string, unknown>) : {};
+  const parts = Array.isArray(msg["content"]) ? (msg["content"] as unknown[]) : [];
+  const texts = parts
+    .map((part) => (isRecord(part) ? asString(part["text"]).trim() : ""))
+    .filter(Boolean);
+  if (texts.length) return texts.join("\n").trim();
+
+  const direct = [
+    evt["content"],
+    ctx["content"],
+    evt["text"],
+    evt["body"],
+    metadata["content"],
+    metadata["text"],
+    metadata["message"],
+  ]
+    .map((v) => asString(v).trim())
+    .filter(Boolean);
+  if (direct.length) return direct.join("\n");
+  return "";
+}
+
+type ApprovalReply = {
+  approved: boolean;
+  code: string;
+  note?: string;
+};
+
+function parseApprovalReply(text: string): ApprovalReply | null {
+  const m = String(text ?? '').match(/(?:^|\n)\s*(approve|decline)\s+([A-Z0-9]{4,8})(?:\s+(.+))?\s*$/i);
+  if (!m) return null;
+
+  const verb = String(m[1] ?? '').toLowerCase();
+  const code = String(m[2] ?? '').toUpperCase();
+  const note = asString(m[3]).trim();
+  return {
+    approved: verb === 'approve',
+    code,
+    ...(note ? { note } : {}),
+  };
+}
+
 const recipesPlugin = {
   id: "recipes",
   name: "Recipes",
@@ -82,20 +125,11 @@ const recipesPlugin = {
           const e = isRecord(evt) ? evt : {};
           const c = isRecord(ctx) ? ctx : {};
           const metadata = isRecord(e["metadata"]) ? (e["metadata"] as Record<string, unknown>) : {};
-          const text = asString(
-            e["content"] ??
-              c["content"] ??
-              e["text"] ??
-              e["message"] ??
-              e["body"] ??
-              metadata["content"] ??
-              metadata["text"] ??
-              metadata["message"]
-          ).trim();
+          const text = extractEventText(e, c, metadata);
           if (!text) return;
 
-          const m = text.match(/^(approve|decline)\s+([A-Z0-9]{4,8})\s*$/i);
-          if (!m) return;
+          const reply = parseApprovalReply(text);
+          if (!reply) return;
 
           const workspaceRoot = resolveWorkspaceRoot(api);
           const parent = path.resolve(workspaceRoot, "..");
@@ -122,9 +156,7 @@ const recipesPlugin = {
             return;
           }
 
-          const verb = String(m[1] ?? "").toLowerCase();
-          const code = String(m[2] ?? "").toUpperCase();
-          const approved = verb === "approve";
+          const { approved, code, note } = reply;
 
           const teamDirs: string[] = [];
           for (const root of roots) {
@@ -174,7 +206,8 @@ const recipesPlugin = {
           }
 
           console.error(`[recipes] approval reply matched: code=${code} team=${found.teamId} run=${found.runId} path=${found.approvalPath} approved=${approved}`);
-          await handleWorkflowsApprove(api, { teamId: found.teamId, runId: found.runId, approved, note: `Approved via Telegram (${code})` });
+          const approvalNote = note || `${approved ? 'Approved' : 'Declined'} via Telegram (${code})`;
+          await handleWorkflowsApprove(api, { teamId: found.teamId, runId: found.runId, approved, note: approvalNote });
           try {
             await handleWorkflowsResume(api, { teamId: found.teamId, runId: found.runId });
           } catch {
@@ -974,6 +1007,8 @@ workflows
 
 // Internal helpers used by unit tests. Not part of the public plugin API.
 export const __internal = {
+  extractEventText,
+  parseApprovalReply,
   ensureMainFirstInAgentsList,
   upsertBindingInConfig,
   removeBindingsInConfig,

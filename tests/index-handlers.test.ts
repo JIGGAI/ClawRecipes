@@ -6,6 +6,68 @@ import { __internal } from "../index";
 import { saveCronStore } from "../src/lib/remove-team";
 
 describe("index.ts handlers (remove-team)", () => {
+  describe("extractEventText", () => {
+    test("reads transcript text from message.content", () => {
+      const evt = {
+        message: {
+          content: [
+            {
+              type: "text",
+              text: [
+                "Conversation info (untrusted metadata):",
+                "",
+                "Sender (untrusted metadata):",
+                "",
+                "Approve t52ykz",
+              ].join("\n"),
+            },
+          ],
+        },
+      };
+
+      expect(__internal.extractEventText(evt as any, {}, {})).toContain("Approve t52ykz");
+    });
+  });
+
+  describe("parseApprovalReply", () => {
+    test("parses approve replies", () => {
+      expect(__internal.parseApprovalReply("approve ab12")).toEqual({
+        approved: true,
+        code: "AB12",
+      });
+    });
+
+    test("parses decline replies with a note", () => {
+      expect(__internal.parseApprovalReply("decline ab12 tighten the hook")).toEqual({
+        approved: false,
+        code: "AB12",
+        note: "tighten the hook",
+      });
+    });
+
+    test("parses approve replies embedded at the end of transcript text", () => {
+      expect(
+        __internal.parseApprovalReply(
+          [
+            "Conversation info (untrusted metadata):",
+            "```json",
+            '{"sender_id":"6477250615"}',
+            "```",
+            "",
+            "Approve t52ykz",
+          ].join("\n")
+        )
+      ).toEqual({
+        approved: true,
+        code: "T52YKZ",
+      });
+    });
+
+    test("rejects unrelated messages", () => {
+      expect(__internal.parseApprovalReply("sounds good")).toBeNull();
+    });
+  });
+
   describe("handleRemoveTeam", () => {
     test("returns plan when --plan", async () => {
       const base = await fs.mkdtemp(path.join(os.tmpdir(), "remove-team-test-"));
