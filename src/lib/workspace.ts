@@ -22,6 +22,26 @@ export function resolveWorkspaceRoot(api: OpenClawPluginApi): string {
   return path.join(os.homedir(), ".openclaw", "workspace");
 }
 
+/**
+ * Resolve the canonical OpenClaw workspace root even when the current agent workspace
+ * is nested under `workspace-<teamId>/roles/<role>`.
+ */
+export function resolveCanonicalWorkspaceRoot(api: OpenClawPluginApi): string {
+  const candidate = api.config.agents?.defaults?.workspace;
+  if (candidate) {
+    const abs = path.resolve(candidate);
+    const parts = abs.split(path.sep).filter(Boolean);
+    const idx = [...parts].reverse().findIndex((p) => p.startsWith('workspace-'));
+    if (idx >= 0) {
+      const segIdx = parts.length - 1 - idx;
+      const teamDir = path.isAbsolute(abs) ? path.sep + path.join(...parts.slice(0, segIdx + 1)) : path.join(...parts.slice(0, segIdx + 1));
+      return path.resolve(teamDir, '..', 'workspace');
+    }
+  }
+
+  return resolveWorkspaceRoot(api);
+}
+
 function tryResolveTeamDirFromAnyDir(dir: string, teamId: string): string | undefined {
   const seg = `workspace-${teamId}`;
   const abs = path.resolve(dir);

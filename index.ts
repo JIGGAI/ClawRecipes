@@ -52,7 +52,7 @@ import {
   executeWorkspaceCleanup,
   planWorkspaceCleanup,
 } from "./src/lib/cleanup-workspaces";
-import { resolveWorkspaceRoot } from "./src/lib/workspace";
+import { resolveCanonicalWorkspaceRoot, resolveWorkspaceRoot } from "./src/lib/workspace";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v);
@@ -153,7 +153,7 @@ const recipesPlugin = {
           const reply = parseApprovalReply(text);
           if (!reply) return;
 
-          const workspaceRoot = resolveWorkspaceRoot(api);
+          const workspaceRoot = resolveCanonicalWorkspaceRoot(api);
           const parent = path.resolve(workspaceRoot, "..");
           const roots = Array.from(new Set([parent, workspaceRoot, path.join(workspaceRoot, "workspace")]));
           const channelHints = [
