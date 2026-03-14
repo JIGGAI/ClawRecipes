@@ -1,8 +1,8 @@
 export type WorkflowLane = 'backlog' | 'in-progress' | 'testing' | 'done';
 
-export type WorkflowNodeKind = 'llm' | 'human_approval' | 'writeback' | 'tool' | 'start' | 'end' | string;
+export type WorkflowNodeKind = 'llm' | 'human_approval' | 'writeback' | 'tool' | 'start' | 'end' | 'if' | 'delay' | string;
 
-export type WorkflowEdgeOn = 'success' | 'error' | 'always';
+export type WorkflowEdgeOn = 'success' | 'error' | 'always' | 'true' | 'false';
 
 export type WorkflowNodeAssignment = {
   agentId: string;
