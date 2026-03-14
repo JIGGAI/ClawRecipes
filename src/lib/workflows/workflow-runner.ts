@@ -12,6 +12,7 @@ import { outboundPublish, type OutboundApproval, type OutboundMedia, type Outbou
 import { sanitizeOutboundPostText } from './outbound-sanitize';
 import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow-node-output-readers';
 import { readJsonFile, readTextFile } from './workflow-runner-io';
+import { evalIfCondition, lastIfValueFromRun } from './workflow-if';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v == 'object' && !Array.isArray(v);
@@ -210,6 +211,8 @@ type RunLog = {
   ticket: { file: string; number: string; lane: WorkflowLane };
   trigger: { kind: string; at?: string };
   status: string;
+  // Delay/pause support (v1)
+  resumeAt?: string | null;
   // Scheduler/runner fields
   priority?: number;
   claimedBy?: string | null;
@@ -253,6 +256,14 @@ function pickNextRunnableNodeIndex(opts: { workflow: Workflow; run: RunLog }): n
   const { workflow, run } = opts;
   const nodes = Array.isArray(workflow.nodes) ? workflow.nodes : [];
   if (!nodes.length) return null;
+
+  // Delay/pause semantics: when a run is paused, do not schedule further nodes
+  // until resumeAt has passed.
+  if (String(run.status ?? '') === 'paused') {
+    const resumeAtRaw = String((run as unknown as { resumeAt?: string | null }).resumeAt ?? '').trim();
+    const resumeMs = resumeAtRaw ? Date.parse(resumeAtRaw) : NaN;
+    if (!Number.isFinite(resumeMs) || Date.now() < resumeMs) return null;
+  }
 
   const hasEdges = Array.isArray(workflow.edges) && workflow.edges.length > 0;
   if (!hasEdges) {
@@ -298,6 +309,16 @@ function pickNextRunnableNodeIndex(opts: { workflow: Workflow; run: RunLog }): n
     const from = nodeStates[fromId]?.status;
     const on = (e.on ?? 'success') as string;
     if (!from) return false;
+
+    // Branching semantics (v1): allow edges on true/false for `if` nodes.
+    if (on === 'true' || on === 'false') {
+      if (from !== 'success') return false;
+      const v = lastIfValueFromRun(run, fromId);
+      if (v === null) return false;
+      return on === 'true' ? v === true : v === false
+
+    }
+
     if (on === 'always') return from === 'success' || from === 'error';
     if (on === 'error') return from === 'error';
     return from === 'success';
@@ -400,6 +421,14 @@ async function executeWorkflowNodes(opts: {
     const from = nodeStates[fromId]?.status;
     const on = String(e.on ?? 'success');
     if (!from) return false;
+
+    if (on === 'true' || on === 'false') {
+      if (from !== 'success') return false;
+      const v = lastIfValueFromRun(curRun, fromId);
+      if (v === null) return false;
+      return on === 'true' ? v === true : v === false;
+    }
+
     if (on === 'always') return from === 'success' || from === 'error';
     if (on === 'error') return from === 'error';
     return from === 'success';
@@ -484,6 +513,94 @@ async function executeWorkflowNodes(opts: {
       }));
       nodeStates[String(node.id)] = { status: 'success', ts };
       continue;
+    }
+
+    if (kind === 'if') {
+      const runDir = path.dirname(runLogPath);
+      const action = asRecord(node.action);
+      const lhs = asString(action['lhs']).trim();
+      const op = asString(action['op']).trim();
+      const rhs = action['rhs'];
+      if (!lhs) throw new Error(`Node ${nodeLabel(node)} missing action.lhs`);
+      if (!op) throw new Error(`Node ${nodeLabel(node)} missing action.op`);
+
+      const evalRes = await evalIfCondition({ runDir, condition: { lhs, op: op as any, rhs } });
+
+      const defaultNodeOutputRel = path.join('node-outputs', `${String(i).padStart(3, '0')}-${node.id}.json`);
+      const nodeOutputRel = String(node?.output?.path ?? '').trim() || defaultNodeOutputRel;
+      const nodeOutputAbs = path.resolve(runDir, nodeOutputRel);
+      await ensureDir(path.dirname(nodeOutputAbs));
+      await fs.writeFile(
+        nodeOutputAbs,
+        JSON.stringify(
+          {
+            runId,
+            teamId,
+            nodeId: node.id,
+            kind: node.kind,
+            completedAt: new Date().toISOString(),
+            value: evalRes.value,
+            detail: evalRes.detail,
+          },
+          null,
+          2
+        ) + '\n',
+        'utf8'
+      );
+
+      const completedTs = new Date().toISOString();
+      await appendRunLog(runLogPath, (cur) => ({
+        ...cur,
+        nextNodeIndex: i + 1,
+        nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
+        events: [
+          ...cur.events,
+          {
+            ts: completedTs,
+            type: 'node.completed',
+            nodeId: node.id,
+            kind,
+            value: evalRes.value,
+            nodeOutputPath: path.relative(teamDir, nodeOutputAbs),
+          },
+        ],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, value: evalRes.value, nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
+      }));
+      nodeStates[String(node.id)] = { status: 'success', ts: completedTs };
+      continue;
+    }
+
+    if (kind === 'delay') {
+      const action = asRecord(node.action);
+      const secondsRaw = action['seconds'] ?? action['delaySeconds'] ?? action['durationSeconds'];
+      const msRaw = action['ms'] ?? action['delayMs'] ?? action['durationMs'];
+
+      const sec = typeof secondsRaw === 'number' ? secondsRaw : Number(secondsRaw);
+      const ms = typeof msRaw === 'number' ? msRaw : Number(msRaw);
+
+      const delayMs = Number.isFinite(ms) && ms > 0 ? ms : Number.isFinite(sec) && sec > 0 ? sec * 1000 : 0;
+      if (!delayMs) throw new Error(`Node ${nodeLabel(node)} missing delay duration (action.delaySeconds or action.delayMs)`);
+
+      const maxDelayMs = 7 * 24 * 60 * 60 * 1000;
+      const effectiveDelayMs = Math.min(delayMs, maxDelayMs);
+      const resumeAt = new Date(Date.now() + effectiveDelayMs).toISOString();
+
+      const completedTs = new Date().toISOString();
+      await appendRunLog(runLogPath, (cur) => ({
+        ...cur,
+        status: 'paused',
+        resumeAt,
+        nextNodeIndex: i + 1,
+        nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
+        events: [
+          ...cur.events,
+          { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, delayMs: effectiveDelayMs, resumeAt },
+          { ts: completedTs, type: 'run.paused', nodeId: node.id, resumeAt },
+        ],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, delayMs: effectiveDelayMs, resumeAt }],
+      }));
+      nodeStates[String(node.id)] = { status: 'success', ts: completedTs };
+      return { ticketPath: curTicketPath, lane: curLane, status: 'completed' };
     }
 
 
@@ -1000,7 +1117,15 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
 
     try {
       const run = JSON.parse(await readTextFile(runPath)) as RunLog;
-      if (run.status !== 'queued') continue;
+      const st = String(run.status ?? '');
+      if (st !== 'queued' && st !== 'paused') continue;
+
+      if (st === 'paused') {
+        const resumeAtRaw = String((run as unknown as { resumeAt?: string | null }).resumeAt ?? '').trim();
+        const resumeMs = resumeAtRaw ? Date.parse(resumeAtRaw) : NaN;
+        if (!Number.isFinite(resumeMs) || Date.now() < resumeMs) continue;
+      }
+
       const exp = run.claimExpiresAt ? Date.parse(String(run.claimExpiresAt)) : 0;
       const claimed = !!run.claimedBy && exp > now;
       if (claimed) continue;
@@ -1179,7 +1304,14 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
   async function tryClaim(runPath: string): Promise<RunLog | null> {
     const raw = await readTextFile(runPath);
     const cur = JSON.parse(raw) as RunLog;
-    if (cur.status !== 'queued') return null;
+    const st = String(cur.status ?? '');
+    if (st !== 'queued' && st !== 'paused') return null;
+    if (st === 'paused') {
+      const resumeAtRaw = String((cur as unknown as { resumeAt?: string | null }).resumeAt ?? '').trim();
+      const resumeMs = resumeAtRaw ? Date.parse(resumeAtRaw) : NaN;
+      if (!Number.isFinite(resumeMs) || Date.now() < resumeMs) return null;
+    }
+
     const exp = cur.claimExpiresAt ? Date.parse(String(cur.claimExpiresAt)) : 0;
     const claimed = !!cur.claimedBy && exp > Date.now();
     if (claimed) return null;
@@ -1191,6 +1323,7 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
       ...cur,
       updatedAt: new Date().toISOString(),
       status: 'running',
+      resumeAt: null,
       claimedBy,
       claimExpiresAt,
       events: [...(cur.events ?? []), { ts: new Date().toISOString(), type: 'run.claimed', claimedBy, claimExpiresAt }],
@@ -1855,6 +1988,66 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, noop: true }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, noop: true }],
       }));
+    } else if (kind === 'if') {
+      const action = asRecord(node.action);
+      const lhs = asString(action['lhs']).trim();
+      const op = asString(action['op']).trim();
+      const rhs = action['rhs'];
+      if (!lhs) throw new Error(`Node ${nodeLabel(node)} missing action.lhs`);
+      if (!op) throw new Error(`Node ${nodeLabel(node)} missing action.op`);
+
+      const evalRes = await evalIfCondition({ runDir, condition: { lhs, op: op as any, rhs } });
+
+      const defaultNodeOutputRel = path.join('node-outputs', `${String(nodeIdx).padStart(3, '0')}-${node.id}.json`);
+      const nodeOutputRel = String(node?.output?.path ?? '').trim() || defaultNodeOutputRel;
+      const nodeOutputAbs = path.resolve(runDir, nodeOutputRel);
+      await ensureDir(path.dirname(nodeOutputAbs));
+      await fs.writeFile(nodeOutputAbs, JSON.stringify({
+        runId: task.runId,
+        teamId,
+        nodeId: node.id,
+        kind: node.kind,
+        completedAt: new Date().toISOString(),
+        value: evalRes.value,
+        detail: evalRes.detail,
+      }, null, 2) + '\n', 'utf8');
+
+      const completedTs = new Date().toISOString();
+      await appendRunLog(runPath, (cur) => ({
+        ...cur,
+        nextNodeIndex: nodeIdx + 1,
+        nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
+        events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, value: evalRes.value, nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, value: evalRes.value, nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
+      }));
+    } else if (kind === 'delay') {
+      const action = asRecord(node.action);
+      const secondsRaw = action['seconds'] ?? action['delaySeconds'] ?? action['durationSeconds'];
+      const msRaw = action['ms'] ?? action['delayMs'] ?? action['durationMs'];
+
+      const sec = typeof secondsRaw === 'number' ? secondsRaw : Number(secondsRaw);
+      const ms = typeof msRaw === 'number' ? msRaw : Number(msRaw);
+
+      const delayMs = Number.isFinite(ms) && ms > 0 ? ms : Number.isFinite(sec) && sec > 0 ? sec * 1000 : 0;
+      if (!delayMs) throw new Error(`Node ${nodeLabel(node)} missing delay duration (action.delaySeconds or action.delayMs)`);
+
+      const maxDelayMs = 7 * 24 * 60 * 60 * 1000;
+      const effectiveDelayMs = Math.min(delayMs, maxDelayMs);
+      const resumeAt = new Date(Date.now() + effectiveDelayMs).toISOString();
+
+      const completedTs = new Date().toISOString();
+      await appendRunLog(runPath, (cur) => ({
+        ...cur,
+        status: 'paused',
+        resumeAt,
+        nextNodeIndex: nodeIdx + 1,
+        nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
+        events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, delayMs: effectiveDelayMs, resumeAt }, { ts: completedTs, type: 'run.paused', nodeId: node.id, resumeAt }],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, delayMs: effectiveDelayMs, resumeAt }],
+      }));
+
+      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'paused' });
+      continue;
     } else if (kind === 'llm') {
       // Reuse the existing runner logic by executing just this node (sequential model).
       // This keeps the worker deterministic and file-first.
