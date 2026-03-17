@@ -96,7 +96,7 @@ cronJobs:
   - id: workflow-runner-loop
     name: "Workflow runner loop (runs queue)"
     # 6-field cron with seconds; runs every 15s
-    schedule: "*/15 * * * * *"
+    schedule: "*/5 * * * *"
     timezone: "UTC"
     agentId: "{{teamId}}-workflow-runner"
     message: |
@@ -109,7 +109,7 @@ cronJobs:
       Command:
         openclaw recipes workflows runner-tick --team-id {{teamId}} --concurrency 2 --lease-seconds 45
 
-    enabledByDefault: true
+    enabledByDefault: false
 
   - id: pr-watcher
     name: "PR watcher (ticket-linked)"
