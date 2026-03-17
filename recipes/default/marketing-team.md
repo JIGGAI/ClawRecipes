@@ -20,77 +20,77 @@ cronJobs:
     timezone: "America/New_York"
     agentId: "{{teamId}}-seo"
     message: "Safe-idle loop: check for SEO-assigned work (tickets/workflows), make small progress, and write outputs under roles/seo/agent-outputs/."
-    enabledByDefault: true
+    enabledByDefault: false
   - id: copywriter-work-loop
     name: "Copywriter work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-copywriter"
     message: "Safe-idle loop: check for copywriting-assigned work, make progress, and write outputs under roles/copywriter/agent-outputs/."
-    enabledByDefault: true
+    enabledByDefault: false
   - id: ads-work-loop
     name: "Ads work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-ads"
     message: "Safe-idle loop: check for ads-assigned work, make progress, and write outputs under roles/ads/agent-outputs/."
-    enabledByDefault: true
+    enabledByDefault: false
   - id: social-work-loop
     name: "Social work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-social"
     message: "Safe-idle loop: check for social/community-assigned work, make progress, and write outputs under roles/social/agent-outputs/."
-    enabledByDefault: true
+    enabledByDefault: false
   - id: designer-work-loop
     name: "Designer work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-designer"
     message: "Safe-idle loop: check for creative/design-assigned work, make progress, and write outputs under roles/designer/agent-outputs/."
-    enabledByDefault: true
+    enabledByDefault: false
   - id: analyst-work-loop
     name: "Analyst work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-analyst"
     message: "Safe-idle loop: check for analytics-assigned work, make progress, and write outputs under roles/analyst/agent-outputs/."
-    enabledByDefault: true
+    enabledByDefault: false
   - id: video-work-loop
     name: "Video work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-video"
     message: "Safe-idle loop: check for video-assigned work, make progress, and write outputs under roles/video/agent-outputs/."
-    enabledByDefault: true
+    enabledByDefault: false
   - id: compliance-work-loop
     name: "Compliance work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-compliance"
     message: "Safe-idle loop: check for compliance/brand-review work, make progress, and write outputs under roles/compliance/agent-outputs/."
-    enabledByDefault: true
+    enabledByDefault: false
   - id: offer-work-loop
     name: "Offer work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-offer"
     message: "Safe-idle loop: check for offer/positioning work, make progress, and write outputs under roles/offer/agent-outputs/."
-    enabledByDefault: true
+    enabledByDefault: false
   - id: funnel-work-loop
     name: "Funnel work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-funnel"
     message: "Safe-idle loop: check for funnel/landing-page work, make progress, and write outputs under roles/funnel/agent-outputs/."
-    enabledByDefault: true
+    enabledByDefault: false
   - id: lifecycle-work-loop
     name: "Lifecycle work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-lifecycle"
     message: "Safe-idle loop: check for lifecycle/email work, make progress, and write outputs under roles/lifecycle/agent-outputs/."
-    enabledByDefault: true
+    enabledByDefault: false
 
   # Optional team-wide loop (off by default): can be enabled later if you want an extra generic executor.
   - id: execution-loop
