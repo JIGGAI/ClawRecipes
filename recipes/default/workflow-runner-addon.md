@@ -9,9 +9,9 @@ name: Workflow runner (team add-on)
 cronJobs:
   - id: workflow-runner-loop
     name: "{{teamId}} • workflow runner loop (runs queue)"
-    schedule: "*/15 * * * * *"
+    schedule: "*/5 * * * *"
     agentId: "{{teamId}}-workflow-runner"
-    enabledByDefault: true
+    enabledByDefault: false
     message: |
       [cron] Workflow runner loop (runs queue)
 
