@@ -19,7 +19,7 @@ function interpolateTemplate(input: string | undefined, vars: Record<string, str
 
 function applyCronJobVars(
   scope: CronReconcileScope,
-  j: { id: string; name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; enabledByDefault?: boolean },
+  j: { id: string; name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; enabledByDefault?: boolean; delivery?: 'none' | 'announce' },
 ): typeof j {
   const vars: Record<string, string> = {
     recipeId: scope.recipeId,
@@ -64,7 +64,7 @@ type CronReconcileScope =
 
 function buildCronJobForCreate(
   scope: CronReconcileScope,
-  j: { id: string; name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; enabledByDefault?: boolean },
+  j: { id: string; name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; enabledByDefault?: boolean; delivery?: 'none' | 'announce' },
   wantEnabled: boolean
 ): Record<string, unknown> {
   const name =
@@ -91,21 +91,23 @@ function buildCronJobForCreate(
     sessionTarget,
     schedule: { kind: "cron", expr: j.schedule, ...(j.timezone ? { tz: j.timezone } : {}) },
     payload: effectiveAgentId ? { kind: "agentTurn", message: j.message } : { kind: "systemEvent", text: j.message },
-    ...(j.channel || j.to
-      ? {
-          delivery: {
-            mode: "announce",
-            ...(j.channel ? { channel: j.channel } : {}),
-            ...(j.to ? { to: j.to } : {}),
-            bestEffort: true,
-          },
-        }
-      : {}),
+    ...(j.delivery === 'none'
+      ? { delivery: { mode: "none" } }
+      : j.channel || j.to
+        ? {
+            delivery: {
+              mode: "announce",
+              ...(j.channel ? { channel: j.channel } : {}),
+              ...(j.to ? { to: j.to } : {}),
+              bestEffort: true,
+            },
+          }
+        : {}),
   };
 }
 
 function buildCronJobPatch(
-  j: { name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string },
+  j: { name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; delivery?: 'none' | 'announce' },
   name: string
 ): CronJobPatch {
   const effectiveAgentId = typeof j.agentId === "string" && j.agentId.trim() ? j.agentId.trim() : undefined;
@@ -119,7 +121,9 @@ function buildCronJobPatch(
     schedule: { kind: "cron", expr: j.schedule, ...(j.timezone ? { tz: j.timezone } : {}) },
     payload: effectiveAgentId ? { kind: "agentTurn", message: j.message } : { kind: "systemEvent", text: j.message },
   };
-  if (j.channel || j.to) {
+  if (j.delivery === 'none') {
+    patch.delivery = { mode: "none" };
+  } else if (j.channel || j.to) {
     patch.delivery = {
       mode: "announce",
       ...(j.channel ? { channel: j.channel } : {}),
@@ -229,11 +233,16 @@ async function cronAdd(api: OpenClawPluginApi, job: Record<string, unknown>): Pr
 
   // delivery
   const delivery = j.delivery;
-  if (delivery && typeof delivery === "object" && String(delivery.mode ?? "") === "announce") {
-    argv.push("--announce");
-    if (delivery.channel) argv.push("--channel", String(delivery.channel));
-    if (delivery.to) argv.push("--to", String(delivery.to));
-    if (delivery.bestEffort) argv.push("--best-effort-deliver");
+  if (delivery && typeof delivery === "object") {
+    const deliveryMode = String(delivery.mode ?? "");
+    if (deliveryMode === "announce") {
+      argv.push("--announce");
+      if (delivery.channel) argv.push("--channel", String(delivery.channel));
+      if (delivery.to) argv.push("--to", String(delivery.to));
+      if (delivery.bestEffort) argv.push("--best-effort-deliver");
+    } else if (deliveryMode === "none") {
+      argv.push("--no-deliver");
+    }
   }
 
   const result = await api.runtime.system.runCommandWithTimeout(argv, { timeoutMs: 30_000 });
