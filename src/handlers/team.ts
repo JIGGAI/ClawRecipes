@@ -392,6 +392,8 @@ export async function handleScaffoldTeam(
   const { loaded, recipe, cfg, workspaceRoot: baseWorkspace } = validation;
 
   // Lint (warn-only) for common team scaffolding pitfalls.
+  // NOTE: console.warn/error used throughout src/ for [recipes]-prefixed diagnostics.
+  // No plugin SDK logger available; these go to stderr which the host captures.
   for (const issue of lintRecipe(recipe)) {
     if (issue.level === "warn") console.warn(`[recipes] WARN ${issue.code}: ${issue.message}`);
     else console.warn(`[recipes] ${issue.code}: ${issue.message}`);
