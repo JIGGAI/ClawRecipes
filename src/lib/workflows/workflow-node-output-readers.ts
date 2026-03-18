@@ -139,7 +139,7 @@ export async function loadPriorLlmInput(opts: {
   const inputs: Array<Record<string, unknown> & { idx: number; nodeId: string }> = [];
   for (const nodeId of upstreamNodeIds) {
     const loaded = await parseNodeOutput(nodeId);
-    if (loaded) inputs.push(loaded as any);
+    if (loaded) inputs.push(loaded);
   }
 
   // IMPORTANT: when there are multiple upstream nodes, pick the most recently-executed one

@@ -121,7 +121,7 @@ async function fileExists(p: string) {
   try {
     await fs.stat(p);
     return true;
-  } catch {
+  } catch { // intentional: best-effort file existence check
     return false;
   }
 }
@@ -193,7 +193,7 @@ async function moveRunTicket(opts: {
     const next = md.replace(/^Status: .*$/m, `Status: ${laneToStatus(toLane)}`);
     if (next !== md) await fs.writeFile(dest, next, 'utf8');
   } catch {
-    // ignore
+    // intentional: best-effort status update
   }
 
   return { ticketPath: dest };
@@ -532,7 +532,7 @@ async function executeWorkflowNodes(opts: {
               input: { teamId, runId, nodeId: node.id, agentId, ...priorInput },
             },
           });
-        } catch {
+        } catch { // intentional: fallback from llm-task-fixed to llm-task
           llmRes = await toolsInvoke<unknown>(api, {
             tool: 'llm-task',
             action: 'json',
@@ -611,7 +611,7 @@ async function executeWorkflowNodes(opts: {
         const hasQc = (await fileExists(nodeOutputsDir)) && (await fs.readdir(nodeOutputsDir)).some((f) => f.endsWith(`-${qcId}.json`));
         const priorId = hasQc ? qcId : String(workflow.nodes?.[Math.max(0, i - 1)]?.id ?? '');
         if (priorId) proposed = await loadProposedPostTextFromPriorNode({ runDir, nodeOutputsDir, priorNodeId: priorId });
-      } catch {
+      } catch { // intentional: best-effort proposed text load
         proposed = '';
       }
       proposed = sanitizeDraftOnlyText(proposed);
@@ -992,7 +992,7 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
         const p = path.join(abs, 'run.json');
         if (await fileExists(p)) runPath = p;
       }
-    } catch {
+    } catch { // intentional: best-effort directory traversal
       // ignore
     }
 
@@ -1005,7 +1005,7 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
       const claimed = !!run.claimedBy && exp > now;
       if (claimed) continue;
       candidates.push({ file: runPath, run });
-    } catch {
+    } catch { // intentional: skip malformed run.json
       // ignore parse errors
     }
   }
@@ -1145,7 +1145,7 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
         const p = path.join(abs, 'run.json');
         if (await fileExists(p)) runPath = p;
       }
-    } catch {
+    } catch { // intentional: best-effort directory traversal
       // ignore
     }
 
@@ -1158,7 +1158,7 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
       const claimed = !!run.claimedBy && exp > now;
       if (claimed) continue;
       candidates.push({ file: runPath, run });
-    } catch {
+    } catch { // intentional: skip malformed run.json
       // ignore parse errors
     }
   }
@@ -1621,11 +1621,11 @@ export async function resumeWorkflowRun(api: OpenClawPluginApi, opts: {
         const lp = path.join(lockDir, `${id}.lock`);
         try {
           await fs.unlink(lp);
-        } catch {
+        } catch { // intentional: best-effort lock cleanup
           // ignore
         }
       }
-    } catch {
+    } catch { // intentional: best-effort cleanup
       // ignore
     }
 
@@ -1765,7 +1765,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             await fs.unlink(lockPath);
             unlocked = true;
           }
-        } catch {
+        } catch { // intentional: best-effort stale lock removal
           // ignore
         }
 
@@ -1773,7 +1773,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           try {
             await fs.writeFile(lockPath, JSON.stringify({ workerId, taskId: task.id, claimedAt: new Date().toISOString() }, null, 2), { encoding: 'utf8', flag: 'wx' });
             lockHeld = true;
-          } catch {
+          } catch { // intentional: lock contention, skip task
             results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_locked' });
             continue;
           }
@@ -1902,7 +1902,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
               input: { teamId, runId, nodeId: node.id, agentId, ...priorInput },
             },
           });
-        } catch {
+        } catch { // intentional: fallback from llm-task-fixed to llm-task
           llmRes = await toolsInvoke<unknown>(api, {
             tool: 'llm-task',
             action: 'json',
@@ -2022,7 +2022,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         const hasQc = (await fileExists(nodeOutputsDir)) && (await fs.readdir(nodeOutputsDir)).some((f) => f.endsWith(`-${qcId}.json`));
         const priorId = hasQc ? qcId : String(workflow.nodes?.[Math.max(0, nodeIdx - 1)]?.id ?? '');
         if (priorId) proposed = await loadProposedPostTextFromPriorNode({ runDir, nodeOutputsDir, priorNodeId: priorId });
-      } catch {
+      } catch { // intentional: best-effort proposed text load
         proposed = '';
       }
       proposed = sanitizeDraftOnlyText(proposed);
@@ -2242,13 +2242,13 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       if (lockHeld) {
         try {
           await fs.unlink(lockPath);
-        } catch {
+        } catch { // intentional: best-effort lock cleanup
           // ignore
         }
       }
       try {
         await releaseTaskClaim(teamDir, agentId, task.id);
-      } catch {
+      } catch { // intentional: best-effort claim release
         // ignore
       }
     }

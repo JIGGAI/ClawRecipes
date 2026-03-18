@@ -26,7 +26,7 @@ async function fileExists(p: string) {
   try {
     await fs.stat(p);
     return true;
-  } catch {
+  } catch { // intentional: best-effort file existence check
     return false;
   }
 }
@@ -48,7 +48,7 @@ async function loadClaim(teamDir: string, agentId: string, taskId: string) {
   try {
     const raw = await fs.readFile(p, 'utf8');
     return JSON.parse(raw) as { workerId?: string; claimedAt?: string; leaseSeconds?: number };
-  } catch {
+  } catch { // intentional: best-effort JSON parse
     return null;
   }
 }
@@ -63,7 +63,7 @@ function isExpiredClaim(claim: { claimedAt?: string; leaseSeconds?: number } | n
 export async function releaseTaskClaim(teamDir: string, agentId: string, taskId: string) {
   try {
     await fs.unlink(claimPathFor(teamDir, agentId, taskId));
-  } catch {
+  } catch { // intentional: best-effort claim cleanup
     // ignore missing claims
   }
 }
@@ -101,7 +101,7 @@ async function loadState(teamDir: string, agentId: string): Promise<QueueState> 
     const parsed = JSON.parse(raw) as QueueState;
     if (!parsed || typeof parsed.offsetBytes !== 'number') throw new Error('invalid');
     return parsed;
-  } catch {
+  } catch { // intentional: best-effort state parse, reset to defaults
     return { offsetBytes: 0, updatedAt: new Date().toISOString() };
   }
 }
@@ -146,7 +146,7 @@ export async function readNextTasks(teamDir: string, agentId: string, opts?: { l
       try {
         const t = JSON.parse(line) as QueueTask;
         if (t && t.runId && t.nodeId) tasks.push(t);
-      } catch {
+      } catch { // intentional: skip malformed queue line
         // ignore malformed line
       }
       if (tasks.length >= limit) break;
@@ -194,7 +194,7 @@ export async function dequeueNextTask(
 
     try {
       await writeClaim(false);
-    } catch {
+    } catch { // intentional: lock contention — check existing claim
       const existing = await loadClaim(teamDir, agentId, t.id);
       if (String(existing?.workerId ?? '') !== workerId) {
         if (!isExpiredClaim(existing, leaseSeconds)) {
@@ -243,7 +243,7 @@ export async function dequeueNextTask(
         let t: QueueTask | null = null;
         try {
           t = JSON.parse(line) as QueueTask;
-        } catch {
+        } catch { // intentional: skip malformed queue line
           await writeState(teamDir, agentId, { offsetBytes: cursor, updatedAt: new Date().toISOString() });
           continue;
         }
@@ -272,7 +272,7 @@ export async function dequeueNextTask(
       let t: QueueTask | null = null;
       try {
         t = JSON.parse(line) as QueueTask;
-      } catch {
+      } catch { // intentional: skip malformed queue line
         continue;
       }
       if (!t || !t.id || !t.runId || !t.nodeId) continue;

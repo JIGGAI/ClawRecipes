@@ -69,7 +69,7 @@ async function main() {
     assert(await fileExists(ticketsMdPath), `Missing TICKETS.md at ${ticketsMdPath}`);
     assert(await fileExists(testingDir), `Missing work/testing/ dir at ${testingDir}`);
 
-    const [teamMd, ticketsMd] = await Promise.all([
+    const [, ticketsMd] = await Promise.all([
       fs.readFile(teamMdPath, "utf8"),
       fs.readFile(ticketsMdPath, "utf8"),
     ]);
