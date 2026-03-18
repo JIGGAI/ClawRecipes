@@ -224,8 +224,8 @@ templates:
   research.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: research
 
     ## Guardrails (read → act → write)
@@ -259,8 +259,8 @@ templates:
   listening.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: listening
 
     ## Guardrails (read → act → write)
@@ -294,8 +294,8 @@ templates:
   social-seo.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: social-seo
 
     ## Guardrails (read → act → write)
@@ -329,8 +329,8 @@ templates:
   editorial.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: editorial
 
     ## Guardrails (read → act → write)
@@ -364,8 +364,8 @@ templates:
   community.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: community
 
     ## Guardrails (read → act → write)
@@ -399,8 +399,8 @@ templates:
   distributor.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: distributor
 
     ## Guardrails (read → act → write)
@@ -434,8 +434,8 @@ templates:
   tiktok.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: tiktok
 
     ## Guardrails (read → act → write)
@@ -469,8 +469,8 @@ templates:
   instagram.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: instagram
 
     ## Guardrails (read → act → write)
@@ -504,8 +504,8 @@ templates:
   youtube.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: youtube
 
     ## Guardrails (read → act → write)
@@ -539,8 +539,8 @@ templates:
   facebook.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: facebook
 
     ## Guardrails (read → act → write)
@@ -574,8 +574,8 @@ templates:
   x.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: x
 
     ## Guardrails (read → act → write)
@@ -609,8 +609,8 @@ templates:
   linkedin.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: linkedin
 
     ## Guardrails (read → act → write)
@@ -855,6 +855,9 @@ files:
     mode: createOnly
   - path: shared-context/priorities.md
     template: sharedContext.priorities
+    mode: createOnly
+  - path: shared-context/MEMORY_PLAN.md
+    template: sharedContext.memoryPlan
     mode: createOnly
   - path: shared-context/agent-outputs/README.md
     template: sharedContext.agentOutputsReadme

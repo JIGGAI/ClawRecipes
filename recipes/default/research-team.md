@@ -209,8 +209,8 @@ templates:
   researcher.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: researcher
 
     ## Guardrails (read → act → write)
@@ -239,8 +239,8 @@ templates:
   fact-checker.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: fact-checker
 
     ## Guardrails (read → act → write)
@@ -269,8 +269,8 @@ templates:
   summarizer.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: summarizer
 
     ## Guardrails (read → act → write)
@@ -379,6 +379,9 @@ files:
     mode: createOnly
   - path: shared-context/priorities.md
     template: sharedContext.priorities
+    mode: createOnly
+  - path: shared-context/MEMORY_PLAN.md
+    template: sharedContext.memoryPlan
     mode: createOnly
   - path: shared-context/agent-outputs/README.md
     template: sharedContext.agentOutputsReadme

@@ -406,7 +406,7 @@ files: []
         expect(await fs.readFile(path.join(res.teamDir, "notes", "plan.md"), "utf8")).toContain("# Plan");
         expect(await fs.readFile(path.join(res.teamDir, "notes", "status.md"), "utf8")).toContain("# Status");
         expect(await fs.readFile(path.join(res.teamDir, "shared-context", "priorities.md"), "utf8")).toContain("# Priorities");
-        expect(await fs.readFile(path.join(res.teamDir, "shared-context", "agent-outputs", "README.md"), "utf8")).toContain("Agent outputs");
+        expect(await fs.readFile(path.join(res.teamDir, "shared-context", "agent-outputs", "README.md"), "utf8")).toContain("Agent Outputs");
 
         // Per-role continuity + outputs
         const yyyyMmDd = new Date().toISOString().slice(0, 10);

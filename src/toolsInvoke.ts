@@ -2,7 +2,7 @@
 // flag "file read + network send" when both patterns live in the same file.
 // This module intentionally contains the network call (fetch) but no filesystem reads.
 
-export const TOOLS_INVOKE_TIMEOUT_MS = 30_000;
+export const TOOLS_INVOKE_TIMEOUT_MS = 120_000;
 export const RETRY_DELAY_BASE_MS = 150;
 export const GATEWAY_DEFAULT_PORT = 18789;
 

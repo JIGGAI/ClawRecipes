@@ -7,7 +7,7 @@ describe("toolsInvoke", () => {
   });
 
   test("exports constants for testability", () => {
-    expect(TOOLS_INVOKE_TIMEOUT_MS).toBe(30_000);
+    expect(TOOLS_INVOKE_TIMEOUT_MS).toBe(120_000);
     expect(RETRY_DELAY_BASE_MS).toBe(150);
   });
 

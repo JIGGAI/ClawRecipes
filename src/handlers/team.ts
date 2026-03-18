@@ -140,6 +140,45 @@ Default behavior: **quiet**. If there is nothing to report, do nothing.
   await writeFileSafely(path.join(teamDir, "TICKETS.md"), ticketsMd, mode);
 }
 
+/**
+ * Write team-level files from the recipe files[] array.
+ *
+ * Per-role scaffolding (scaffoldTeamAgents) filters out paths starting with
+ * "shared-context/" and "notes/" because those belong to the team workspace root,
+ * not individual role directories. This function picks up those filtered paths
+ * and writes them to teamDir using the recipe's templates.
+ */
+async function writeTeamLevelRecipeFiles(opts: {
+  recipe: RecipeFrontmatter;
+  teamId: string;
+  teamDir: string;
+  overwrite: boolean;
+}) {
+  const { recipe, teamId, teamDir, overwrite } = opts;
+  const files = recipe.files ?? [];
+  if (!files.length) return;
+  const mode = overwrite ? "overwrite" : "createOnly";
+  const templates = (recipe.templates ?? {}) as Record<string, unknown>;
+  const vars = { teamId, teamDir };
+
+  for (const f of files) {
+    const filePath = String(f.path ?? "").trim();
+    if (!filePath) continue;
+    // Only process paths that are team-scoped (filtered out of per-role scaffolding).
+    if (!filePath.startsWith("shared-context/") && !filePath.startsWith("notes/")) continue;
+
+    const templateKey = String(f.template ?? "").trim();
+    if (!templateKey) continue;
+
+    const templateContent = templates[templateKey];
+    if (typeof templateContent !== "string") continue;
+
+    const rendered = renderTemplate(templateContent, vars);
+    const target = path.join(teamDir, filePath);
+    await writeFileSafely(target, rendered, mode);
+  }
+}
+
 async function writeTeamMetadataAndConfig(opts: {
   api: OpenClawPluginApi;
   teamId: string;
@@ -441,6 +480,11 @@ export async function handleScaffoldTeam(
     overwrite,
     qaChecklist,
   });
+  // Write team-level files from the recipe files[] array.
+  // Per-role scaffolding filters out shared-context/ and notes/ paths (those belong to teamDir).
+  // We render and write them here so recipe-defined team assets are not silently dropped.
+  await writeTeamLevelRecipeFiles({ recipe, teamId, teamDir, overwrite });
+
   const heartbeat = buildHeartbeatCronJobsFromTeamRecipe({
     teamId,
     recipe,

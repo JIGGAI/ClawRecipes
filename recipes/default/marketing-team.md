@@ -92,6 +92,12 @@ cronJobs:
     message: "Safe-idle loop: check for lifecycle/email work, make progress, and write outputs under roles/lifecycle/agent-outputs/."
     enabledByDefault: false
 
+  # NOTE: Workflow worker crons are NOT defined here.
+  # ClawKitchen installs them on-demand when the user visits a workflow editor
+  # and clicks "Install worker cron(s)" or triggers a run. This avoids duplicate
+  # crons between recipe scaffolding and Kitchen's reconciliation.
+  # Kitchen stores provenance in workspace-<teamId>/notes/cron-jobs.json.
+
   # Optional team-wide loop (off by default): can be enabled later if you want an extra generic executor.
   - id: execution-loop
     name: "Execution loop"
