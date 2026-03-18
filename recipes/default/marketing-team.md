@@ -92,6 +92,77 @@ cronJobs:
     message: "Safe-idle loop: check for lifecycle/email work, make progress, and write outputs under roles/lifecycle/agent-outputs/."
     enabledByDefault: false
 
+  # --- Workflow runner + worker crons ---
+  # The runner claims queued workflow runs and advances them node-by-node.
+  # Workers execute individual nodes assigned to their agent.
+  # delivery: none (silent) — these are internal execution loops, not chat-facing.
+  - id: workflow-runner
+    name: "Workflow runner tick"
+    schedule: "*/5 * * * *"
+    agentId: "{{teamId}}-lead"
+    delivery: none
+    message: |
+      Workflow runner tick ({{teamId}}).
+
+      Run exactly one shell command using the exec tool.
+
+      Command:
+      bash -lc 'openclaw recipes workflows runner-tick --team-id {{teamId}} --concurrency 2 --lease-seconds 120'
+
+      Rules:
+      - Execute with exec and wait for completion.
+      - If it succeeds, respond exactly: NO_REPLY
+      - If it fails, respond with one short error line.
+    enabledByDefault: true
+
+  - id: workflow-worker-analyst
+    name: "Workflow worker: analyst"
+    schedule: "*/5 * * * *"
+    agentId: "{{teamId}}-analyst"
+    delivery: none
+    message: |
+      Workflow worker tick: pull + execute pending workflow tasks for this agent.
+
+      Command:
+        openclaw recipes workflows worker-tick --team-id {{teamId}} --agent-id {{teamId}}-analyst --limit 5 --worker-id cron
+    enabledByDefault: true
+
+  - id: workflow-worker-copywriter
+    name: "Workflow worker: copywriter"
+    schedule: "*/5 * * * *"
+    agentId: "{{teamId}}-copywriter"
+    delivery: none
+    message: |
+      Workflow worker tick: pull + execute pending workflow tasks for this agent.
+
+      Command:
+        openclaw recipes workflows worker-tick --team-id {{teamId}} --agent-id {{teamId}}-copywriter --limit 5 --worker-id cron
+    enabledByDefault: true
+
+  - id: workflow-worker-compliance
+    name: "Workflow worker: compliance"
+    schedule: "*/5 * * * *"
+    agentId: "{{teamId}}-compliance"
+    delivery: none
+    message: |
+      Workflow worker tick: pull + execute pending workflow tasks for this agent.
+
+      Command:
+        openclaw recipes workflows worker-tick --team-id {{teamId}} --agent-id {{teamId}}-compliance --limit 5 --worker-id cron
+    enabledByDefault: true
+
+  - id: workflow-worker-lead
+    name: "Workflow worker: lead"
+    schedule: "*/5 * * * *"
+    agentId: "{{teamId}}-lead"
+    delivery: none
+    message: |
+      Workflow worker tick: pull + execute pending workflow tasks for this agent.
+
+      Command:
+        openclaw recipes workflows worker-tick --team-id {{teamId}} --agent-id {{teamId}}-lead --limit 5 --worker-id cron
+    enabledByDefault: true
+
   # Optional team-wide loop (off by default): can be enabled later if you want an extra generic executor.
   - id: execution-loop
     name: "Execution loop"
