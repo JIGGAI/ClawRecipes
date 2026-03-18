@@ -288,3 +288,51 @@ export async function dequeueNextTask(
     await fh.close();
   }
 }
+
+/**
+ * Compact a per-agent queue file by discarding all entries before the current cursor offset.
+ * This prevents unbounded queue growth from old processed/stale entries.
+ *
+ * Safe to call periodically (e.g. at the end of a worker-tick).
+ * Only compacts when the consumed prefix exceeds `minWasteBytes` (default 4 KB).
+ */
+export async function compactQueue(teamDir: string, agentId: string, opts?: { minWasteBytes?: number }) {
+  const minWaste = typeof opts?.minWasteBytes === 'number' ? opts.minWasteBytes : 4096;
+  const qPath = queuePathFor(teamDir, agentId);
+  if (!(await fileExists(qPath))) return { ok: true as const, compacted: false, reason: 'no queue file' };
+
+  const st = await loadState(teamDir, agentId);
+  if (st.offsetBytes < minWaste) return { ok: true as const, compacted: false, reason: 'below threshold' };
+
+  // Read the full file, keep only the portion after the cursor.
+  const raw = await fs.readFile(qPath);
+  const remaining = raw.subarray(st.offsetBytes);
+
+  // Atomic-ish write: write to temp then rename.
+  const tmpPath = qPath + '.compact.tmp';
+  await fs.writeFile(tmpPath, remaining);
+  await fs.rename(tmpPath, qPath);
+
+  // Reset offset to 0 since we removed the consumed prefix.
+  await writeState(teamDir, agentId, { offsetBytes: 0, updatedAt: new Date().toISOString() });
+
+  // Also clean up stale claim files for this agent (expired leases with no matching pending task).
+  try {
+    const claimsBase = claimsDir(teamDir);
+    if (await fileExists(claimsBase)) {
+      const prefix = `${agentId}.`;
+      const files = (await fs.readdir(claimsBase)).filter((f) => f.startsWith(prefix) && f.endsWith('.json'));
+      for (const f of files) {
+        try {
+          const claimRaw = await fs.readFile(path.join(claimsBase, f), 'utf8');
+          const claim = JSON.parse(claimRaw) as { claimedAt?: string; leaseSeconds?: number };
+          if (isExpiredClaim(claim, 120)) {
+            await fs.unlink(path.join(claimsBase, f));
+          }
+        } catch { /* intentional: best-effort stale claim cleanup */ }
+      }
+    }
+  } catch { /* intentional: best-effort claims cleanup */ }
+
+  return { ok: true as const, compacted: true, removedBytes: st.offsetBytes, remainingBytes: remaining.length };
+}

@@ -5,7 +5,7 @@ import type { ToolTextResult } from '../../toolsInvoke';
 import { toolsInvoke } from '../../toolsInvoke';
 import { resolveTeamDir } from '../workspace';
 import type { WorkflowLane } from './workflow-types';
-import { dequeueNextTask, enqueueTask, releaseTaskClaim } from './workflow-queue';
+import { dequeueNextTask, enqueueTask, releaseTaskClaim, compactQueue } from './workflow-queue';
 import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow-node-output-readers';
 import { readTextFile } from './workflow-runner-io';
 import { resolveApprovalBindingTarget } from './workflow-node-executor';
@@ -228,7 +228,19 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         const payload = details['json'] ?? (Object.keys(details).length ? details : llmRes) ?? null;
         text = JSON.stringify(payload, null, 2);
       } catch (e) {
-        throw new Error(`LLM execution failed for node ${nodeLabel(node)}: ${e instanceof Error ? e.message : String(e)}`);
+        // Record the error on the run so it doesn't stay stuck in waiting_workers.
+        const errMsg = `LLM execution failed for node ${nodeLabel(node)}: ${e instanceof Error ? e.message : String(e)}`;
+        const errorTs = new Date().toISOString();
+        await appendRunLog(runPath, (cur) => ({
+          ...cur,
+          status: 'error',
+          updatedAt: errorTs,
+          nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'error', ts: errorTs, error: errMsg } },
+          events: [...cur.events, { ts: errorTs, type: 'node.error', nodeId: node.id, kind: node.kind, message: errMsg }],
+          nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, agentId: agentIdExec, error: errMsg }],
+        }));
+        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'error' });
+        continue;
       }
 
       const outputObj = {
@@ -564,6 +576,11 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     }
 
   }
+
+  // Compact the queue to prevent unbounded growth from processed entries.
+  try {
+    await compactQueue(teamDir, agentId);
+  } catch { /* intentional: best-effort compaction */ }
 
   return { ok: true as const, teamId, agentId, workerId, results };
 }
