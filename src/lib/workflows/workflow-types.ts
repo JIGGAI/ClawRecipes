@@ -74,3 +74,42 @@ export type Workflow = {
   edges?: WorkflowEdge[];
   [k: string]: unknown;
 };
+
+export type RunEvent = Record<string, unknown> & { ts: string; type: string };
+
+export type RunLog = {
+  runId: string;
+  createdAt: string;
+  updatedAt?: string;
+  teamId: string;
+  workflow: { file: string; id: string | null; name: string | null };
+  ticket: { file: string; number: string; lane: WorkflowLane };
+  trigger: { kind: string; at?: string };
+  status: string;
+  // Scheduler/runner fields
+  priority?: number;
+  claimedBy?: string | null;
+  claimExpiresAt?: string | null;
+  nextNodeIndex?: number;
+  // File-first workflow run state (graph-friendly)
+  nodeStates?: Record<string, { status: 'success' | 'error' | 'waiting'; ts: string; message?: string }>;
+  events: RunEvent[];
+  nodeResults?: Array<Record<string, unknown>>;
+};
+
+export type ApprovalRecord = {
+  runId: string;
+  teamId: string;
+  workflowFile: string;
+  nodeId: string;
+  bindingId: string;
+  requestedAt: string;
+  status: 'pending' | 'approved' | 'rejected';
+  decidedAt?: string;
+  ticket: string;
+  runLog: string;
+  note?: string;
+  resumedAt?: string;
+  resumedStatus?: string;
+  resumeError?: string;
+};
