@@ -206,8 +206,8 @@ templates:
   outliner.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: outliner
 
     ## Guardrails (read → act → write)
@@ -236,8 +236,8 @@ templates:
   writer.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: writer
 
     ## Guardrails (read → act → write)
@@ -266,8 +266,8 @@ templates:
   editor.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: editor
 
     ## Guardrails (read → act → write)
@@ -376,6 +376,9 @@ files:
     mode: createOnly
   - path: shared-context/priorities.md
     template: sharedContext.priorities
+    mode: createOnly
+  - path: shared-context/MEMORY_PLAN.md
+    template: sharedContext.memoryPlan
     mode: createOnly
   - path: shared-context/agent-outputs/README.md
     template: sharedContext.agentOutputsReadme

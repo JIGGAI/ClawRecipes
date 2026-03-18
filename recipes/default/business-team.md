@@ -237,8 +237,8 @@ templates:
   ops.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: ops
 
     ## Guardrails (read → act → write)
@@ -267,8 +267,8 @@ templates:
   sales.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: sales
 
     ## Guardrails (read → act → write)
@@ -297,8 +297,8 @@ templates:
   marketing.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: marketing
 
     ## Guardrails (read → act → write)
@@ -327,8 +327,8 @@ templates:
   finance.agents: |
     # AGENTS.md
 
-    Team: {teamId}
-    Shared workspace: {teamDir}
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
     Role: finance
 
     ## Guardrails (read → act → write)
@@ -357,7 +357,28 @@ templates:
   analyst.agents: |
     # AGENTS.md
 
-    Output:
+    Team: {{teamId}}
+    Shared workspace: {{teamDir}}
+    Role: analyst
+
+    ## Guardrails (read → act → write)
+    Before you act:
+    1) Read:
+       - `../notes/plan.md`
+       - `../notes/status.md`
+       - relevant ticket(s) in `work/in-progress/`
+       - any relevant shared context under `shared-context/`
+
+    After you act:
+    1) Write back:
+       - Put outputs in the agreed folder (usually `outbox/` or a ticket file).
+       - Update the ticket with what you did and where the artifact is.
+
+    ## Workflow
+    - Prefer a pull model: wait for a clear task from the lead, or propose a scoped task.
+    - Keep work small and reversible.
+
+    ## Output locations
     - Research briefs → outbox/research/
     - Metrics definitions/dashboards notes → shared-context/metrics/
 
@@ -490,6 +511,9 @@ files:
     mode: createOnly
   - path: shared-context/priorities.md
     template: sharedContext.priorities
+    mode: createOnly
+  - path: shared-context/MEMORY_PLAN.md
+    template: sharedContext.memoryPlan
     mode: createOnly
   - path: shared-context/agent-outputs/README.md
     template: sharedContext.agentOutputsReadme
