@@ -192,31 +192,23 @@ export async function executeWorkflowNodes(opts: {
         `Return ONLY the final content (the runner will store it as JSON).`,
       ].join('\n');
 
-      // Prefer llm-task-fixed when installed; fall back to llm-task.
-      // Avoid depending on sessions_spawn (not always exposed via gateway tools/invoke).
       let text = '';
       try {
-        let llmRes: unknown;
+
         const priorInput = await loadPriorLlmInput({ runDir, workflow, currentNode: node, currentNodeIndex: i });
-        try {
-          llmRes = await toolsInvoke<unknown>(api, {
-            tool: 'llm-task-fixed',
-            action: 'json',
-            args: {
-              prompt: task,
-              input: { teamId, runId, nodeId: node.id, agentId, ...priorInput },
-            },
-          });
-        } catch { // intentional: fallback from llm-task-fixed to llm-task
-          llmRes = await toolsInvoke<unknown>(api, {
-            tool: 'llm-task',
-            action: 'json',
-            args: {
-              prompt: task,
-              input: { teamId, runId, nodeId: node.id, agentId, ...priorInput },
-            },
-          });
-        }
+
+        const timeoutMsRaw = Number(asString(action['timeoutMs'] ?? (node as unknown as { config?: unknown })?.config?.['timeoutMs'] ?? '120000'));
+        const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : 120000;
+
+        const llmRes = await toolsInvoke<unknown>(api, {
+          tool: 'llm-task',
+          action: 'json',
+          args: {
+            prompt: task,
+            input: { teamId, runId, nodeId: node.id, agentId, ...priorInput },
+            timeoutMs,
+          },
+        });
 
         const llmRec = asRecord(llmRes);
         const details = asRecord(llmRec['details']);
