@@ -37,7 +37,7 @@
     "lint:fix": "eslint src/ index.ts --fix",
     "smell-check": "node scripts/smell-check.mjs",
     "jscpd": "jscpd src/ index.ts --min-lines 8 --min-tokens 50",
-    "prepare": "husky",
+    "prepare": "husky || true",
     "check:plugin-version": "node scripts/check-openclaw-plugin-version.mjs",
     "prepack": "npm run -s sync:plugin-version && npm run -s check:plugin-version",
     "prepublishOnly": "npm run -s sync:plugin-version && npm run -s check:plugin-version",
