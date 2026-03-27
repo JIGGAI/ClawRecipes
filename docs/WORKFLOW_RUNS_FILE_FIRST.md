@@ -765,7 +765,8 @@ See: [OUTBOUND_POSTING.md](OUTBOUND_POSTING.md)
 If you rely on a controller-local custom posting patch:
 - you may need to reapply that patch after install/update
 - you may need to tell your assistant to turn workflow posting back on
-- RJ's current public gist for the `marketing.post_all` patch is: <https://gist.github.com/rjdjohnston/7a8824ae16f347a4642fc7782fe66219>
+- RJ's current public gist for the `marketing.post_all` patch is: <https://gist.github.com/rjdjohnston/2440a776529829e7d1c0d5d949f6e631>
+  - Note: Updated for current file structure (`workflow-worker.ts` vs old `workflow-runner.ts`)
 
 So if a workflow runs but does not actually post, check your posting path before blaming the runner.
 
