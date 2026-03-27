@@ -415,6 +415,42 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
 
 
+        } else if (toolName === 'fs.write') {
+          const relPathRaw = String(toolArgs.path ?? '').trim();
+          const contentRaw = String(toolArgs.content ?? '');
+          if (!relPathRaw) throw new Error('fs.write requires args.path');
+
+          const vars = {
+            date: new Date().toISOString(),
+            'run.id': runId,
+            'run.timestamp': runId,
+            'workflow.id': String(workflow.id ?? ''),
+            'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
+          };
+          // Also inject node outputs so templates like {{brand_review.output}} resolve
+          for (const nr of (cur.nodeResults ?? [])) {
+            const nid = String(nr.nodeId ?? '');
+            if (nid && nr.nodeOutputPath) {
+              try {
+                const outAbs = path.resolve(teamDir, nr.nodeOutputPath);
+                vars[`${nid}.output`] = await fs.readFile(outAbs, 'utf8');
+              } catch { /* node output may not exist */ }
+            }
+          }
+          const relPath = templateReplace(relPathRaw, vars);
+          const content = templateReplace(contentRaw, vars);
+
+          const abs = path.resolve(teamDir, relPath);
+          if (!abs.startsWith(teamDir + path.sep) && abs !== teamDir) {
+            throw new Error('fs.write path must be within the team workspace');
+          }
+
+          await ensureDir(path.dirname(abs));
+          await fs.writeFile(abs, content, 'utf8');
+
+          const result = { writtenTo: path.relative(teamDir, abs), bytes: Buffer.byteLength(content, 'utf8') };
+          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
+
         } else if (toolName === 'marketing.post_all') {
           // Disabled by default: do not ship plugins that spawn local processes for posting.
           // Use an approval-gated workflow node that calls a dedicated posting tool/plugin instead.
