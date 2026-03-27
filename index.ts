@@ -654,10 +654,12 @@ const recipesPlugin = {
           .description("Claim and execute a single queued workflow run (intended for cron-driven runner)")
           .requiredOption("--team-id <teamId>", "Team id (workspace-<teamId>)")
           .option("--lease-seconds <n>", "Lease duration in seconds", (v: string) => Number(v))
-          .action(async (options: { teamId?: string; leaseSeconds?: number }) => {
+          .option("--run-id <runId>", "Only claim this specific run id")
+          .action(async (options: { teamId?: string; leaseSeconds?: number; runId?: string }) => {
             const res = await handleWorkflowsRunnerOnce(api, {
               teamId: String(options.teamId ?? ""),
               leaseSeconds: typeof options.leaseSeconds === "number" ? options.leaseSeconds : undefined,
+              runId: options.runId,
             });
             console.log(JSON.stringify(res, null, 2));
           });

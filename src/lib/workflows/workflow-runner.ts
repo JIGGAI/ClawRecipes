@@ -124,6 +124,7 @@ export async function enqueueWorkflowRun(api: OpenClawPluginApi, opts: {
 export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
   teamId: string;
   leaseSeconds?: number;
+  runId?: string;
 }) {
   const teamId = String(opts.teamId);
   const teamDir = resolveTeamDir(api, teamId);
@@ -167,6 +168,14 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
     } catch { // intentional: skip malformed run.json
       // ignore parse errors
     }
+  }
+
+  // If a specific runId was requested, only consider that run.
+  const targetRunId = opts.runId?.trim();
+  if (targetRunId) {
+    const match = candidates.filter((c) => path.basename(path.dirname(c.file)) === targetRunId);
+    candidates.length = 0;
+    candidates.push(...match);
   }
 
   if (!candidates.length) {

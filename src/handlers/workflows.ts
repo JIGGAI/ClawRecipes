@@ -17,9 +17,10 @@ export async function handleWorkflowsRun(api: OpenClawPluginApi, opts: {
 export async function handleWorkflowsRunnerOnce(api: OpenClawPluginApi, opts: {
   teamId: string;
   leaseSeconds?: number;
+  runId?: string;
 }) {
   if (!opts.teamId) throw new Error('--team-id is required');
-  return runWorkflowRunnerOnce(api, { teamId: opts.teamId, leaseSeconds: opts.leaseSeconds });
+  return runWorkflowRunnerOnce(api, { teamId: opts.teamId, leaseSeconds: opts.leaseSeconds, runId: opts.runId });
 }
 
 
