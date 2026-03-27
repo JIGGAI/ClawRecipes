@@ -9,13 +9,50 @@ cronJobs:
     name: "Lead triage loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md."
+    agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
+    message: "Lead triage loop (Product Team): triage inbox/tickets, assign work, and update notes/status.md. Complete all pending triage before finishing."
+    enabledByDefault: false
+
+  - id: pm-work-loop
+    name: "Product Manager work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-pm"
+    timeoutSeconds: 1800
+    message: "Work loop: check for product-management work (specs, user stories, requirements). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/pm/agent-outputs/."
+    enabledByDefault: false
+  - id: designer-work-loop
+    name: "Designer work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-designer"
+    timeoutSeconds: 1800
+    message: "Work loop: check for design-assigned work (mockups, prototypes, design reviews). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/designer/agent-outputs/."
+    enabledByDefault: false
+  - id: engineer-work-loop
+    name: "Engineer work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-engineer"
+    timeoutSeconds: 1800
+    message: "Work loop: check for engineering-assigned tickets. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/engineer/agent-outputs/."
+    enabledByDefault: false
+  - id: test-work-loop
+    name: "Test/QA work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-test"
+    timeoutSeconds: 1800
+    message: "Work loop: check for testing-assigned tickets (QA, verification, bug reports). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/test/agent-outputs/."
     enabledByDefault: false
   - id: execution-loop
     name: "Execution loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md."
+    agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
+    message: "Execution loop (Product Team): complete in-progress tickets and update notes/status.md. Finish each ticket fully before moving on."
     enabledByDefault: false
   # pr-watcher omitted (enable only when a real PR integration exists)
 requiredSkills: []
