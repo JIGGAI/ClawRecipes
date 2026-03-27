@@ -19,15 +19,21 @@ import {
   sanitizeDraftOnlyText, templateReplace,
 } from './workflow-utils';
 
+// Max depth for event-driven chaining to prevent runaway recursion.
+const maxChainDepth = 20;
+
 // eslint-disable-next-line complexity, max-lines-per-function
 export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
   teamId: string;
   agentId: string;
   limit?: number;
   workerId?: string;
-}) {
+  /** Disable event-driven chaining (used in tests to control execution order). */
+  noChain?: boolean;
+}, chainDepth = 0) {
   const teamId = String(opts.teamId);
   const agentId = String(opts.agentId);
+  const noChain = !!opts.noChain;
   if (!teamId) throw new Error('--team-id is required');
   if (!agentId) throw new Error('--agent-id is required');
 
@@ -578,6 +584,12 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         events: [...cur.events, { ts: new Date().toISOString(), type: 'node.enqueued', nodeId: nextNode.id, agentId: approvalAgentId }],
       }));
 
+      // Event-driven chaining: immediately kick the next agent's worker
+      if (!noChain && approvalAgentId !== agentId && chainDepth < maxChainDepth) {
+        void runWorkflowWorkerTick(api, { teamId, agentId: approvalAgentId, limit: 1, workerId: `${workerId}:chain` }, chainDepth + 1)
+          .catch(() => { /* best-effort — cron workers are the safety net */ });
+      }
+
       results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'ok' });
       continue;
     }
@@ -599,6 +611,12 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       nextNodeIndex: enqueueIdx,
       events: [...cur.events, { ts: new Date().toISOString(), type: 'node.enqueued', nodeId: nextNode.id, agentId: nextAgentId }],
     }));
+
+    // Event-driven chaining: immediately kick the next agent's worker
+    if (!noChain && nextAgentId !== agentId && chainDepth < maxChainDepth) {
+      void runWorkflowWorkerTick(api, { teamId, agentId: nextAgentId, limit: 1, workerId: `${workerId}:chain` }, chainDepth + 1)
+        .catch(() => { /* best-effort — cron workers are the safety net */ });
+    }
 
       results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'ok' });
     } finally {
