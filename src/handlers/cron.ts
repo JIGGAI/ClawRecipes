@@ -64,7 +64,7 @@ type CronReconcileScope =
 
 function buildCronJobForCreate(
   scope: CronReconcileScope,
-  j: { id: string; name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; enabledByDefault?: boolean; delivery?: 'none' | 'announce' },
+  j: { id: string; name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; enabledByDefault?: boolean; delivery?: 'none' | 'announce'; timeoutSeconds?: number },
   wantEnabled: boolean
 ): Record<string, unknown> {
   const name =
@@ -90,7 +90,9 @@ function buildCronJobForCreate(
     wakeMode: "next-heartbeat",
     sessionTarget,
     schedule: { kind: "cron", expr: j.schedule, ...(j.timezone ? { tz: j.timezone } : {}) },
-    payload: effectiveAgentId ? { kind: "agentTurn", message: j.message } : { kind: "systemEvent", text: j.message },
+    payload: effectiveAgentId
+      ? { kind: "agentTurn", message: j.message, ...(j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {}) }
+      : { kind: "systemEvent", text: j.message },
     ...(j.delivery === 'none'
       ? { delivery: { mode: "none" } }
       : j.channel || j.to
@@ -107,7 +109,7 @@ function buildCronJobForCreate(
 }
 
 function buildCronJobPatch(
-  j: { name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; delivery?: 'none' | 'announce' },
+  j: { name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; delivery?: 'none' | 'announce'; timeoutSeconds?: number },
   name: string
 ): CronJobPatch {
   const effectiveAgentId = typeof j.agentId === "string" && j.agentId.trim() ? j.agentId.trim() : undefined;
@@ -119,7 +121,9 @@ function buildCronJobPatch(
     sessionTarget: effectiveAgentId ? "isolated" : "main",
     wakeMode: "next-heartbeat",
     schedule: { kind: "cron", expr: j.schedule, ...(j.timezone ? { tz: j.timezone } : {}) },
-    payload: effectiveAgentId ? { kind: "agentTurn", message: j.message } : { kind: "systemEvent", text: j.message },
+    payload: effectiveAgentId
+      ? { kind: "agentTurn", message: j.message, ...(j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {}) }
+      : { kind: "systemEvent", text: j.message },
   };
   if (j.delivery === 'none') {
     patch.delivery = { mode: "none" };

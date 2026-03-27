@@ -13,6 +13,8 @@ export type CronJobSpec = {
   enabledByDefault?: boolean;
   /** Delivery mode: "none" suppresses announce; "announce" delivers to chat. Omit to use gateway default. */
   delivery?: 'none' | 'announce';
+  /** Agent turn timeout in seconds. Sets how long the agent can run before being killed. */
+  timeoutSeconds?: number;
 };
 
 /** Raw input for a cron job from YAML (supports message/task/prompt for backward compat). */
@@ -30,6 +32,7 @@ type CronJobInput = {
   agentId?: unknown;
   enabledByDefault?: unknown;
   delivery?: unknown;
+  timeoutSeconds?: unknown;
 };
 
 export type RecipeFrontmatter = {
@@ -87,6 +90,7 @@ function buildCronJobSpec(j: CronJobInput, id: string): CronJobSpec {
     agentId: j.agentId != null ? String(j.agentId) : undefined,
     enabledByDefault: Boolean(j.enabledByDefault ?? false),
     delivery: j.delivery === 'none' || j.delivery === 'announce' ? j.delivery : undefined,
+    timeoutSeconds: typeof j.timeoutSeconds === 'number' && j.timeoutSeconds > 0 ? j.timeoutSeconds : undefined,
   };
 }
 

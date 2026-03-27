@@ -10,8 +10,9 @@ cronJobs:
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
     message: |
-      Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md.
+      Lead triage loop: triage inbox/tickets, assign work, and update notes/status.md. Complete all pending triage before finishing.
 
       QA-gated PR rule:
       - Dev/DevOps must NOT open PRs.
@@ -35,8 +36,9 @@ cronJobs:
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-dev"
+    timeoutSeconds: 1800
     message: |
-      Safe-idle loop: work dev-assigned tickets.
+      Work loop: check for dev-assigned tickets. If you have one, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece (not a fragment) and update the ticket with what's done and what remains. Always leave work in a clean, consistent state.
 
       Constraints:
       - Do NOT open PRs. Dev hands off to QA by moving ticket to work/testing and setting Owner=test.
@@ -49,7 +51,8 @@ cronJobs:
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-devops"
-    message: "Safe-idle loop: check for devops-assigned tickets/runs, make small progress, and write outputs under roles/devops/agent-outputs/."
+    timeoutSeconds: 1800
+    message: "Work loop: check for devops-assigned tickets/runs. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/devops/agent-outputs/."
     enabledByDefault: true
 
   - id: test-work-loop
@@ -57,8 +60,9 @@ cronJobs:
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-test"
+    timeoutSeconds: 1800
     message: |
-      Safe-idle loop: drain work/testing tickets assigned to test.
+      Work loop: drain work/testing tickets assigned to test. Complete each ticket's QA fully before moving on.
 
       Workflow:
       - On PASS: keep ticket in work/testing but set Owner=lead (ready-for-pr) and add a `QA: PASS` comment + evidence.
@@ -75,8 +79,9 @@ cronJobs:
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
     message: |
-      Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md.
+      Execution loop: complete in-progress tickets and update notes/status.md. Finish each ticket fully before moving on. If a task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains.
 
       CWD guardrail (team root): run:
         cd "$(bash ../../scripts/team-root.sh 2>/dev/null || bash ./scripts/team-root.sh)"
@@ -85,7 +90,7 @@ cronJobs:
       Guardrail: run ./scripts/ticket-hygiene-dev.sh each loop; if it fails, fix lane/status/owner mismatches before proceeding (assignment stubs are deprecated).
 
       LEAD-OWNED TICKETS RULE (must follow)
-      - Do NOT automatically move a ticket just because Owner=lead “expects backlog”.
+      - Do NOT automatically move a ticket just because Owner=lead "expects backlog".
       - If you encounter a lead-owned ticket in work/in-progress or work/testing that seems misassigned:
         - LEAVE IT IN PLACE.
         - Add a dated comment to the ticket explaining what you observed and what should change.
@@ -158,7 +163,7 @@ cronJobs:
 
   - id: backup-devteam-work
     name: "Backup dev-team work (every 3h, off-hours avoided)"
-    # Every 3h during 07:00–22:00 America/New_York (avoids 02:00–07:00 blackout)
+    # Every 3h during 07:00-22:00 America/New_York (avoids 02:00-07:00 blackout)
     schedule: "0 7,10,13,16,19,22 * * *"
     timezone: "America/New_York"
     agentId: "{{teamId}}-lead"
@@ -220,29 +225,29 @@ templates:
   sharedContext.memoryPolicy: |
     # Team Memory Policy (File-first)
 
-    Quick link: see `shared-context/MEMORY_PLAN.md` for the canonical “what goes where” map.
+    Quick link: see `shared-context/MEMORY_PLAN.md` for the canonical "what goes where" map.
 
     This team is run **file-first**. Chat is not the system of record.
 
-    ## Where memory lives (and what it’s for)
+    ## Where memory lives (and what it's for)
 
     ### 1) Team knowledge memory (Kitchen UI)
     - `shared-context/memory/team.jsonl` (append-only)
     - `shared-context/memory/pinned.jsonl` (append-only)
 
-    Kitchen’s Team Editor → Memory tab reads/writes these JSONL streams.
+    Kitchen's Team Editor → Memory tab reads/writes these JSONL streams.
 
     ### 2) Per-role continuity memory (agents)
     Each role keeps its own continuity memory:
     - `roles/<role>/memory/YYYY-MM-DD.md` (daily log)
     - `roles/<role>/MEMORY.md` (curated long-term memory)
 
-    These files are what the role agent uses to “remember” decisions and context across sessions.
+    These files are what the role agent uses to "remember" decisions and context across sessions.
 
     ## Where to write things
     - Ticket = source of truth for a unit of work.
     - `../notes/plan.md` + `../shared-context/priorities.md` are **lead-curated**.
-    - `../notes/status.md` is **append-only** and updated after each work session (3–5 bullets).
+    - `../notes/status.md` is **append-only** and updated after each work session (3-5 bullets).
 
     ## Outputs / artifacts
     - Role-level raw output (append-only): `roles/<role>/agent-outputs/`
@@ -250,10 +255,11 @@ templates:
 
     Guardrail: do **not** create or rely on `roles/<role>/shared-context/**`.
 
-    ## Role work loop contract (safe-idle)
-    When a role’s cron/heartbeat runs:
+    ## Role work loop contract
+    When a role's cron/heartbeat runs:
     - **No-op unless explicit queued work exists** for that role (ticket assigned/owned by role, or workflow run nodes assigned to the role agentId).
-    - If work happens, write back in this order:
+    - If work exists, **complete the ticket fully**. If the task is too large for one session, complete a meaningful self-contained piece (not a fragment) and update the ticket with what's done and what remains. Always leave work in a clean, consistent state.
+    - Write back in this order:
       1) Update the relevant ticket(s) (source of truth).
       2) Append 1–3 bullets to `../notes/status.md` (team roll-up).
       3) Write raw logs/artifacts under `roles/<role>/agent-outputs/` and reference them from the ticket.
@@ -266,11 +272,11 @@ templates:
     After meaningful work:
     1) Update the ticket with what changed + how to verify + rollback.
     2) Add a dated note in the ticket `## Comments`.
-    3) Append 3–5 bullets to `../notes/status.md`.
+    3) Append 3-5 bullets to `../notes/status.md`.
     4) Append logs/output to `roles/<role>/agent-outputs/`.
 
   tickets: |
-    # Tickets — {{teamId}}
+    # Tickets - {{teamId}}
 
     ## Workflow stages
     - backlog → in-progress → testing → done
@@ -280,7 +286,7 @@ templates:
     - test: verify + record PASS/FAIL
     - lead: creates PR **only after QA PASS**
 
-    ## “Ready for PR” (no extra lane)
+    ## "Ready for PR" (no extra lane)
     This team does **not** add a separate lane.
 
     Instead, a ticket is considered **ready for PR** when:
@@ -295,7 +301,7 @@ templates:
     - Move ticket to `work/testing/`
     - Set `Owner: test`
     - Ensure the ticket contains:
-      - verification steps (“How to test”)
+      - verification steps ("How to test")
       - links to branch/commit under `## PR-ready`
 
     ### Test → Lead (QA PASS)
@@ -324,7 +330,7 @@ templates:
 
 
   sharedContext.qaAccess: |
-    # QA Access — {{teamId}}
+    # QA Access - {{teamId}}
 
     This file exists to prevent QA tickets being bounced due to missing environment access.
 
@@ -381,9 +387,10 @@ templates:
     - `roles/<role>/agent-outputs/` (append-only)
     - `../shared-context/agent-outputs/` (team-level, read/write from role via `../`)
 
-    ## Role work loop contract (safe-idle)
+    ## Role work loop contract
     - No-op unless explicit queued work exists for the role.
-    - If work happens, write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
+    - If work exists, complete it fully. If too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains.
+    - Write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
 
   sharedContext.priorities: |
     # Priorities (lead-curated)
@@ -1013,7 +1020,7 @@ templates:
     After you act:
     1) Write back:
        - Update tickets with decisions/assignments.
-       - Keep `../notes/status.md` current (3–5 bullets per active ticket).
+       - Keep `../notes/status.md` current (3-5 bullets per active ticket).
 
     ## Curator model
 
@@ -1032,14 +1039,14 @@ templates:
     Source of truth is the shared team workspace.
 
     Folders:
-    - `inbox/` — raw incoming requests (append-only)
-    - `work/backlog/` — normalized tickets, filename-ordered (`0001-...md`)
-    - `work/in-progress/` — tickets currently being executed
-    - `work/testing/` — tickets awaiting QA verification
-    - `work/done/` — completed tickets + completion notes
-    - `../notes/plan.md` — current plan / priorities (curated)
-    - `../notes/status.md` — current status snapshot
-    - `shared-context/` — shared context + append-only outputs
+    - `inbox/` - raw incoming requests (append-only)
+    - `work/backlog/` - normalized tickets, filename-ordered (`0001-...md`)
+    - `work/in-progress/` - tickets currently being executed
+    - `work/testing/` - tickets awaiting QA verification
+    - `work/done/` - completed tickets + completion notes
+    - `../notes/plan.md` - current plan / priorities (curated)
+    - `../notes/status.md` - current status snapshot
+    - `shared-context/` - shared context + append-only outputs
 
     ### Ticket numbering (critical)
     - Backlog tickets MUST be named `0001-...md`, `0002-...md`, etc.
@@ -1092,7 +1099,7 @@ templates:
        - `../notes/plan.md`
        - `../notes/status.md`
        - `../shared-context/priorities.md`
-       - the current ticket you’re working on
+       - the current ticket you're working on
 
     Optional (team knowledge memory, Kitchen UI):
        - `shared-context/memory/pinned.jsonl`
@@ -1104,8 +1111,8 @@ templates:
 
     After you finish a work session (even if not done):
     1) Write back:
-       - Update the ticket with what you did and what’s next.
-       - Add **3–5 bullets** to `../notes/status.md` (what changed / what’s blocked).
+       - Update the ticket with what you did and what's next.
+       - Add **3-5 bullets** to `../notes/status.md` (what changed / what's blocked).
        - Append detailed output to `../shared-context/agent-outputs/` (append-only).
 
     Curator model:
@@ -1125,7 +1132,7 @@ templates:
     4) Do the work.
 
     5) Handoff to QA (required):
-       - Ensure the ticket has verification steps (“How to test”).
+       - Ensure the ticket has verification steps ("How to test").
        - Add a `## PR-ready` section with repo + branch + commit SHA (if known).
        - Move the ticket to `work/testing/`.
        - Set `Owner: test`.
@@ -1159,7 +1166,7 @@ templates:
        - `../notes/plan.md`
        - `../notes/status.md`
        - `../shared-context/priorities.md`
-       - the current ticket you’re working on
+       - the current ticket you're working on
 
     Optional (team knowledge memory, Kitchen UI):
        - `shared-context/memory/pinned.jsonl`
@@ -1168,7 +1175,7 @@ templates:
     After you finish a work session:
     1) Write back:
        - Update the ticket with what you did + verification steps.
-       - Add **3–5 bullets** to `../notes/status.md`.
+       - Add **3-5 bullets** to `../notes/status.md`.
        - Append detailed output/logs to `../shared-context/agent-outputs/` (append-only).
 
     Curator model:
@@ -1300,7 +1307,7 @@ templates:
 
     ## Core workflow (QA gated)
     - You verify work before any PR is created.
-    - If the ticket passes: keep it in `work/testing/` but set `Owner: lead` (this is the “ready for PR” state).
+    - If the ticket passes: keep it in `work/testing/` but set `Owner: lead` (this is the "ready for PR" state).
     - If it fails: move it back to `work/in-progress/` and set `Owner: dev`.
 
     ## Guardrails (read → act → write)
@@ -1323,7 +1330,7 @@ templates:
     After each verification pass:
     1) Write back:
        - Add a short verification note to the ticket (pass/fail + evidence).
-       - Add **3–5 bullets** to `../notes/status.md` (what’s verified / what’s blocked).
+       - Add **3-5 bullets** to `../notes/status.md` (what's verified / what's blocked).
        - Append detailed findings to `../shared-context/feedback/` or `../shared-context/agent-outputs/`.
 
     Curator model:
@@ -1342,7 +1349,7 @@ templates:
     3) If it passes:
        - Add a dated ticket comment: `QA: PASS` + evidence (links, logs, screenshots as applicable).
        - Keep the ticket in `work/testing/`.
-       - Set `Owner: lead` (this is the “ready for PR” state).
+       - Set `Owner: lead` (this is the "ready for PR" state).
 
     4) If it fails:
        - Add a dated ticket comment: `QA: FAIL` + repro + what to fix.

@@ -10,86 +10,98 @@ cronJobs:
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-lead"
-    message: "Automated lead triage loop (Marketing Team): triage inbox/tickets, assign work, and update notes/status.md."
+    timeoutSeconds: 1800
+    message: "Lead triage loop (Marketing Team): triage inbox/tickets, assign work, and update notes/status.md. Complete all pending triage before finishing."
     enabledByDefault: false
 
-  # Safe-idle role loops (enabled by default): roles do not "wake up" unless they have their own heartbeat schedule or cron.
+  # Safe-idle role loops: roles do not "wake up" unless they have their own cron.
   - id: seo-work-loop
     name: "SEO work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-seo"
-    message: "Safe-idle loop: check for SEO-assigned work (tickets/workflows), make small progress, and write outputs under roles/seo/agent-outputs/."
+    timeoutSeconds: 1800
+    message: "Work loop: check for SEO-assigned work (tickets/workflows). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/seo/agent-outputs/."
     enabledByDefault: false
   - id: copywriter-work-loop
     name: "Copywriter work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-copywriter"
-    message: "Safe-idle loop: check for copywriting-assigned work, make progress, and write outputs under roles/copywriter/agent-outputs/."
+    timeoutSeconds: 1800
+    message: "Work loop: check for copywriting-assigned work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/copywriter/agent-outputs/."
     enabledByDefault: false
   - id: ads-work-loop
     name: "Ads work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-ads"
-    message: "Safe-idle loop: check for ads-assigned work, make progress, and write outputs under roles/ads/agent-outputs/."
+    timeoutSeconds: 1800
+    message: "Work loop: check for ads-assigned work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/ads/agent-outputs/."
     enabledByDefault: false
   - id: social-work-loop
     name: "Social work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-social"
-    message: "Safe-idle loop: check for social/community-assigned work, make progress, and write outputs under roles/social/agent-outputs/."
+    timeoutSeconds: 1800
+    message: "Work loop: check for social/community-assigned work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/social/agent-outputs/."
     enabledByDefault: false
   - id: designer-work-loop
     name: "Designer work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-designer"
-    message: "Safe-idle loop: check for creative/design-assigned work, make progress, and write outputs under roles/designer/agent-outputs/."
+    timeoutSeconds: 1800
+    message: "Work loop: check for creative/design-assigned work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/designer/agent-outputs/."
     enabledByDefault: false
   - id: analyst-work-loop
     name: "Analyst work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-analyst"
-    message: "Safe-idle loop: check for analytics-assigned work, make progress, and write outputs under roles/analyst/agent-outputs/."
+    timeoutSeconds: 1800
+    message: "Work loop: check for analytics-assigned work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/analyst/agent-outputs/."
     enabledByDefault: false
   - id: video-work-loop
     name: "Video work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-video"
-    message: "Safe-idle loop: check for video-assigned work, make progress, and write outputs under roles/video/agent-outputs/."
+    timeoutSeconds: 1800
+    message: "Work loop: check for video-assigned work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/video/agent-outputs/."
     enabledByDefault: false
   - id: compliance-work-loop
     name: "Compliance work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-compliance"
-    message: "Safe-idle loop: check for compliance/brand-review work, make progress, and write outputs under roles/compliance/agent-outputs/."
+    timeoutSeconds: 1800
+    message: "Work loop: check for compliance/brand-review work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/compliance/agent-outputs/."
     enabledByDefault: false
   - id: offer-work-loop
     name: "Offer work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-offer"
-    message: "Safe-idle loop: check for offer/positioning work, make progress, and write outputs under roles/offer/agent-outputs/."
+    timeoutSeconds: 1800
+    message: "Work loop: check for offer/positioning work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/offer/agent-outputs/."
     enabledByDefault: false
   - id: funnel-work-loop
     name: "Funnel work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-funnel"
-    message: "Safe-idle loop: check for funnel/landing-page work, make progress, and write outputs under roles/funnel/agent-outputs/."
+    timeoutSeconds: 1800
+    message: "Work loop: check for funnel/landing-page work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/funnel/agent-outputs/."
     enabledByDefault: false
   - id: lifecycle-work-loop
     name: "Lifecycle work loop (safe-idle)"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-lifecycle"
-    message: "Safe-idle loop: check for lifecycle/email work, make progress, and write outputs under roles/lifecycle/agent-outputs/."
+    timeoutSeconds: 1800
+    message: "Work loop: check for lifecycle/email work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/lifecycle/agent-outputs/."
     enabledByDefault: false
 
   # NOTE: Workflow worker crons are NOT defined here.
@@ -104,7 +116,8 @@ cronJobs:
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
     agentId: "{{teamId}}-lead"
-    message: "Automated execution loop (Marketing Team): make progress on in-progress tickets and update notes/status.md."
+    timeoutSeconds: 1800
+    message: "Execution loop (Marketing Team): complete in-progress tickets and update notes/status.md. Finish each ticket fully before moving on."
     enabledByDefault: false
 requiredSkills: []
 team:
