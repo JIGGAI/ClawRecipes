@@ -428,11 +428,13 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
           };
           // Also inject node outputs so templates like {{brand_review.output}} resolve
-          for (const nr of (cur.nodeResults ?? [])) {
-            const nid = String(nr.nodeId ?? '');
-            if (nid && nr.nodeOutputPath) {
+          const { run: runSnap } = await loadRunFile(teamDir, runsDir, task.runId);
+          for (const nr of (runSnap.nodeResults ?? [])) {
+            const nid = String((nr as Record<string, unknown>).nodeId ?? '');
+            const nrOutPath = String((nr as Record<string, unknown>).nodeOutputPath ?? '');
+            if (nid && nrOutPath) {
               try {
-                const outAbs = path.resolve(teamDir, nr.nodeOutputPath);
+                const outAbs = path.resolve(teamDir, nrOutPath);
                 vars[`${nid}.output`] = await fs.readFile(outAbs, 'utf8');
               } catch { /* node output may not exist */ }
             }
