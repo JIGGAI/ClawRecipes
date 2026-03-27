@@ -515,8 +515,17 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     // by the runner/worker loop itself (they send a message + set awaiting state).
     const nextKind = String(nextNode.kind ?? '');
     if (nextKind === 'human_approval' || nextKind === 'start' || nextKind === 'end') {
-      // Re-enqueue onto the same agent so it can execute the next node deterministically.
-      await enqueueTask(teamDir, agentId, {
+      // Route approval nodes to the correct agent:
+      //   1. Explicit agentId on the node config (workflow author override)
+      //   2. Team lead (${teamId}-lead) — the natural orchestrator role
+      //   3. Fallback to the current agent (backwards compat)
+      const nextConfig = (nextNode as unknown as Record<string, unknown>)['config'];
+      const nextConfigObj = nextConfig && typeof nextConfig === 'object' && !Array.isArray(nextConfig)
+        ? (nextConfig as Record<string, unknown>) : {};
+      const explicitAgentId = String(nextConfigObj['agentId'] ?? '').trim();
+      const approvalAgentId = explicitAgentId || `${teamId}-lead` || agentId;
+
+      await enqueueTask(teamDir, approvalAgentId, {
         teamId,
         runId: task.runId,
         nodeId: nextNode.id,
@@ -528,7 +537,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         updatedAt: new Date().toISOString(),
         status: 'waiting_workers',
         nextNodeIndex: enqueueIdx,
-        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.enqueued', nodeId: nextNode.id, agentId }],
+        events: [...cur.events, { ts: new Date().toISOString(), type: 'node.enqueued', nodeId: nextNode.id, agentId: approvalAgentId }],
       }));
 
       results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'ok' });

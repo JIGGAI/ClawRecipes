@@ -249,9 +249,13 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       const r1 = await runWorkflowRunnerOnce(api, { teamId });
       expect(r1.ok).toBe(true);
 
-      // Execute draft_assets and approval (approval will be executed by the worker and set awaiting_approval).
+      // Execute draft_assets (enqueues approval onto team lead).
       const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
       expect(w1.ok).toBe(true);
+
+      // Lead picks up the approval node and sets awaiting_approval.
+      const wLead1 = await runWorkflowWorkerTick(api, { teamId, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
+      expect(wLead1.ok).toBe(true);
 
       // Reject approval and resume -> should enqueue draft_assets again (needs_revision).
       const runId = enq.runId;
@@ -372,6 +376,10 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
       expect(w1.ok).toBe(true);
 
+      // Lead picks up the approval node and sets awaiting_approval.
+      const wLead = await runWorkflowWorkerTick(api, { teamId, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
+      expect(wLead.ok).toBe(true);
+
       await approveWorkflowRun(api, { teamId, runId: enq.runId, approved: true });
       const resumed = await resumeWorkflowRun(api, { teamId, runId: enq.runId });
       expect(resumed.ok).toBe(true);
@@ -444,6 +452,9 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       await runWorkflowRunnerOnce(api, { teamId });
       await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
 
+      // Lead picks up the approval node and sets awaiting_approval.
+      await runWorkflowWorkerTick(api, { teamId, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
+
       const approved = await approveWorkflowRun(api, { teamId, runId: enq.runId, approved: true });
       expect(approved.ok).toBe(true);
       const resumed = await resumeWorkflowRun(api, { teamId, runId: enq.runId });
@@ -514,6 +525,9 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       await runWorkflowRunnerOnce(api, { teamId });
       await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 10, workerId: "worker-a" });
       await runWorkflowWorkerTick(api, { teamId, agentId: "agent-b", limit: 10, workerId: "worker-b" });
+
+      // Lead picks up the approval node and sets awaiting_approval.
+      await runWorkflowWorkerTick(api, { teamId, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
 
       await approveWorkflowRun(api, { teamId, runId: enq.runId, approved: true });
       const resumed = await resumeWorkflowRun(api, { teamId, runId: enq.runId });
