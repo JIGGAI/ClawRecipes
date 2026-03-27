@@ -94,7 +94,7 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       expect(r1.claimed).toBe(1);
 
       // Runner should have enqueued node work for agent-a.
-      const w1 = await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: "agent-a", limit: 5, workerId: "worker-a" });
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 5, workerId: "worker-a" });
       expect(w1.ok).toBe(true);
 
       const runRaw = await fs.readFile(enq.runLogPath, "utf8");
@@ -162,7 +162,7 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       const r1 = await runWorkflowRunnerOnce(api, { teamId });
       expect(r1.ok).toBe(true);
 
-      const w1 = await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: "agent-a", limit: 5, workerId: "worker-a" });
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 5, workerId: "worker-a" });
       expect(w1.ok).toBe(true);
 
       const runId = enq.runId;
@@ -250,11 +250,11 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       expect(r1.ok).toBe(true);
 
       // Execute draft_assets (enqueues approval onto team lead).
-      const w1 = await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
       expect(w1.ok).toBe(true);
 
       // Lead picks up the approval node and sets awaiting_approval.
-      const wLead1 = await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
+      const wLead1 = await runWorkflowWorkerTick(api, { teamId, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
       expect(wLead1.ok).toBe(true);
 
       // Reject approval and resume -> should enqueue draft_assets again (needs_revision).
@@ -265,7 +265,7 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       expect(resumed.status).toBe("needs_revision");
 
       // Run the writer again to execute the revision draft_assets.
-      const w2 = await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: "agent-writer", limit: 10, workerId: "worker-writer-2" });
+      const w2 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 10, workerId: "worker-writer-2" });
       expect(w2.ok).toBe(true);
 
       // After revised draft_assets completes, the run should NOT be completed; it should re-enqueue approval again.
@@ -308,7 +308,7 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       );
 
       const api = stubApi();
-      const w1 = await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: "agent-a", limit: 1, workerId: "worker-a" });
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 1, workerId: "worker-a" });
       expect(w1.ok).toBe(true);
       expect(w1.results[0]?.status).toBe("skipped_locked");
 
@@ -373,11 +373,11 @@ describe("workflow-runner (file-first + runner/worker)", () => {
 
       const r1 = await runWorkflowRunnerOnce(api, { teamId });
       expect(r1.ok).toBe(true);
-      const w1 = await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
       expect(w1.ok).toBe(true);
 
       // Lead picks up the approval node and sets awaiting_approval.
-      const wLead = await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
+      const wLead = await runWorkflowWorkerTick(api, { teamId, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
       expect(wLead.ok).toBe(true);
 
       await approveWorkflowRun(api, { teamId, runId: enq.runId, approved: true });
@@ -385,7 +385,7 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       expect(resumed.ok).toBe(true);
       expect(resumed.status).toBe("waiting_workers");
 
-      const w2 = await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: "agent-publisher", limit: 10, workerId: "worker-publisher" });
+      const w2 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-publisher", limit: 10, workerId: "worker-publisher" });
       expect(w2.ok).toBe(true);
 
       const runRaw = await fs.readFile(enq.runLogPath, "utf8");
@@ -450,10 +450,10 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       expect(enq.ok).toBe(true);
 
       await runWorkflowRunnerOnce(api, { teamId });
-      await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
+      await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
 
       // Lead picks up the approval node and sets awaiting_approval.
-      await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
+      await runWorkflowWorkerTick(api, { teamId, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
 
       const approved = await approveWorkflowRun(api, { teamId, runId: enq.runId, approved: true });
       expect(approved.ok).toBe(true);
@@ -523,11 +523,11 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       const enq = await enqueueWorkflowRun(api, { teamId, workflowFile });
       expect(enq.ok).toBe(true);
       await runWorkflowRunnerOnce(api, { teamId });
-      await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: "agent-a", limit: 10, workerId: "worker-a" });
-      await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: "agent-b", limit: 10, workerId: "worker-b" });
+      await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 10, workerId: "worker-a" });
+      await runWorkflowWorkerTick(api, { teamId, agentId: "agent-b", limit: 10, workerId: "worker-b" });
 
       // Lead picks up the approval node and sets awaiting_approval.
-      await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
+      await runWorkflowWorkerTick(api, { teamId, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
 
       await approveWorkflowRun(api, { teamId, runId: enq.runId, approved: true });
       const resumed = await resumeWorkflowRun(api, { teamId, runId: enq.runId });
@@ -547,7 +547,7 @@ describe("workflow-runner (file-first + runner/worker)", () => {
         "utf8"
       );
 
-      const w3 = await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: "agent-a", limit: 10, workerId: "worker-a2" });
+      const w3 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 10, workerId: "worker-a2" });
       expect(w3.ok).toBe(true);
       expect(w3.results.some((r) => r.status === "skipped_stale" && r.nodeId === "research")).toBe(true);
 
@@ -556,9 +556,7 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       expect(publishQueueRaw).toContain(`"nodeId":"publish"`);
     } finally {
       process.env.OPENCLAW_WORKSPACE = prevWorkspace;
-      // Small delay to let fire-and-forget chained worker-ticks settle before cleanup.
-      await new Promise((r) => setTimeout(r, 200));
-      await fs.rm(base, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      await fs.rm(base, { recursive: true, force: true });
     }
   });
 
@@ -623,13 +621,13 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       const r1 = await runWorkflowRunnerOnce(api, { teamId });
       expect(r1.ok).toBe(true);
 
-      const w1 = await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: "agent-writer", limit: 5, workerId: "w-writer" });
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 5, workerId: "w-writer" });
       expect(w1.ok).toBe(true);
 
       const r2 = await runWorkflowRunnerOnce(api, { teamId });
       expect(r2.ok).toBe(true);
 
-      const w2 = await runWorkflowWorkerTick(api, { teamId, noChain: true, agentId: "agent-qc", limit: 5, workerId: "w-qc" });
+      const w2 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-qc", limit: 5, workerId: "w-qc" });
       expect(w2.ok).toBe(true);
 
       const r3 = await runWorkflowRunnerOnce(api, { teamId });
