@@ -22,6 +22,7 @@ export * from './workflow-node-executor';
 export * from './workflow-worker';
 export * from './workflow-tick';
 export * from './workflow-approvals';
+export * from './workflow-if';
 
 export async function enqueueWorkflowRun(api: OpenClawPluginApi, opts: {
   teamId: string;
@@ -160,7 +161,13 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
 
     try {
       const run = JSON.parse(await readTextFile(runPath)) as RunLog;
-      if (run.status !== 'queued') continue;
+      const st = String(run.status ?? '');
+      if (st !== 'queued' && st !== 'paused') continue;
+      if (st === 'paused') {
+        const resumeAtRaw = String(run.resumeAt ?? '').trim();
+        const resumeMs = resumeAtRaw ? Date.parse(resumeAtRaw) : NaN;
+        if (!Number.isFinite(resumeMs) || Date.now() < resumeMs) continue;
+      }
       const exp = run.claimExpiresAt ? Date.parse(String(run.claimExpiresAt)) : 0;
       const claimed = !!run.claimedBy && exp > now;
       if (claimed) continue;
