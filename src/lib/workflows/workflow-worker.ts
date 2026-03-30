@@ -510,6 +510,24 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
                     for (const [key, value] of Object.entries(parsed)) {
                       if (typeof value === 'string') {
                         vars[`${nid}.${key}`] = value;
+                        
+                        // Special handling for 'text' field - try to parse as nested JSON
+                        if (key === 'text') {
+                          try {
+                            const nestedParsed = JSON.parse(value);
+                            if (nestedParsed && typeof nestedParsed === 'object' && !Array.isArray(nestedParsed)) {
+                              for (const [nestedKey, nestedValue] of Object.entries(nestedParsed)) {
+                                if (typeof nestedValue === 'string') {
+                                  vars[`${nid}.${nestedKey}`] = nestedValue;
+                                } else if (nestedValue !== null && nestedValue !== undefined) {
+                                  vars[`${nid}.${nestedKey}_json`] = JSON.stringify(nestedValue);
+                                }
+                              }
+                            }
+                          } catch {
+                            // If nested parsing fails, just keep the text field as is
+                          }
+                        }
                       } else if (value !== null && value !== undefined) {
                         // For non-string values, provide JSON representation
                         vars[`${nid}.${key}_json`] = JSON.stringify(value);
@@ -568,6 +586,24 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
                     for (const [key, value] of Object.entries(parsed)) {
                       if (typeof value === 'string') {
                         vars[`${nid}.${key}`] = value;
+                        
+                        // Special handling for 'text' field - try to parse as nested JSON
+                        if (key === 'text') {
+                          try {
+                            const nestedParsed = JSON.parse(value);
+                            if (nestedParsed && typeof nestedParsed === 'object' && !Array.isArray(nestedParsed)) {
+                              for (const [nestedKey, nestedValue] of Object.entries(nestedParsed)) {
+                                if (typeof nestedValue === 'string') {
+                                  vars[`${nid}.${nestedKey}`] = nestedValue;
+                                } else if (nestedValue !== null && nestedValue !== undefined) {
+                                  vars[`${nid}.${nestedKey}_json`] = JSON.stringify(nestedValue);
+                                }
+                              }
+                            }
+                          } catch {
+                            // If nested parsing fails, just keep the text field as is
+                          }
+                        }
                       } else if (value !== null && value !== undefined) {
                         // For non-string values, provide JSON representation
                         vars[`${nid}.${key}_json`] = JSON.stringify(value);
