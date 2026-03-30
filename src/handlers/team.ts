@@ -262,9 +262,9 @@ async function scaffoldTeamAgents(
       agentName,
       update: overwrite,
       filesRootDir: roleDir,
-      // IMPORTANT: non-lead roles use per-role workspaces so the Kitchen UI / agent files panel reads role files.
-      // Lead uses the team root so the lead heartbeat reads team-root HEARTBEAT.md.
-      workspaceRootDir: role === "lead" ? teamDir : roleDir,
+      // IMPORTANT: All roles (including lead) use per-role workspaces so they get role-specific bootstrap files.
+      // This ensures leads get their role-specific AGENTS.md, SOUL.md, MEMORY.md for proper identity context.
+      workspaceRootDir: roleDir,
       vars: { teamId, teamDir, role, agentId, agentName, roleDir },
     });
 
@@ -308,9 +308,9 @@ Recommended:
     }
 
 
-    // Heartbeat scaffold (opt-in for non-lead roles): drop a minimal HEARTBEAT.md in the role workspace.
-    // The lead uses the team-root HEARTBEAT.md.
-    if (role !== "lead" && heartbeatEnabledRoles.has(String(role))) {
+    // Heartbeat scaffold (opt-in): drop a minimal HEARTBEAT.md in each role workspace.
+    // All roles now use role-specific workspaces for consistent bootstrap file access.
+    if (heartbeatEnabledRoles.has(String(role))) {
       const mode = overwrite ? "overwrite" : "createOnly";
       const hb = `# HEARTBEAT — ${teamId} (${role})
 

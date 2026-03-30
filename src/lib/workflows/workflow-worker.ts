@@ -19,6 +19,93 @@ import {
   sanitizeDraftOnlyText, templateReplace,
 } from './workflow-utils';
 
+/**
+ * Build memory context for LLM nodes by reading team memory files
+ */
+async function buildMemoryContext(teamDir: string): Promise<string> {
+  try {
+    const memoryDir = path.join(teamDir, 'shared-context', 'memory');
+    
+    // Check if memory directory exists
+    if (!await fileExists(memoryDir)) {
+      return '';
+    }
+
+    const memoryParts: string[] = [];
+    const maxTokens = 2000; // Rough token budget
+    let currentTokens = 0;
+
+    // Read pinned items first (highest priority)
+    const pinnedPath = path.join(memoryDir, 'pinned.jsonl');
+    if (await fileExists(pinnedPath)) {
+      const pinnedContent = await fs.readFile(pinnedPath, 'utf8');
+      const pinnedItems = pinnedContent.trim().split('\n').filter(Boolean);
+      
+      if (pinnedItems.length > 0) {
+        memoryParts.push('[Team Memory — Pinned]');
+        for (const line of pinnedItems.slice(-5)) { // Last 5 pinned items
+          try {
+            const item = JSON.parse(line);
+            if (item.content || item.text) {
+              const summary = `- ${item.content || item.text} (${item.type || 'note'}, ${(item.ts || '').slice(0, 10)})`;
+              if (currentTokens + summary.length * 0.25 < maxTokens) { // Rough token estimate
+                memoryParts.push(summary);
+                currentTokens += summary.length * 0.25;
+              }
+            }
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+    }
+
+    // Read recent items from other JSONL files  
+    const files = await fs.readdir(memoryDir);
+    const jsonlFiles = files.filter(f => f.endsWith('.jsonl') && f !== 'pinned.jsonl');
+    
+    for (const filename of jsonlFiles) {
+      if (currentTokens > maxTokens * 0.8) break; // Leave room for recent items
+      
+      const filePath = path.join(memoryDir, filename);
+      const content = await fs.readFile(filePath, 'utf8');
+      const items = content.trim().split('\n').filter(Boolean);
+      
+      if (items.length > 0) {
+        const recentItems = items.slice(-3); // Last 3 items from each file
+        for (const line of recentItems) {
+          try {
+            const item = JSON.parse(line);
+            if (item.content || item.text) {
+              const summary = `- ${item.content || item.text} (${item.type || 'note'}, ${(item.ts || '').slice(0, 10)})`;
+              if (currentTokens + summary.length * 0.25 < maxTokens) {
+                if (memoryParts.length === 1) { // Only pinned section exists
+                  memoryParts.push('', '[Team Memory — Recent]');
+                }
+                memoryParts.push(summary);
+                currentTokens += summary.length * 0.25;
+              }
+            }
+          } catch {
+            // Skip malformed JSON lines
+          }
+        }
+      }
+    }
+
+    // If we have memory content, format it properly
+    if (memoryParts.length > 1) {
+      return memoryParts.join('\n') + '\n\n[Task]';
+    }
+
+    return '';
+  } catch (error) {
+    // Fail gracefully - memory injection is optional
+    console.warn('Memory context injection failed:', error);
+    return '';
+  }
+}
+
 // eslint-disable-next-line complexity, max-lines-per-function
 export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
   teamId: string;
@@ -207,11 +294,15 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         const timeoutMsRaw = Number(asString(action['timeoutMs'] ?? (node as unknown as { config?: unknown })?.config?.['timeoutMs'] ?? '120000'));
         const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : 120000;
 
+        // Inject team memory context for LLM nodes
+        const memoryContext = await buildMemoryContext(teamDir);
+        const promptWithMemory = memoryContext ? `${memoryContext}\n\n${taskText}` : taskText;
+
         const llmRes = await toolsInvoke<unknown>(api, {
           tool: 'llm-task',
           action: 'json',
           args: {
-            prompt: taskText,
+            prompt: promptWithMemory,
             input: { teamId, runId, nodeId: node.id, agentId, ...priorInput },
             timeoutMs,
           },
@@ -400,6 +491,38 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             'workflow.id': String(workflow.id ?? ''),
             'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
           };
+
+          // Load node outputs (same as fs.write)
+          const { run: runSnap } = await loadRunFile(teamDir, runsDir, task.runId);
+          for (const nr of (runSnap.nodeResults ?? [])) {
+            const nid = String((nr as Record<string, unknown>).nodeId ?? '');
+            const nrOutPath = String((nr as Record<string, unknown>).nodeOutputPath ?? '');
+            if (nid && nrOutPath) {
+              try {
+                const outAbs = path.resolve(teamDir, nrOutPath);
+                const outputContent = await fs.readFile(outAbs, 'utf8');
+                vars[`${nid}.output`] = outputContent;
+                
+                // Parse JSON outputs and make fields accessible
+                try {
+                  const parsed = JSON.parse(outputContent.trim());
+                  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    for (const [key, value] of Object.entries(parsed)) {
+                      if (typeof value === 'string') {
+                        vars[`${nid}.${key}`] = value;
+                      } else if (value !== null && value !== undefined) {
+                        // For non-string values, provide JSON representation
+                        vars[`${nid}.${key}_json`] = JSON.stringify(value);
+                      }
+                    }
+                  }
+                } catch {
+                  // If output isn't valid JSON, skip parsing but keep raw output
+                }
+              } catch { /* node output may not exist */ }
+            }
+          }
+
           const relPath = templateReplace(relPathRaw, vars);
           const content = templateReplace(contentRaw, vars);
 
@@ -435,7 +558,25 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             if (nid && nrOutPath) {
               try {
                 const outAbs = path.resolve(teamDir, nrOutPath);
-                vars[`${nid}.output`] = await fs.readFile(outAbs, 'utf8');
+                const outputContent = await fs.readFile(outAbs, 'utf8');
+                vars[`${nid}.output`] = outputContent;
+                
+                // Parse JSON outputs and make fields accessible
+                try {
+                  const parsed = JSON.parse(outputContent.trim());
+                  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    for (const [key, value] of Object.entries(parsed)) {
+                      if (typeof value === 'string') {
+                        vars[`${nid}.${key}`] = value;
+                      } else if (value !== null && value !== undefined) {
+                        // For non-string values, provide JSON representation
+                        vars[`${nid}.${key}_json`] = JSON.stringify(value);
+                      }
+                    }
+                  }
+                } catch {
+                  // If output isn't valid JSON, skip parsing but keep raw output
+                }
               } catch { /* node output may not exist */ }
             }
           }
@@ -453,12 +594,6 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           const result = { writtenTo: path.relative(teamDir, abs), bytes: Buffer.byteLength(content, 'utf8') };
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
 
-        } else if (toolName === 'marketing.post_all') {
-          // Disabled by default: do not ship plugins that spawn local processes for posting.
-          // Use an approval-gated workflow node that calls a dedicated posting tool/plugin instead.
-          throw new Error(
-            'marketing.post_all is disabled in this build (install safety). Use an external posting tool/plugin (approval-gated) instead.'
-          );
         } else {
           const toolRes = await toolsInvoke<unknown>(api, {
             tool: toolName,
