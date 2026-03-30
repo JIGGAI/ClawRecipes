@@ -693,12 +693,91 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
 
         } else {
+          // Build template variables for general tool nodes (same as fs.write/fs.append)
+          const vars = {
+            date: new Date().toISOString(),
+            'run.id': runId,
+            'run.timestamp': runId,
+            'workflow.id': String(workflow.id ?? ''),
+            'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
+          };
+          
+          // Load node outputs and make them available as template variables
+          const { run: runSnap } = await loadRunFile(teamDir, runsDir, task.runId);
+          for (const nr of (runSnap.nodeResults ?? [])) {
+            const nid = String((nr as Record<string, unknown>).nodeId ?? '');
+            const nrOutPath = String((nr as Record<string, unknown>).nodeOutputPath ?? '');
+            if (nid && nrOutPath) {
+              try {
+                const outAbs = path.resolve(teamDir, nrOutPath);
+                const outputContent = await fs.readFile(outAbs, 'utf8');
+                vars[`${nid}.output`] = outputContent;
+                
+                // Parse JSON outputs and make fields accessible
+                try {
+                  const parsed = JSON.parse(outputContent.trim());
+                  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                    for (const [key, value] of Object.entries(parsed)) {
+                      if (typeof value === 'string') {
+                        vars[`${nid}.${key}`] = value;
+                        
+                        // Special handling for 'text' field - try to parse as nested JSON
+                        if (key === 'text') {
+                          try {
+                            const nestedParsed = JSON.parse(value);
+                            if (nestedParsed && typeof nestedParsed === 'object' && !Array.isArray(nestedParsed)) {
+                              for (const [nestedKey, nestedValue] of Object.entries(nestedParsed)) {
+                                if (typeof nestedValue === 'string') {
+                                  vars[`${nid}.${nestedKey}`] = nestedValue;
+                                } else if (nestedValue !== null && nestedValue !== undefined) {
+                                  vars[`${nid}.${nestedKey}_json`] = JSON.stringify(nestedValue);
+                                }
+                              }
+                            }
+                          } catch {
+                            // If nested parsing fails, just keep the text field as is
+                          }
+                        }
+                      } else if (value !== null && value !== undefined) {
+                        // For non-string values, provide JSON representation
+                        vars[`${nid}.${key}_json`] = JSON.stringify(value);
+                      }
+                    }
+                  }
+                } catch {
+                  // If output isn't valid JSON, skip parsing but keep raw output
+                }
+              } catch { /* node output may not exist */ }
+            }
+          }
+          
+          // Apply template variable replacement to all string values in toolArgs
+          const processedToolArgs: Record<string, unknown> = {};
+          for (const [key, value] of Object.entries(toolArgs)) {
+            if (typeof value === 'string') {
+              processedToolArgs[key] = templateReplace(value, vars);
+            } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+              // Recursively process nested objects
+              const processedObject: Record<string, unknown> = {};
+              for (const [nestedKey, nestedValue] of Object.entries(value as Record<string, unknown>)) {
+                if (typeof nestedValue === 'string') {
+                  processedObject[nestedKey] = templateReplace(nestedValue, vars);
+                } else {
+                  processedObject[nestedKey] = nestedValue;
+                }
+              }
+              processedToolArgs[key] = processedObject;
+            } else {
+              processedToolArgs[key] = value;
+            }
+          }
+
           const toolRes = await toolsInvoke<unknown>(api, {
             tool: toolName,
-            args: toolArgs,
+            args: processedToolArgs,
           });
 
-          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, result: toolRes }, null, 2) + '\n', 'utf8');
+          await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: processedToolArgs, result: toolRes }, null, 2) + '\n', 'utf8');
         }
 
         const defaultNodeOutputRel = path.join('node-outputs', `${String(nodeIdx).padStart(3, '0')}-${node.id}.json`);
