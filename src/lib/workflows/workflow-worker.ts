@@ -879,23 +879,26 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       }
     } else if (kind === 'media-image' || kind === 'media-video' || kind === 'media-audio') {
       // ── Media generation nodes ──────────────────────────────────────────
-      // Config comes from ClawKitchen's workflow editor (node.config).
+      // Two-step process:
+      //   1. LLM generates a refined prompt (image_prompt / video_prompt)
+      //   2. Agent invokes the selected skill to produce the actual media
       const config = asRecord((node as unknown as Record<string, unknown>)['config']);
       const action = asRecord(node.action);
 
       const mediaType = asString(config['mediaType'] ?? kind.replace('media-', '')).trim() || 'image';
-      const provider = asString(config['provider'] ?? action['provider']).trim() || 'openai-models';
+      const provider = asString(config['provider'] ?? action['provider']).trim();
       const promptTemplateRaw = asString(config['promptTemplate'] ?? config['prompt'] ?? action['promptTemplate'] ?? action['prompt']).trim();
       const size = asString(config['size']).trim() || '1024x1024';
       const quality = asString(config['quality']).trim() || 'standard';
       const style = asString(config['style']).trim() || 'natural';
-      const model = asString(config['model']).trim();
       const outputPathRaw = asString(config['outputPath']).trim();
       const agentIdMedia = asString(config['agentId'] ?? action['agentId'] ?? '').trim();
 
       if (!promptTemplateRaw) throw new Error(`Node ${nodeLabel(node)} missing prompt or promptTemplate for media generation`);
 
       const vars = await buildTemplateVars(teamDir, runsDir, task.runId, workflowFile, workflow);
+      // Add node-level vars that templateReplace doesn't normally include
+      vars['node.id'] = node.id;
       const prompt = templateReplace(promptTemplateRaw, vars);
       const outputRelPath = templateReplace(outputPathRaw, vars);
 
@@ -904,44 +907,88 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       const nodeOutputAbs = path.resolve(runDir, nodeOutputRel);
       await ensureDir(path.dirname(nodeOutputAbs));
 
+      // Determine the output media directory for the skill to save into
+      const mediaDir = outputRelPath
+        ? path.resolve(runDir, path.dirname(outputRelPath))
+        : path.resolve(runDir, 'media');
+      await ensureDir(mediaDir);
+
+      const promptKey = mediaType === 'video' ? 'video_prompt' : 'image_prompt';
+
       let text = '';
       try {
         // Inject team memory context
         const memoryContext = await buildMemoryContext(teamDir);
+        const timeoutMsRaw = Number(asString(config['timeoutMs'] ?? '300000'));
+        const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : 300000;
 
-        const taskText = [
-          `You are executing a media generation node for teamId=${teamId}.`,
+        // ── Step 1: LLM refines the prompt ──────────────────────────────
+        const step1Text = [
+          `You are a media prompt engineer for teamId=${teamId}.`,
           `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,
-          `RunId: ${task.runId}`,
-          `Node: ${nodeLabel(node)}`,
-          `Media type: ${mediaType}`,
-          `Provider: ${provider}`,
+          `Node: ${nodeLabel(node)} | Media type: ${mediaType}`,
           `Size: ${size} | Quality: ${quality} | Style: ${style}`,
-          model ? `Model: ${model}` : '',
-          `\n---\nPROMPT\n---\n`,
+          `\n---\nINPUT PROMPT\n---\n`,
           prompt.trim(),
-          `\n---\nOUTPUT FORMAT\n---\n`,
-          `Return ONLY the final content as JSON. The worker will store it.`,
+          `\n---\nINSTRUCTIONS\n---\n`,
+          `Refine the input into a detailed, production-ready ${mediaType} generation prompt.`,
+          `Return JSON with exactly one key: "${promptKey}" containing the refined prompt string.`,
+          `Example: {"${promptKey}": "A detailed description..."}`,
         ].filter(Boolean).join('\n');
 
-        const promptWithMemory = memoryContext ? `${memoryContext}\n\n${taskText}` : taskText;
+        const step1Prompt = memoryContext ? `${memoryContext}\n\n${step1Text}` : step1Text;
 
-        const timeoutMsRaw = Number(asString(config['timeoutMs'] ?? '180000'));
-        const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : 180000;
+        const step1Res = await toolsInvoke<unknown>(api, {
+          tool: 'llm-task',
+          action: 'json',
+          args: { prompt: step1Prompt, timeoutMs: 60000 },
+        });
 
-        const llmRes = await toolsInvoke<unknown>(api, {
+        // Extract the refined prompt
+        const step1Rec = asRecord(step1Res);
+        const step1Details = asRecord(step1Rec['details']);
+        const step1Json = (step1Details['json'] ?? step1Details ?? step1Res) as Record<string, unknown>;
+        const refinedPrompt = asString(
+          step1Json[promptKey] ?? step1Json['image_prompt'] ?? step1Json['video_prompt'] ?? step1Json['prompt'] ?? prompt
+        ).trim();
+
+        if (!refinedPrompt) throw new Error('LLM returned empty refined prompt');
+
+        // ── Step 2: Invoke the skill to generate actual media ───────────
+        // The skill name is derived from the provider ID (e.g. "skill-openai-image-gen" → skill instructions)
+        const skillName = provider.replace(/^skill-/, '');
+
+        const step2Text = [
+          `Generate a${mediaType === 'image' ? 'n image' : ` ${mediaType}`} using the "${skillName}" skill.`,
+          ``,
+          `${promptKey}: ${refinedPrompt}`,
+          ``,
+          `Settings:`,
+          `- Size: ${size}`,
+          `- Quality: ${quality}`,
+          `- Style: ${style}`,
+          `- Save the output file to: ${mediaDir}/`,
+          ``,
+          `Use the skill to generate the ${mediaType}. Return JSON with:`,
+          `- "${promptKey}": the prompt you used`,
+          `- "file_path": absolute path to the generated file`,
+          `- "status": "success" or "error"`,
+          `- "error": error message if failed`,
+        ].join('\n');
+
+        const step2Res = await toolsInvoke<unknown>(api, {
           tool: 'llm-task',
           action: 'json',
           args: {
-            prompt: promptWithMemory,
-            input: { teamId, runId: task.runId, nodeId: node.id, agentId: agentIdMedia || agentId, mediaType, provider, size, quality, style },
+            prompt: step2Text,
+            input: { teamId, runId: task.runId, nodeId: node.id, mediaType, skillName, size, quality, style, outputDir: mediaDir },
             timeoutMs,
           },
         });
 
-        const llmRec = asRecord(llmRes);
-        const details = asRecord(llmRec['details']);
-        const payload = details['json'] ?? (Object.keys(details).length ? details : llmRes) ?? null;
+        const step2Rec = asRecord(step2Res);
+        const step2Details = asRecord(step2Rec['details']);
+        const payload = (step2Details['json'] ?? (Object.keys(step2Details).length ? step2Details : step2Res)) ?? null;
         text = JSON.stringify(payload, null, 2);
       } catch (e) {
         const errMsg = `Media generation failed for node ${nodeLabel(node)}: ${e instanceof Error ? e.message : String(e)}`;
@@ -969,6 +1016,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         agentId: agentIdMedia || agentId,
         completedAt: new Date().toISOString(),
         outputPath: outputRelPath,
+        mediaDir,
         text,
       };
       await fs.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + '\n', 'utf8');
