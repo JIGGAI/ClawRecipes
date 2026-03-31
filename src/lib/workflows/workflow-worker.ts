@@ -106,6 +106,68 @@ async function buildMemoryContext(teamDir: string): Promise<string> {
   }
 }
 
+/**
+ * Build template variables from prior node outputs for prompt/path interpolation.
+ * Reused across LLM, media, tool, and fs nodes.
+ */
+async function buildTemplateVars(
+  teamDir: string,
+  runsDir: string,
+  runId: string,
+  workflowFile: string,
+  workflow: { id?: string; name?: string },
+): Promise<Record<string, string>> {
+  const vars = {
+    date: new Date().toISOString(),
+    'run.id': runId,
+    'run.timestamp': runId,
+    'workflow.id': String(workflow.id ?? ''),
+    'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
+  } as Record<string, string>;
+
+  const { run: runSnap } = await loadRunFile(teamDir, runsDir, runId);
+  for (const nr of (runSnap.nodeResults ?? [])) {
+    const nid = String((nr as Record<string, unknown>).nodeId ?? '');
+    const nrOutPath = String((nr as Record<string, unknown>).nodeOutputPath ?? '');
+    if (nid && nrOutPath) {
+      try {
+        const outAbs = path.resolve(teamDir, nrOutPath);
+        const outputContent = await fs.readFile(outAbs, 'utf8');
+        vars[`${nid}.output`] = outputContent;
+
+        try {
+          const parsed = JSON.parse(outputContent.trim());
+          if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            for (const [key, value] of Object.entries(parsed)) {
+              if (typeof value === 'string') {
+                vars[`${nid}.${key}`] = value;
+                if (key === 'text') {
+                  try {
+                    const nestedParsed = JSON.parse(value);
+                    if (nestedParsed && typeof nestedParsed === 'object' && !Array.isArray(nestedParsed)) {
+                      for (const [nestedKey, nestedValue] of Object.entries(nestedParsed)) {
+                        if (typeof nestedValue === 'string') {
+                          vars[`${nid}.${nestedKey}`] = nestedValue;
+                        } else if (nestedValue !== null && nestedValue !== undefined) {
+                          vars[`${nid}.${nestedKey}_json`] = JSON.stringify(nestedValue);
+                        }
+                      }
+                    }
+                  } catch { /* nested parse fail is fine */ }
+                }
+              } else if (value !== null && value !== undefined) {
+                vars[`${nid}.${key}_json`] = JSON.stringify(value);
+              }
+            }
+          }
+        } catch { /* non-JSON output is fine */ }
+      } catch { /* node output may not exist */ }
+    }
+  }
+
+  return vars;
+}
+
 // eslint-disable-next-line complexity, max-lines-per-function
 export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
   teamId: string;
@@ -815,6 +877,110 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'error', error: (e as Error).message });
         continue;
       }
+    } else if (kind === 'media-image' || kind === 'media-video' || kind === 'media-audio') {
+      // ── Media generation nodes ──────────────────────────────────────────
+      // Config comes from ClawKitchen's workflow editor (node.config).
+      const config = asRecord((node as unknown as Record<string, unknown>)['config']);
+      const action = asRecord(node.action);
+
+      const mediaType = asString(config['mediaType'] ?? kind.replace('media-', '')).trim() || 'image';
+      const provider = asString(config['provider'] ?? action['provider']).trim() || 'openai-models';
+      const promptTemplateRaw = asString(config['promptTemplate'] ?? config['prompt'] ?? action['promptTemplate'] ?? action['prompt']).trim();
+      const size = asString(config['size']).trim() || '1024x1024';
+      const quality = asString(config['quality']).trim() || 'standard';
+      const style = asString(config['style']).trim() || 'natural';
+      const model = asString(config['model']).trim();
+      const outputPathRaw = asString(config['outputPath']).trim() || `shared-context/media/{{run.id}}_${mediaType}`;
+      const agentIdMedia = asString(config['agentId'] ?? action['agentId'] ?? '').trim();
+
+      if (!promptTemplateRaw) throw new Error(`Node ${nodeLabel(node)} missing prompt or promptTemplate for media generation`);
+
+      const vars = await buildTemplateVars(teamDir, runsDir, task.runId, workflowFile, workflow);
+      const prompt = templateReplace(promptTemplateRaw, vars);
+      const outputRelPath = templateReplace(outputPathRaw, vars);
+
+      const defaultNodeOutputRel = path.join('node-outputs', `${String(nodeIdx).padStart(3, '0')}-${node.id}.json`);
+      const nodeOutputRel = String(node?.output?.path ?? '').trim() || defaultNodeOutputRel;
+      const nodeOutputAbs = path.resolve(runDir, nodeOutputRel);
+      await ensureDir(path.dirname(nodeOutputAbs));
+
+      let text = '';
+      try {
+        // Inject team memory context
+        const memoryContext = await buildMemoryContext(teamDir);
+
+        const taskText = [
+          `You are executing a media generation node for teamId=${teamId}.`,
+          `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,
+          `RunId: ${task.runId}`,
+          `Node: ${nodeLabel(node)}`,
+          `Media type: ${mediaType}`,
+          `Provider: ${provider}`,
+          `Size: ${size} | Quality: ${quality} | Style: ${style}`,
+          model ? `Model: ${model}` : '',
+          `\n---\nPROMPT\n---\n`,
+          prompt.trim(),
+          `\n---\nOUTPUT FORMAT\n---\n`,
+          `Return ONLY the final content as JSON. The worker will store it.`,
+        ].filter(Boolean).join('\n');
+
+        const promptWithMemory = memoryContext ? `${memoryContext}\n\n${taskText}` : taskText;
+
+        const timeoutMsRaw = Number(asString(config['timeoutMs'] ?? '180000'));
+        const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : 180000;
+
+        const llmRes = await toolsInvoke<unknown>(api, {
+          tool: 'llm-task',
+          action: 'json',
+          args: {
+            prompt: promptWithMemory,
+            input: { teamId, runId: task.runId, nodeId: node.id, agentId: agentIdMedia || agentId, mediaType, provider, size, quality, style },
+            timeoutMs,
+          },
+        });
+
+        const llmRec = asRecord(llmRes);
+        const details = asRecord(llmRec['details']);
+        const payload = details['json'] ?? (Object.keys(details).length ? details : llmRes) ?? null;
+        text = JSON.stringify(payload, null, 2);
+      } catch (e) {
+        const errMsg = `Media generation failed for node ${nodeLabel(node)}: ${e instanceof Error ? e.message : String(e)}`;
+        const errorTs = new Date().toISOString();
+        await appendRunLog(runPath, (cur) => ({
+          ...cur,
+          status: 'error',
+          updatedAt: errorTs,
+          nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'error', ts: errorTs, error: errMsg } },
+          events: [...cur.events, { ts: errorTs, type: 'node.error', nodeId: node.id, kind: node.kind, message: errMsg }],
+          nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, agentId: agentIdMedia || agentId, error: errMsg }],
+        }));
+        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'error' });
+        continue;
+      }
+
+      // Save output
+      const outputObj = {
+        runId: task.runId,
+        teamId,
+        nodeId: node.id,
+        kind: node.kind,
+        mediaType,
+        provider,
+        agentId: agentIdMedia || agentId,
+        completedAt: new Date().toISOString(),
+        outputPath: outputRelPath,
+        text,
+      };
+      await fs.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + '\n', 'utf8');
+
+      const completedTs = new Date().toISOString();
+      await appendRunLog(runPath, (cur) => ({
+        ...cur,
+        nextNodeIndex: nodeIdx + 1,
+        nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
+        events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind: node.kind, nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, mediaType, agentId: agentIdMedia || agentId, nodeOutputPath: path.relative(teamDir, nodeOutputAbs), bytes: new TextEncoder().encode(text).byteLength }],
+      }));
     } else {
       throw new Error(`Worker does not yet support node kind: ${kind}`);
     }
