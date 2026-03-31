@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { execSync } from 'node:child_process';
 import path from 'node:path';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import type { ToolTextResult } from '../../toolsInvoke';
@@ -954,41 +955,55 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
         if (!refinedPrompt) throw new Error('LLM returned empty refined prompt');
 
-        // ── Step 2: Invoke the skill to generate actual media ───────────
-        // The skill name is derived from the provider ID (e.g. "skill-openai-image-gen" → skill instructions)
+        // ── Step 2: Invoke the skill script to generate actual media ─────
         const skillName = provider.replace(/^skill-/, '');
+        const homedir = process.env.HOME || '/home/control';
 
-        const step2Text = [
-          `Generate a${mediaType === 'image' ? 'n image' : ` ${mediaType}`} using the "${skillName}" skill.`,
-          ``,
-          `${promptKey}: ${refinedPrompt}`,
-          ``,
-          `Settings:`,
-          `- Size: ${size}`,
-          `- Quality: ${quality}`,
-          `- Style: ${style}`,
-          `- Save the output file to: ${mediaDir}/`,
-          ``,
-          `Use the skill to generate the ${mediaType}. Return JSON with:`,
-          `- "${promptKey}": the prompt you used`,
-          `- "file_path": absolute path to the generated file`,
-          `- "status": "success" or "error"`,
-          `- "error": error message if failed`,
-        ].join('\n');
+        // Search for the skill's executable script
+        const skillSearchDirs = [
+          path.join(homedir, '.openclaw', 'skills', skillName),
+          path.join(homedir, '.openclaw', 'workspace', 'skills', skillName),
+        ];
+        let scriptPath = '';
+        for (const dir of skillSearchDirs) {
+          const candidates = [`generate_image.sh`, `generate_video.sh`, `generate.sh`];
+          for (const c of candidates) {
+            const p = path.join(dir, c);
+            try { await fs.access(p); scriptPath = p; break; } catch { /* skip */ }
+          }
+          if (scriptPath) break;
+        }
 
-        const step2Res = await toolsInvoke<unknown>(api, {
-          tool: 'llm-task',
-          action: 'json',
-          args: {
-            prompt: step2Text,
-            input: { teamId, runId: task.runId, nodeId: node.id, mediaType, skillName, size, quality, style, outputDir: mediaDir },
-            timeoutMs,
-          },
-        });
+        let payload: Record<string, unknown>;
+        if (scriptPath) {
+          // Run the skill script directly with the refined prompt
+          const scriptOutput = execSync(
+            `bash ${JSON.stringify(scriptPath)} ${JSON.stringify(refinedPrompt)}`,
+            { cwd: mediaDir, timeout: timeoutMs, encoding: 'utf8', env: { ...process.env, HOME: homedir } }
+          ).trim();
 
-        const step2Rec = asRecord(step2Res);
-        const step2Details = asRecord(step2Rec['details']);
-        const payload = (step2Details['json'] ?? (Object.keys(step2Details).length ? step2Details : step2Res)) ?? null;
+          // Parse the output — skill scripts print "MEDIA:/path/to/file"
+          const mediaMatch = scriptOutput.match(/MEDIA:(.+)$/m);
+          const filePath = mediaMatch ? mediaMatch[1].trim() : '';
+
+          payload = {
+            [promptKey]: refinedPrompt,
+            file_path: filePath,
+            status: filePath ? 'success' : 'error',
+            skill: skillName,
+            script_output: scriptOutput,
+            error: filePath ? null : 'No MEDIA: path in script output',
+          };
+        } else {
+          // No skill script found — fall back to prompt-only output
+          payload = {
+            [promptKey]: refinedPrompt,
+            file_path: '',
+            status: 'no_skill_script',
+            skill: skillName,
+            error: `No executable script found for skill "${skillName}" in ${skillSearchDirs.join(', ')}`,
+          };
+        }
         text = JSON.stringify(payload, null, 2);
       } catch (e) {
         const errMsg = `Media generation failed for node ${nodeLabel(node)}: ${e instanceof Error ? e.message : String(e)}`;
