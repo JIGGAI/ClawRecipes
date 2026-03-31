@@ -890,7 +890,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       const quality = asString(config['quality']).trim() || 'standard';
       const style = asString(config['style']).trim() || 'natural';
       const model = asString(config['model']).trim();
-      const outputPathRaw = asString(config['outputPath']).trim() || `shared-context/media/{{run.id}}_${mediaType}`;
+      const outputPathRaw = asString(config['outputPath']).trim();
       const agentIdMedia = asString(config['agentId'] ?? action['agentId'] ?? '').trim();
 
       if (!promptTemplateRaw) throw new Error(`Node ${nodeLabel(node)} missing prompt or promptTemplate for media generation`);
