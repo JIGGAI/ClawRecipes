@@ -418,6 +418,19 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
         const timeoutMsRaw = Number(asString(action['timeoutMs'] ?? (node as unknown as { config?: unknown })?.config?.['timeoutMs'] ?? '120000'));
         const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : 120000;
+        const configuredModel = asString(action['model'] ?? (node as unknown as { config?: unknown })?.config?.['model']).trim();
+        const configuredProvider = asString(action['provider'] ?? (node as unknown as { config?: unknown })?.config?.['provider']).trim();
+        let provider = configuredProvider;
+        let model = configuredModel;
+        if (model) {
+          const slash = model.indexOf('/');
+          if (slash > 0 && slash < model.length - 1) {
+            const modelProvider = model.slice(0, slash).trim();
+            const bareModel = model.slice(slash + 1).trim();
+            if (!provider) provider = modelProvider;
+            if (provider === modelProvider) model = bareModel;
+          }
+        }
 
         // Inject team memory context for LLM nodes
         const memoryContext = await buildMemoryContext(teamDir);
@@ -430,6 +443,8 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             prompt: promptWithMemory,
             input: { teamId, runId, nodeId: node.id, agentId, ...priorInput },
             timeoutMs,
+            ...(provider ? { provider } : {}),
+            ...(model ? { model } : {}),
           },
         });
 
@@ -438,16 +453,34 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         const payload = details['json'] ?? (Object.keys(details).length ? details : llmRes) ?? null;
         text = JSON.stringify(payload, null, 2);
       } catch (e) {
-        // Record the error on the run so it doesn't stay stuck in waiting_workers.
-        const errMsg = `LLM execution failed for node ${nodeLabel(node)}: ${e instanceof Error ? e.message : String(e)}`;
+        const eRec = asRecord(e);
+        const errorDetails = {
+          message: e instanceof Error ? e.message : String(e),
+          name: e instanceof Error ? e.name : undefined,
+          stack: e instanceof Error ? e.stack : undefined,
+          error: eRec['error'],
+          details: eRec['details'],
+          data: eRec['data'],
+          cause: e instanceof Error && 'cause' in e ? (e as Error & { cause?: unknown }).cause : undefined,
+        };
+        const errMsg = `LLM execution failed for node ${nodeLabel(node)}: ${errorDetails.message}`;
         const errorTs = new Date().toISOString();
         await appendRunLog(runPath, (cur) => ({
           ...cur,
           status: 'error',
           updatedAt: errorTs,
-          nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'error', ts: errorTs, error: errMsg } },
-          events: [...cur.events, { ts: errorTs, type: 'node.error', nodeId: node.id, kind: node.kind, message: errMsg }],
-          nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, agentId: agentIdExec, error: errMsg }],
+          nodeStates: {
+            ...(cur.nodeStates ?? {}),
+            [node.id]: { status: 'error', ts: errorTs, error: errMsg, details: errorDetails },
+          },
+          events: [
+            ...cur.events,
+            { ts: errorTs, type: 'node.error', nodeId: node.id, kind: node.kind, message: errMsg, details: errorDetails },
+          ],
+          nodeResults: [
+            ...(cur.nodeResults ?? []),
+            { nodeId: node.id, kind: node.kind, agentId: agentIdExec, error: errMsg, details: errorDetails },
+          ],
         }));
         results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'error' });
         continue;
