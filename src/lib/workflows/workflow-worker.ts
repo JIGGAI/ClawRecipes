@@ -956,63 +956,127 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         const timeoutMsRaw = Number(asString(config['timeoutMs'] ?? '300000'));
         const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : 300000;
 
-        // ── Step 1: LLM refines the prompt ──────────────────────────────
-        const step1Text = [
-          `You are a media prompt engineer for teamId=${teamId}.`,
-          `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,
-          `Node: ${nodeLabel(node)} | Media type: ${mediaType}`,
-          `Size: ${size} | Quality: ${quality} | Style: ${style}`,
-          `\n---\nINPUT PROMPT\n---\n`,
-          prompt.trim(),
-          `\n---\nINSTRUCTIONS\n---\n`,
-          `Refine the input into a detailed, production-ready ${mediaType} generation prompt.`,
-          `Return JSON with exactly one key: "${promptKey}" containing the refined prompt string.`,
-          `Example: {"${promptKey}": "A detailed description..."}`,
-        ].filter(Boolean).join('\n');
+        // ── Step 1: Prompt refinement (optional — skip for images, use llm-task for video) ──
+        let refinedPrompt = prompt.trim();
 
-        const step1Prompt = memoryContext ? `${memoryContext}\n\n${step1Text}` : step1Text;
+        if (mediaType !== 'image') {
+          // Only use llm-task refinement for non-image media (video/audio)
+          const step1Text = [
+            `You are a media prompt engineer for teamId=${teamId}.`,
+            `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,
+            `Node: ${nodeLabel(node)} | Media type: ${mediaType}`,
+            `Size: ${size} | Quality: ${quality} | Style: ${style}`,
+            `\n---\nINPUT PROMPT\n---\n`,
+            prompt.trim(),
+            `\n---\nINSTRUCTIONS\n---\n`,
+            `Refine the input into a detailed, production-ready ${mediaType} generation prompt.`,
+            `Return JSON with exactly one key: "${promptKey}" containing the refined prompt string.`,
+            `Example: {"${promptKey}": "A detailed description..."}`,
+          ].filter(Boolean).join('\n');
 
-        const step1Res = await toolsInvoke<unknown>(api, {
-          tool: 'llm-task',
-          action: 'json',
-          args: { prompt: step1Prompt, timeoutMs: 60000 },
-        });
+          const step1Prompt = memoryContext ? `${memoryContext}\n\n${step1Text}` : step1Text;
 
-        // Extract the refined prompt
-        const step1Rec = asRecord(step1Res);
-        const step1Details = asRecord(step1Rec['details']);
-        const step1Json = (step1Details['json'] ?? step1Details ?? step1Res) as Record<string, unknown>;
-        const refinedPrompt = asString(
-          step1Json[promptKey] ?? step1Json['image_prompt'] ?? step1Json['video_prompt'] ?? step1Json['prompt'] ?? prompt
-        ).trim();
+          try {
+            const step1Res = await toolsInvoke<unknown>(api, {
+              tool: 'llm-task',
+              action: 'json',
+              args: { prompt: step1Prompt, timeoutMs: 60000 },
+            });
+            const step1Rec = asRecord(step1Res);
+            const step1Details = asRecord(step1Rec['details']);
+            const step1Json = (step1Details['json'] ?? step1Details ?? step1Res) as Record<string, unknown>;
+            const extracted = asString(
+              step1Json[promptKey] ?? step1Json['image_prompt'] ?? step1Json['video_prompt'] ?? step1Json['prompt']
+            ).trim();
+            if (extracted) refinedPrompt = extracted;
+          } catch {
+            // Prompt refinement failed — fall through with original prompt
+          }
+        }
 
-        if (!refinedPrompt) throw new Error('LLM returned empty refined prompt');
+        if (!refinedPrompt) throw new Error('Empty prompt for media generation');
+
+        // Truncate prompt to stay within DALL-E 3's 4000 char limit
+        const MAX_IMAGE_PROMPT_LEN = 3800; // leave headroom
+        if (mediaType === 'image' && refinedPrompt.length > MAX_IMAGE_PROMPT_LEN) {
+          refinedPrompt = refinedPrompt.slice(0, MAX_IMAGE_PROMPT_LEN).replace(/\s+\S*$/, '') + '...';
+        }
 
         // ── Step 2: Invoke the skill script to generate actual media ─────
-        const skillName = provider.replace(/^skill-/, '');
         const homedir = process.env.HOME || '/home/control';
+        const scriptCandidates = mediaType === 'image'
+          ? ['generate_image.py', 'generate_image.sh', 'generate.sh']
+          : ['generate_video.py', 'generate_video.sh', 'generate.py', 'generate.sh'];
 
-        // Search for the skill's executable script
-        const skillSearchDirs = [
-          path.join(homedir, '.openclaw', 'skills', skillName),
-          path.join(homedir, '.openclaw', 'workspace', 'skills', skillName),
+        // Auto-discover: if provider specifies a skill, try that first, then scan all skills
+        const providerSkill = provider.startsWith('skill-') ? provider.replace(/^skill-/, '') : '';
+        const skillRoots = [
+          path.join(homedir, '.openclaw', 'skills'),
+          path.join(homedir, '.openclaw', 'workspace', 'skills'),
         ];
+
         let scriptPath = '';
-        for (const dir of skillSearchDirs) {
-          const candidates = [`generate_image.sh`, `generate_video.sh`, `generate.sh`];
-          for (const c of candidates) {
-            const p = path.join(dir, c);
-            try { await fs.access(p); scriptPath = p; break; } catch { /* skip */ }
+        let skillName = providerSkill;
+
+        // Helper: search a specific skill directory for matching scripts
+        const findScript = async (skillDir: string): Promise<string> => {
+          for (const c of scriptCandidates) {
+            const p = path.join(skillDir, c);
+            try { await fs.access(p); return p; } catch { /* skip */ }
           }
-          if (scriptPath) break;
+          return '';
+        };
+
+        // 1) Try the explicitly specified provider skill first
+        if (providerSkill) {
+          for (const root of skillRoots) {
+            scriptPath = await findScript(path.join(root, providerSkill));
+            if (scriptPath) break;
+          }
         }
+
+        // 2) If not found, auto-discover any skill that has the right script
+        if (!scriptPath) {
+          for (const root of skillRoots) {
+            try {
+              const entries = await fs.readdir(root, { withFileTypes: true });
+              for (const entry of entries) {
+                if (!entry.isDirectory()) continue;
+                const found = await findScript(path.join(root, entry.name));
+                if (found) {
+                  scriptPath = found;
+                  skillName = entry.name;
+                  break;
+                }
+              }
+            } catch { /* root dir doesn't exist */ }
+            if (scriptPath) break;
+          }
+        }
+
+        const skillSearchDirs = providerSkill
+          ? skillRoots.map(r => path.join(r, providerSkill))
+          : skillRoots;
 
         let payload: Record<string, unknown>;
         if (scriptPath) {
-          // Run the skill script directly with the refined prompt
+          // Run the skill script with the refined prompt
+          // Inject env vars from OpenClaw config (gateway doesn't expose them to process.env)
+          let configEnv: Record<string, string> = {};
+          try {
+            const cfgRaw = await fs.readFile(path.join(homedir, '.openclaw', 'openclaw.json'), 'utf8');
+            const cfgParsed = JSON.parse(cfgRaw);
+            if (cfgParsed?.env && typeof cfgParsed.env === 'object') {
+              configEnv = Object.fromEntries(
+                Object.entries(cfgParsed.env).filter(([, v]) => typeof v === 'string')
+              ) as Record<string, string>;
+            }
+          } catch { /* config read failed — proceed with process.env only */ }
+
+          const runner = scriptPath.endsWith('.py') ? 'python3' : 'bash';
           const scriptOutput = execSync(
-            `bash ${JSON.stringify(scriptPath)} ${JSON.stringify(refinedPrompt)}`,
-            { cwd: mediaDir, timeout: timeoutMs, encoding: 'utf8', env: { ...process.env, HOME: homedir } }
+            `${runner} ${JSON.stringify(scriptPath)}`,
+            { cwd: mediaDir, timeout: timeoutMs, encoding: 'utf8', input: refinedPrompt, env: { ...process.env, ...configEnv, HOME: homedir } }
           ).trim();
 
           // Parse the output — skill scripts print "MEDIA:/path/to/file"
@@ -1039,7 +1103,10 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         }
         text = JSON.stringify(payload, null, 2);
       } catch (e) {
-        const errMsg = `Media generation failed for node ${nodeLabel(node)}: ${e instanceof Error ? e.message : String(e)}`;
+        const errDetails = e instanceof Error
+          ? { message: e.message, name: e.name, stack: e.stack?.split('\n').slice(0, 5).join(' | ') }
+          : { message: String(e) };
+        const errMsg = `Media generation failed for node ${nodeLabel(node)}: ${JSON.stringify(errDetails)}`;
         const errorTs = new Date().toISOString();
         await appendRunLog(runPath, (cur) => ({
           ...cur,
