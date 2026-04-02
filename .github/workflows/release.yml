@@ -43,6 +43,13 @@ jobs:
       - name: Pack tarball
         run: npm pack
 
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-tarball
+          path: "*.tgz"
+          retention-days: 90
+
       - name: Create GitHub Release
         id: release
         env:
@@ -64,16 +71,16 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           VERSION="${TAG#v}"
-          REPO_NAME="${REPO##*/}"
+          PKG_NAME=$(node -p "require('./package.json').name")
 
           NOTES=$(head -c 3900 /tmp/release-notes.md)
 
           jq -n \
-            --arg title "📦 ${REPO_NAME} ${TAG}" \
+            --arg title "📦 ${PKG_NAME} ${TAG}" \
             --arg url "$URL" \
             --arg desc "$NOTES" \
             --arg version "$VERSION" \
-            --arg install "npm i @jiggai/${REPO_NAME}@${VERSION}" \
+            --arg install "npm i ${PKG_NAME}@${VERSION}" \
             '{
               embeds: [{
                 title: $title,
