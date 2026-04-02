@@ -40,9 +40,12 @@ jobs:
       - name: Push version commit + tag
         run: git push origin main --follow-tags
 
+      - name: Pack tarball
+        run: npm pack
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG=$(git describe --tags --abbrev=0)
-          gh release create "$TAG" --generate-notes
+          gh release create "$TAG" --generate-notes *.tgz
