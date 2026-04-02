@@ -44,8 +44,38 @@ jobs:
         run: npm pack
 
       - name: Create GitHub Release
+        id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG=$(git describe --tags --abbrev=0)
           gh release create "$TAG" --generate-notes *.tgz
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "url=https://github.com/${{ github.repository }}/releases/tag/$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Announce on Discord
+        if: success() && env.WEBHOOK != ''
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          TAG: ${{ steps.release.outputs.tag }}
+          URL: ${{ steps.release.outputs.url }}
+          REPO: ${{ github.repository }}
+        run: |
+          VERSION="${TAG#v}"
+          REPO_NAME="${REPO##*/}"
+          BODY=$(cat <<EOF
+          {
+            "embeds": [{
+              "title": "\ud83d\udce6 ${REPO_NAME} ${TAG} released",
+              "url": "${URL}",
+              "color": 5763719,
+              "fields": [
+                {"name": "Version", "value": "${VERSION}", "inline": true},
+                {"name": "Install", "value": "\`npm i @jiggai/${REPO_NAME}@${VERSION}\`", "inline": true},
+                {"name": "Release Notes", "value": "[View on GitHub](${URL})", "inline": false}
+              ]
+            }]
+          }
+          EOF
+          )
+          curl -sf -H "Content-Type: application/json" -d "$BODY" "$WEBHOOK"
