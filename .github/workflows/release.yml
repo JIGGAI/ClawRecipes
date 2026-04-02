@@ -50,8 +50,10 @@ jobs:
         run: |
           TAG=$(git describe --tags --abbrev=0)
           gh release create "$TAG" --generate-notes *.tgz
+          NOTES=$(gh release view "$TAG" --json body -q .body)
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "url=https://github.com/${{ github.repository }}/releases/tag/$TAG" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" > /tmp/release-notes.md
 
       - name: Announce on Discord
         if: success() && env.WEBHOOK != ''
@@ -63,19 +65,24 @@ jobs:
         run: |
           VERSION="${TAG#v}"
           REPO_NAME="${REPO##*/}"
-          BODY=$(cat <<EOF
-          {
-            "embeds": [{
-              "title": "\ud83d\udce6 ${REPO_NAME} ${TAG} released",
-              "url": "${URL}",
-              "color": 5763719,
-              "fields": [
-                {"name": "Version", "value": "${VERSION}", "inline": true},
-                {"name": "Install", "value": "\`npm i @jiggai/${REPO_NAME}@${VERSION}\`", "inline": true},
-                {"name": "Release Notes", "value": "[View on GitHub](${URL})", "inline": false}
-              ]
-            }]
-          }
-          EOF
-          )
-          curl -sf -H "Content-Type: application/json" -d "$BODY" "$WEBHOOK"
+
+          NOTES=$(head -c 3900 /tmp/release-notes.md)
+
+          jq -n \
+            --arg title "📦 ${REPO_NAME} ${TAG}" \
+            --arg url "$URL" \
+            --arg desc "$NOTES" \
+            --arg version "$VERSION" \
+            --arg install "npm i @jiggai/${REPO_NAME}@${VERSION}" \
+            '{
+              embeds: [{
+                title: $title,
+                url: $url,
+                description: $desc,
+                color: 5763719,
+                fields: [
+                  {name: "Version", value: $version, inline: true},
+                  {name: "Install", value: ("`" + $install + "`"), inline: true}
+                ]
+              }]
+            }' | curl -sf -H "Content-Type: application/json" -d @- "$WEBHOOK"
