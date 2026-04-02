@@ -104,6 +104,9 @@ Use this when you are deciding what kind of node to add:
 - use **`tool`** when you want the workflow to call a tool or side-effecting action
 - use **`human_approval`** when a person must approve before the workflow continues
 - use **`writeback`** when you want to append workflow breadcrumbs/results into team files
+- use **`media-image`** when you want to generate images as part of the workflow
+- use **`media-video`** when you want to generate video content as part of the workflow
+- use **`media-audio`** when you want to generate audio content as part of the workflow
 
 ### `start`
 Purpose:
@@ -366,6 +369,102 @@ Example:
       "notes/status.md",
       "shared-context/last-run.md"
     ]
+  }
+}
+```
+
+### `media-image`
+Purpose:
+- generate images using available media generation skills
+
+Use it when:
+- you want to create visual content as part of a workflow
+- you need to generate images from text prompts
+- you want to create marketing visuals or illustrations
+
+Required pieces:
+- `assignedTo.agentId`
+- either `action.image_prompt` or upstream node output with image prompt
+
+What it does:
+- scans available skills for image generation capabilities
+- executes image generation via skill auto-discovery
+- writes generated image data to node outputs
+
+Example:
+
+```json
+{
+  "id": "generate_hero_image",
+  "kind": "media-image",
+  "assignedTo": { "agentId": "development-team-lead" },
+  "action": {
+    "image_prompt": "A modern, clean illustration of a workflow automation dashboard",
+    "mediaType": "image"
+  }
+}
+```
+
+### `media-video`
+Purpose:
+- generate video content using available media generation skills
+
+Use it when:
+- you want to create video content as part of a workflow
+- you need to generate promotional or educational videos
+- you want to create dynamic visual content
+
+Required pieces:
+- `assignedTo.agentId`
+- either `action.video_prompt` or upstream node output with video prompt
+
+What it does:
+- scans available skills for video generation capabilities
+- executes video generation via skill auto-discovery
+- writes generated video data to node outputs
+
+Example:
+
+```json
+{
+  "id": "generate_demo_video",
+  "kind": "media-video",
+  "assignedTo": { "agentId": "development-team-lead" },
+  "action": {
+    "video_prompt": "A 30-second demo of workflow automation in action",
+    "mediaType": "video"
+  }
+}
+```
+
+### `media-audio`
+Purpose:
+- generate audio content using available media generation skills
+
+Use it when:
+- you want to create audio content as part of a workflow
+- you need to generate voiceovers or music
+- you want to create podcast content or audio narration
+
+Required pieces:
+- `assignedTo.agentId`
+- either `action.audio_prompt` or upstream node output with audio prompt
+
+What it does:
+- scans available skills for audio generation capabilities
+- executes audio generation via skill auto-discovery
+- writes generated audio data to node outputs
+
+Example:
+
+```json
+{
+  "id": "generate_voiceover",
+  "kind": "media-audio",
+  "assignedTo": { "agentId": "development-team-lead" },
+  "action": {
+    "audio_prompt": "Professional voiceover explaining our new feature launch",
+    "mediaType": "audio"
   }
 }
 ```
