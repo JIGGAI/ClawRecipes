@@ -40,9 +40,49 @@ jobs:
       - name: Push version commit + tag
         run: git push origin main --follow-tags
 
+      - name: Pack tarball
+        run: npm pack
+
       - name: Create GitHub Release
+        id: release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG=$(git describe --tags --abbrev=0)
-          gh release create "$TAG" --generate-notes
+          gh release create "$TAG" --generate-notes *.tgz
+          NOTES=$(gh release view "$TAG" --json body -q .body)
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "url=https://github.com/${{ github.repository }}/releases/tag/$TAG" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" > /tmp/release-notes.md
+
+      - name: Announce on Discord
+        if: success() && env.WEBHOOK != ''
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
+          TAG: ${{ steps.release.outputs.tag }}
+          URL: ${{ steps.release.outputs.url }}
+          REPO: ${{ github.repository }}
+        run: |
+          VERSION="${TAG#v}"
+          REPO_NAME="${REPO##*/}"
+
+          NOTES=$(head -c 3900 /tmp/release-notes.md)
+
+          jq -n \
+            --arg title "📦 ${REPO_NAME} ${TAG}" \
+            --arg url "$URL" \
+            --arg desc "$NOTES" \
+            --arg version "$VERSION" \
+            --arg install "npm i @jiggai/${REPO_NAME}@${VERSION}" \
+            '{
+              embeds: [{
+                title: $title,
+                url: $url,
+                description: $desc,
+                color: 5763719,
+                fields: [
+                  {name: "Version", value: $version, inline: true},
+                  {name: "Install", value: ("`" + $install + "`"), inline: true}
+                ]
+              }]
+            }' | curl -sf -H "Content-Type: application/json" -d @- "$WEBHOOK"
