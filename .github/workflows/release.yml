@@ -80,9 +80,7 @@ jobs:
           # Strip PR links, clean up, and truncate for Discord (4096 char limit)
           CLEAN=$(sed 's| by @[^ ]* in https://github.com/[^ ]*||g; s| in https://github.com/[^ ]*||g' /tmp/release-notes.md)
           NOTES=$(echo "$CLEAN" | head -c 3700)
-          NOTES="${NOTES}
-
-[View full changelog](${URL})"
+          NOTES=$(printf "%s\n\n[View full changelog](%s)" "$NOTES" "$URL")
 
           jq -n \
             --arg title "📦 ${PKG_NAME} ${TAG}" \
