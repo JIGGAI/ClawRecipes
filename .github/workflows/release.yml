@@ -43,10 +43,14 @@ jobs:
       - name: Pack tarball
         run: npm pack
 
+      - name: Get tarball name
+        id: tarball
+        run: echo "name=$(ls *.tgz)" >> "$GITHUB_OUTPUT"
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-tarball
+          name: ${{ steps.tarball.outputs.name }}
           path: "*.tgz"
           retention-days: 90
 
