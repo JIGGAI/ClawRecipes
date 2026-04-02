@@ -43,10 +43,14 @@ jobs:
       - name: Pack tarball
         run: npm pack
 
+      - name: Get tarball name
+        id: tarball
+        run: echo "name=$(ls *.tgz)" >> "$GITHUB_OUTPUT"
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: release-tarball
+          name: ${{ steps.tarball.outputs.name }}
           path: "*.tgz"
           retention-days: 90
 
@@ -73,7 +77,12 @@ jobs:
           VERSION="${TAG#v}"
           PKG_NAME=$(node -p "require('./package.json').name")
 
-          NOTES=$(head -c 3900 /tmp/release-notes.md)
+          # Strip PR links, clean up, and truncate for Discord (4096 char limit)
+          CLEAN=$(sed 's| by @[^ ]* in https://github.com/[^ ]*||g; s| in https://github.com/[^ ]*||g' /tmp/release-notes.md)
+          NOTES=$(echo "$CLEAN" | head -c 3700)
+          NOTES="${NOTES}
+
+[View full changelog](${URL})"
 
           jq -n \
             --arg title "📦 ${PKG_NAME} ${TAG}" \
