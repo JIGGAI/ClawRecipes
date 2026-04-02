@@ -77,7 +77,8 @@ jobs:
           VERSION="${TAG#v}"
           PKG_NAME=$(node -p "require('./package.json').name")
 
-          NOTES=$(head -c 3900 /tmp/release-notes.md)
+          # Strip PR links, clean up, and truncate for Discord (4096 char limit)
+          NOTES=$(sed 's| by @[^ ]* in https://github.com/[^ ]*||g; s| in https://github.com/[^ ]*||g' /tmp/release-notes.md | head -c 3900)
 
           jq -n \
             --arg title "📦 ${PKG_NAME} ${TAG}" \
