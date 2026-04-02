@@ -43,6 +43,13 @@ jobs:
       - name: Pack tarball
         run: npm pack
 
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-tarball
+          path: "*.tgz"
+          retention-days: 90
+
       - name: Create GitHub Release
         id: release
         env:
