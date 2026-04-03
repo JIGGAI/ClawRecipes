@@ -399,7 +399,38 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       
       // Apply template variable replacement
       const prompt = templateReplace(promptRaw, vars);
-      
+
+      // Build output format instructions from outputFields when defined
+      const nodeConfig = asRecord((node as unknown as Record<string, unknown>)['config']);
+      const outputFields = Array.isArray(nodeConfig['outputFields']) ? nodeConfig['outputFields'] as Array<Record<string, string>> : [];
+      const validFields = outputFields.filter(f => typeof f === 'object' && f && typeof f['name'] === 'string' && f['name'].trim());
+
+      let outputFormatBlock: string;
+      if (validFields.length > 0) {
+        const fieldDescriptions = validFields.map(f => {
+          const name = String(f['name']).trim();
+          const type = String(f['type'] ?? 'text').trim();
+          const typeHint = type === 'list' ? '(array of strings)'
+                         : type === 'json' ? '(JSON object)'
+                         : '(string)';
+          return `  - "${name}" ${typeHint}`;
+        }).join('\n');
+        outputFormatBlock = [
+          'Return a JSON object with EXACTLY these fields:',
+          fieldDescriptions,
+          '',
+          'Rules:',
+          '- Return ONLY the JSON object, no markdown fences or explanation.',
+          '- Every field listed above MUST be present in your response.',
+          '- "text" fields → string values.',
+          '- "list" fields → arrays of strings.',
+          '- "json" fields → nested JSON objects.',
+          '- You may include additional fields if genuinely useful, but the listed fields are required.',
+        ].join('\n');
+      } else {
+        outputFormatBlock = 'Return ONLY the final content (the worker will store it as JSON).';
+      }
+
       const taskText = [
         `You are executing a workflow run for teamId=${teamId}.`,
         `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,
@@ -408,7 +439,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         `\n---\nPROMPT TEMPLATE\n---\n`,
         prompt.trim(),
         `\n---\nOUTPUT FORMAT\n---\n`,
-        `Return ONLY the final content (the worker will store it as JSON).`,
+        outputFormatBlock,
       ].join('\n');
 
       let text = '';
@@ -436,6 +467,30 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         const memoryContext = await buildMemoryContext(teamDir);
         const promptWithMemory = memoryContext ? `${memoryContext}\n\n${taskText}` : taskText;
 
+        // Build JSON Schema from outputFields for structured validation
+        let outputSchema: Record<string, unknown> | undefined;
+        if (validFields.length > 0) {
+          const properties: Record<string, Record<string, unknown>> = {};
+          const required: string[] = [];
+          for (const f of validFields) {
+            const name = String(f['name']).trim();
+            const type = String(f['type'] ?? 'text').trim();
+            required.push(name);
+            if (type === 'list') {
+              properties[name] = { type: 'array', items: { type: 'string' } };
+            } else if (type === 'json') {
+              properties[name] = { type: 'object' };
+            } else {
+              properties[name] = { type: 'string' };
+            }
+          }
+          outputSchema = {
+            type: 'object',
+            properties,
+            required,
+          };
+        }
+
         const llmRes = await toolsInvoke<unknown>(api, {
           tool: 'llm-task',
           action: 'json',
@@ -445,6 +500,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             timeoutMs,
             ...(provider ? { provider } : {}),
             ...(model ? { model } : {}),
+            ...(outputSchema ? { schema: outputSchema } : {}),
           },
         });
 
