@@ -1066,18 +1066,64 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           try {
             const cfgRaw = await fs.readFile(path.join(homedir, '.openclaw', 'openclaw.json'), 'utf8');
             const cfgParsed = JSON.parse(cfgRaw);
-            if (cfgParsed?.env && typeof cfgParsed.env === 'object') {
+
+            // openclaw.json supports multiple shapes historically:
+            // - { env: { KEY: "..." } }
+            // - { env: { vars: { KEY: "..." } } }  (current)
+            const envBlock = (cfgParsed as any)?.env;
+            const maybeVars = envBlock && typeof envBlock === 'object' ? (envBlock as any).vars : null;
+            const rawVars = (maybeVars && typeof maybeVars === 'object') ? maybeVars : envBlock;
+
+            if (rawVars && typeof rawVars === 'object') {
               configEnv = Object.fromEntries(
-                Object.entries(cfgParsed.env).filter(([, v]) => typeof v === 'string')
+                Object.entries(rawVars).filter(([, v]) => typeof v === 'string')
               ) as Record<string, string>;
             }
           } catch { /* config read failed — proceed with process.env only */ }
 
-          const runner = scriptPath.endsWith('.py') ? 'python3' : 'bash';
-          const scriptOutput = execSync(
-            `${runner} ${JSON.stringify(scriptPath)}`,
-            { cwd: mediaDir, timeout: timeoutMs, encoding: 'utf8', input: refinedPrompt, env: { ...process.env, ...configEnv, HOME: homedir } }
-          ).trim();
+          // If the .py script has a venv alongside it, use that Python; otherwise system python3.
+          let runner = 'bash';
+          if (scriptPath.endsWith('.py')) {
+            const scriptDir = path.dirname(scriptPath);
+            const venvPython = path.join(scriptDir, '.venv', 'bin', 'python');
+            try {
+              await fs.access(venvPython);
+              runner = venvPython;
+            } catch {
+              runner = 'python3';
+            }
+          }
+
+          let scriptOutput = '';
+          try {
+            scriptOutput = execSync(
+              `${runner} ${JSON.stringify(scriptPath)}`,
+              {
+                cwd: mediaDir,
+                timeout: timeoutMs,
+                encoding: 'utf8',
+                input: refinedPrompt,
+                env: {
+                  ...process.env,
+                  ...configEnv,
+                  HOME: homedir,
+                  MEDIA_OUTPUT_DIR: mediaDir,
+                },
+              }
+            ).trim();
+          } catch (err) {
+            // Surface stderr/stdout to make debugging skill scripts possible.
+            // execSync throws an Error with extra fields: stdout/stderr (Buffer|string)
+            const e = err as any;
+            const stdout = typeof e?.stdout === 'string' ? e.stdout : (Buffer.isBuffer(e?.stdout) ? e.stdout.toString('utf8') : '');
+            const stderr = typeof e?.stderr === 'string' ? e.stderr : (Buffer.isBuffer(e?.stderr) ? e.stderr.toString('utf8') : '');
+            const msg = [
+              e?.message ? String(e.message) : 'Skill script failed',
+              stdout ? `\n--- stdout ---\n${stdout.trim()}` : '',
+              stderr ? `\n--- stderr ---\n${stderr.trim()}` : '',
+            ].filter(Boolean).join('');
+            throw new Error(msg);
+          }
 
           // Parse the output — skill scripts print "MEDIA:/path/to/file"
           const mediaMatch = scriptOutput.match(/MEDIA:(.+)$/m);
