@@ -65,8 +65,7 @@ export class KlingVideo implements MediaDriver {
       timeout,
     });
 
-    // The script prints "✓ Done / 完成: /path/to/file.mp4" and also
-    // "Saved / 已保存: /path/to/file.mp4" — extract the last file path
+    // The script prints "Done: /path/to/file.mp4" or "Saved: /path/to/file.mp4"
     const doneMatch = scriptOutput.match(/(?:Done|完成|Saved|已保存):\s*(.+\.mp4)/m);
     if (doneMatch) {
       return {
