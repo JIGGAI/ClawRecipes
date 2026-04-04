@@ -268,6 +268,18 @@ openclaw recipes workflows worker-tick \
   --limit 10
 ```
 
+### Media driver commands
+
+List registered media generation drivers (and whether required API keys are present):
+
+```bash
+openclaw recipes workflows media-drivers
+```
+
+This is what ClawKitchen uses to populate the media provider dropdown.
+
+More: [MEDIA_DRIVERS.md](MEDIA_DRIVERS.md)
+
 ### Approval commands
 
 ```bash
