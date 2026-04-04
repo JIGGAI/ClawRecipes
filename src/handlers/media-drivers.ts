@@ -1,6 +1,13 @@
 import { getAllDrivers, isDriverAvailable } from '../lib/workflows/media-drivers/registry';
 import { loadConfigEnv } from '../lib/workflows/media-drivers/utils';
 
+export interface DurationConstraintsInfo {
+  minSeconds: number;
+  maxSeconds: number;
+  defaultSeconds: number;
+  stepSeconds?: number;
+}
+
 export interface MediaDriverInfo {
   slug: string;
   displayName: string;
@@ -8,6 +15,7 @@ export interface MediaDriverInfo {
   requiredEnvVars: string[];
   available: boolean;
   missingEnvVars: string[];
+  durationConstraints: DurationConstraintsInfo | null;
 }
 
 /**
@@ -35,6 +43,7 @@ export async function handleMediaDriversList(): Promise<MediaDriverInfo[]> {
       requiredEnvVars: driver.requiredEnvVars,
       available,
       missingEnvVars: missing,
+      durationConstraints: driver.durationConstraints ?? null,
     };
   });
 }

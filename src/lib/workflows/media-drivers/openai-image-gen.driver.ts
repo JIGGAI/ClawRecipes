@@ -7,6 +7,7 @@ export class OpenAIImageGen implements MediaDriver {
   mediaType = 'image' as const;
   displayName = 'OpenAI Image Generation (DALL-E)';
   requiredEnvVars = ['OPENAI_API_KEY'];
+  durationConstraints = null;
 
   async invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult> {
     const { prompt, outputDir, env, timeout } = opts;

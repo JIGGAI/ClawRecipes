@@ -7,6 +7,7 @@ export class NanoBananaPro implements MediaDriver {
   mediaType = 'image' as const;
   displayName = 'Nano Banana Pro (Gemini Image Generation)';
   requiredEnvVars = ['GEMINI_API_KEY'];
+  durationConstraints = null;
 
   async invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult> {
     const { prompt, outputDir, env, timeout } = opts;

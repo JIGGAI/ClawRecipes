@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult, parseDuration } from './types';
+import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult, DurationConstraints, parseDuration } from './types';
 import { findSkillDir, runScript, parseMediaOutput } from './utils';
 
 /**
@@ -17,6 +17,7 @@ export class KlingVideo implements MediaDriver {
   // Auth is via ~/.config/kling/.credentials, not env vars.
   // We check for the credentials file in a custom availability method.
   requiredEnvVars: string[] = [];
+  durationConstraints: DurationConstraints = { minSeconds: 3, maxSeconds: 15, defaultSeconds: 5, stepSeconds: 1 };
 
   /**
    * Check if Kling credentials are configured (credentials file exists with AK/SK).
