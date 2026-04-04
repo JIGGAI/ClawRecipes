@@ -1117,7 +1117,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         }
 
         // ── Step 2: Invoke the media driver to generate actual media ─────
-        const providerSlug = provider.startsWith('skill-') ? provider.replace(/^skill-/, '') : provider;
+        const providerSlug = provider;
         const configEnv = await loadConfigEnv();
         const mergedEnv = { ...process.env, ...configEnv } as Record<string, string>;
 

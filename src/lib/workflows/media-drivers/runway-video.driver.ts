@@ -3,7 +3,7 @@ import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult, DurationConstrai
 import { findSkillDir, findVenvPython, runScript, parseMediaOutput } from './utils';
 
 export class RunwayVideo implements MediaDriver {
-  slug = 'skill-runway-video';
+  slug = 'runway-video';
   mediaType = 'video' as const;
   displayName = 'Runway Video Generation';
   requiredEnvVars = ['RUNWAYML_API_SECRET'];
