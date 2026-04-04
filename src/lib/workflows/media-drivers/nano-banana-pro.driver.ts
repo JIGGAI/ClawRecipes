@@ -10,7 +10,7 @@ export class NanoBananaPro implements MediaDriver {
   durationConstraints = null;
 
   async invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult> {
-    const { prompt, outputDir, env, timeout } = opts;
+    const { prompt, outputDir, env, timeout, config } = opts;
 
     // Find the skill directory
     const skillDir = await findSkillDir(this.slug);
@@ -33,11 +33,16 @@ export class NanoBananaPro implements MediaDriver {
     // Generate a filename for the output
     const filename = 'output.png';
 
+    // Map pixel size to resolution tier (nano-banana-pro uses 1K/2K/4K)
+    const sizeStr = String(config?.size ?? '1024x1024');
+    const maxDim = Math.max(...sizeStr.split('x').map(Number).filter(n => !isNaN(n)), 1024);
+    const resolution = maxDim >= 3840 ? '4K' : maxDim >= 1792 ? '2K' : '1K';
+
     // Execute the script with argparse CLI interface
     const scriptOutput = runScript({
       runner,
       script: scriptPath,
-      args: ['--prompt', prompt, '--filename', filename],
+      args: ['--prompt', prompt, '--filename', filename, '--resolution', resolution],
       env: {
         ...env,
         HOME: process.env.HOME || '/home/control',

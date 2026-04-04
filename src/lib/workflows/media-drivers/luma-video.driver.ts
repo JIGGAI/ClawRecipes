@@ -34,6 +34,7 @@ export class LumaVideo implements MediaDriver {
         ...env,
         HOME: process.env.HOME || '/home/control',
         MEDIA_DURATION: duration,
+        MEDIA_ASPECT_RATIO: String(config?.aspect_ratio ?? config?.size ?? '16:9'),
       },
       cwd: outputDir,
       timeout,

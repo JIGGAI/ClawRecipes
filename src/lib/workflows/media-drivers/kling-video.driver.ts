@@ -58,7 +58,7 @@ export class KlingVideo implements MediaDriver {
         '--prompt', prompt,
         '--output_dir', outputDir,
         '--duration', duration,
-        '--aspect_ratio', '16:9',
+        '--aspect_ratio', String(config?.aspect_ratio ?? config?.size ?? '16:9'),
         '--mode', 'pro',
       ],
       env: {
