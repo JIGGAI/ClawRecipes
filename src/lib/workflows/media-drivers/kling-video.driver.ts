@@ -1,33 +1,62 @@
 import * as path from 'path';
+import * as fs from 'fs';
 import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult } from './types';
-import { findSkillDir, findVenvPython, runScript, parseMediaOutput } from './utils';
+import { findSkillDir, runScript, parseMediaOutput } from './utils';
 
+/**
+ * Kling AI video driver — uses official `klingai` ClawHub skill.
+ *
+ * Auth: JWT via ~/.config/kling/.credentials (Access Key + Secret Key).
+ * NOT a simple Bearer API key — the skill's auth.mjs handles JWT signing.
+ * No env var needed; credentials file is the source of truth.
+ */
 export class KlingVideo implements MediaDriver {
-  slug = 'skill-kling-video';
+  slug = 'klingai';
   mediaType = 'video' as const;
-  displayName = 'Kling Video Generation';
-  requiredEnvVars = ['KLING_API_KEY'];
+  displayName = 'Kling AI Video (Official)';
+  // Auth is via ~/.config/kling/.credentials, not env vars.
+  // We check for the credentials file in a custom availability method.
+  requiredEnvVars: string[] = [];
+
+  /**
+   * Check if Kling credentials are configured (credentials file exists with AK/SK).
+   */
+  isConfigured(): boolean {
+    const home = process.env.HOME || '/home/control';
+    const credPath = path.join(home, '.config', 'kling', '.credentials');
+    try {
+      const content = fs.readFileSync(credPath, 'utf8');
+      return content.includes('access_key_id') && content.includes('secret_access_key');
+    } catch {
+      return false;
+    }
+  }
 
   async invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult> {
     const { prompt, outputDir, env, timeout } = opts;
 
-    // Find the skill directory
     const skillDir = await findSkillDir(this.slug);
     if (!skillDir) {
-      throw new Error(`Skill directory not found for ${this.slug}`);
+      throw new Error(
+        `Skill directory not found for ${this.slug}. Install it: clawhub install klingai --force`
+      );
     }
 
-    // Find the script
-    const scriptPath = path.join(skillDir, 'generate_video.py');
-    
-    // Find Python runner
-    const runner = await findVenvPython(skillDir);
+    const scriptPath = path.join(skillDir, 'scripts', 'video.mjs');
 
-    // Execute the script with stdin input
+    // The official skill is a Node.js script (not Python)
+    const runner = 'node';
+
     const scriptOutput = runScript({
       runner,
       script: scriptPath,
-      stdin: prompt,
+      args: [
+        '--prompt', prompt,
+        '--output_dir', outputDir,
+        '--duration', '5',
+        '--aspect_ratio', '16:9',
+        '--mode', 'pro',
+      ],
       env: {
         ...env,
         HOME: process.env.HOME || '/home/control',
@@ -36,20 +65,42 @@ export class KlingVideo implements MediaDriver {
       timeout,
     });
 
-    // Parse the MEDIA: output
-    const filePath = parseMediaOutput(scriptOutput);
-    
-    if (!filePath) {
-      throw new Error(`No MEDIA: path found in script output. Output: ${scriptOutput}`);
+    // The script prints "Done: /path/to/file.mp4" or "Saved: /path/to/file.mp4"
+    const doneMatch = scriptOutput.match(/(?:Done|完成|Saved|已保存):\s*(.+\.mp4)/m);
+    if (doneMatch) {
+      return {
+        filePath: doneMatch[1].trim(),
+        metadata: { skill: this.slug, prompt },
+      };
     }
 
-    return {
-      filePath,
-      metadata: {
-        skill: this.slug,
-        prompt,
-        script_output: scriptOutput,
-      },
-    };
+    // Fallback: check for MEDIA: prefix (in case a bridge wrapper is used)
+    const mediaPath = parseMediaOutput(scriptOutput);
+    if (mediaPath) {
+      return {
+        filePath: mediaPath,
+        metadata: { skill: this.slug, prompt },
+      };
+    }
+
+    // Last resort: look for any .mp4 in output dir
+    try {
+      const files = fs.readdirSync(outputDir)
+        .filter(f => f.endsWith('.mp4'))
+        .sort()
+        .reverse();
+      if (files.length > 0) {
+        return {
+          filePath: path.join(outputDir, files[0]),
+          metadata: { skill: this.slug, prompt },
+        };
+      }
+    } catch {
+      // ignore
+    }
+
+    throw new Error(
+      `Could not find generated video in output. Script output:\n${scriptOutput}`
+    );
   }
 }
