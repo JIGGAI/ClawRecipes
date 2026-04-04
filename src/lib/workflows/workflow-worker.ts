@@ -1014,13 +1014,13 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         const timeoutMsRaw = Number(asString(config['timeoutMs'] ?? '300000'));
         const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : 300000;
 
-        // ── Step 1: Prompt refinement (optional) ──
-        // skipRefinement: when the upstream LLM already produced a clean brief,
-        // skip the extra llm-task call that tends to over-elaborate.
-        const skipRefinement = String(config['skipRefinement'] ?? config['skip_refinement'] ?? 'false').toLowerCase() === 'true';
+        // ── Step 1: Prompt refinement (opt-in) ──
+        // addRefinement: explicitly request an LLM refinement pass.
+        // Default is OFF — upstream LLM nodes should produce ready-to-use briefs.
+        const addRefinement = String(config['addRefinement'] ?? config['add_refinement'] ?? 'false').toLowerCase() === 'true';
         let refinedPrompt = prompt.trim();
 
-        if (!skipRefinement && mediaType !== 'image') {
+        if (addRefinement && mediaType !== 'image') {
           // Use llm-task refinement for non-image media (video/audio)
           const step1Text = [
             `You are a media prompt engineer for teamId=${teamId}.`,

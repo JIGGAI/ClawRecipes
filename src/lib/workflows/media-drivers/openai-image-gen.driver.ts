@@ -10,7 +10,7 @@ export class OpenAIImageGen implements MediaDriver {
   durationConstraints = null;
 
   async invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult> {
-    const { prompt, outputDir, env, timeout } = opts;
+    const { prompt, outputDir, env, timeout, config } = opts;
 
     // Find the skill directory
     const skillDir = await findSkillDir(this.slug);
@@ -24,6 +24,9 @@ export class OpenAIImageGen implements MediaDriver {
     // Find Python runner
     const runner = await findVenvPython(skillDir);
 
+    // Pass size via env var (script reads DALL_E_SIZE, defaults to 1024x1024)
+    const size = String(config?.size ?? '1024x1024');
+
     // Execute the script with stdin input
     const scriptOutput = runScript({
       runner,
@@ -32,6 +35,7 @@ export class OpenAIImageGen implements MediaDriver {
       env: {
         ...env,
         HOME: process.env.HOME || '/home/control',
+        DALL_E_SIZE: size,
       },
       cwd: outputDir,
       timeout,
