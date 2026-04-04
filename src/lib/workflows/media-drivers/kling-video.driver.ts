@@ -34,7 +34,9 @@ export class KlingVideo implements MediaDriver {
 
   async invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult> {
     const { prompt, outputDir, env, timeout, config } = opts;
-    const duration = parseDuration(config);
+    // Kling supports 3-15s; clamp to valid range
+    const rawDuration = Math.max(3, Math.min(15, Number(parseDuration(config))));
+    const duration = String(rawDuration);
 
     const skillDir = await findSkillDir(this.slug);
     if (!skillDir) {
