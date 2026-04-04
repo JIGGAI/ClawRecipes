@@ -47,6 +47,7 @@ import { handleScaffold, scaffoldAgentFromRecipe } from "./src/handlers/scaffold
 import { handleAddRoleToTeam } from "./src/handlers/team-add-role";
 import { reconcileRecipeCronJobs } from "./src/handlers/cron";
 import { handleWorkflowsApprove, handleWorkflowsPollApprovals, handleWorkflowsResume, handleWorkflowsRun, handleWorkflowsRunnerOnce, handleWorkflowsRunnerTick, handleWorkflowsWorkerTick } from "./src/handlers/workflows";
+import { handleMediaDriversList } from "./src/handlers/media-drivers";
 import { listRecipeFiles, loadRecipeById, workspacePath } from "./src/lib/recipes";
 import {
   executeWorkspaceCleanup,
@@ -726,6 +727,14 @@ workflows
               runId: String(options.runId ?? ''),
             });
             console.log(JSON.stringify(res, null, 2));
+          });
+
+        workflows
+          .command("media-drivers")
+          .description("List available media generation drivers with env-var availability")
+          .action(async () => {
+            const drivers = await handleMediaDriversList();
+            console.log(JSON.stringify(drivers));
           });
 
         workflows

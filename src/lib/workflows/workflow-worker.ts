@@ -1,10 +1,12 @@
 import fs from 'node:fs/promises';
-import { execSync } from 'node:child_process';
 import path from 'node:path';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import type { ToolTextResult } from '../../toolsInvoke';
 import { toolsInvoke } from '../../toolsInvoke';
 import { resolveTeamDir } from '../workspace';
+import { getDriver } from './media-drivers/registry';
+import { GenericDriver } from './media-drivers/generic.driver';
+import { loadConfigEnv } from './media-drivers/utils';
 import type { WorkflowLane } from './workflow-types';
 import { dequeueNextTask, enqueueTask, releaseTaskClaim, compactQueue } from './workflow-queue';
 import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow-node-output-readers';
@@ -1061,149 +1063,43 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           refinedPrompt = refinedPrompt.slice(0, MAX_IMAGE_PROMPT_LEN).replace(/\s+\S*$/, '') + '...';
         }
 
-        // ── Step 2: Invoke the skill script to generate actual media ─────
-        const homedir = process.env.HOME || '/home/control';
-        const scriptCandidates = mediaType === 'image'
-          ? ['generate_image.py', 'generate_image.sh', 'generate.sh']
-          : ['generate_video.py', 'generate_video.sh', 'generate.py', 'generate.sh'];
+        // ── Step 2: Invoke the media driver to generate actual media ─────
+        const providerSlug = provider.startsWith('skill-') ? provider.replace(/^skill-/, '') : provider;
+        const configEnv = await loadConfigEnv();
+        const mergedEnv = { ...process.env, ...configEnv } as Record<string, string>;
 
-        // Auto-discover: if provider specifies a skill, try that first, then scan all skills
-        const providerSkill = provider.startsWith('skill-') ? provider.replace(/^skill-/, '') : '';
-        const skillRoots = [
-          path.join(homedir, '.openclaw', 'skills'),
-          path.join(homedir, '.openclaw', 'workspace', 'skills'),
-        ];
-
-        let scriptPath = '';
-        let skillName = providerSkill;
-
-        // Helper: search a specific skill directory for matching scripts
-        const findScript = async (skillDir: string): Promise<string> => {
-          for (const c of scriptCandidates) {
-            const p = path.join(skillDir, c);
-            try { await fs.access(p); return p; } catch { /* skip */ }
-          }
-          return '';
-        };
-
-        // 1) Try the explicitly specified provider skill first
-        if (providerSkill) {
-          for (const root of skillRoots) {
-            scriptPath = await findScript(path.join(root, providerSkill));
-            if (scriptPath) break;
-          }
+        // Find a registered driver, or fall back to auto-discovered generic driver
+        let driver = getDriver(providerSlug);
+        if (!driver) {
+          const discovered = await GenericDriver.createFromSkill(providerSlug);
+          if (discovered) driver = discovered;
         }
-
-        // 2) If not found, auto-discover any skill that has the right script
-        if (!scriptPath) {
-          for (const root of skillRoots) {
-            try {
-              const entries = await fs.readdir(root, { withFileTypes: true });
-              for (const entry of entries) {
-                if (!entry.isDirectory()) continue;
-                const found = await findScript(path.join(root, entry.name));
-                if (found) {
-                  scriptPath = found;
-                  skillName = entry.name;
-                  break;
-                }
-              }
-            } catch { /* root dir doesn't exist */ }
-            if (scriptPath) break;
-          }
-        }
-
-        const skillSearchDirs = providerSkill
-          ? skillRoots.map(r => path.join(r, providerSkill))
-          : skillRoots;
 
         let payload: Record<string, unknown>;
-        if (scriptPath) {
-          // Run the skill script with the refined prompt
-          // Inject env vars from OpenClaw config (gateway doesn't expose them to process.env)
-          let configEnv: Record<string, string> = {};
-          try {
-            const cfgRaw = await fs.readFile(path.join(homedir, '.openclaw', 'openclaw.json'), 'utf8');
-            const cfgParsed = JSON.parse(cfgRaw);
-
-            // openclaw.json supports multiple shapes historically:
-            // - { env: { KEY: "..." } }
-            // - { env: { vars: { KEY: "..." } } }  (current)
-            const envBlock = (cfgParsed as any)?.env;
-            const maybeVars = envBlock && typeof envBlock === 'object' ? (envBlock as any).vars : null;
-            const rawVars = (maybeVars && typeof maybeVars === 'object') ? maybeVars : envBlock;
-
-            if (rawVars && typeof rawVars === 'object') {
-              configEnv = Object.fromEntries(
-                Object.entries(rawVars).filter(([, v]) => typeof v === 'string')
-              ) as Record<string, string>;
-            }
-          } catch { /* config read failed — proceed with process.env only */ }
-
-          // If the .py script has a venv alongside it, use that Python; otherwise system python3.
-          let runner = 'bash';
-          if (scriptPath.endsWith('.py')) {
-            const scriptDir = path.dirname(scriptPath);
-            const venvPython = path.join(scriptDir, '.venv', 'bin', 'python');
-            try {
-              await fs.access(venvPython);
-              runner = venvPython;
-            } catch {
-              runner = 'python3';
-            }
-          }
-
-          let scriptOutput = '';
-          try {
-            scriptOutput = execSync(
-              `${runner} ${JSON.stringify(scriptPath)}`,
-              {
-                cwd: mediaDir,
-                timeout: timeoutMs,
-                encoding: 'utf8',
-                input: refinedPrompt,
-                env: {
-                  ...process.env,
-                  ...configEnv,
-                  HOME: homedir,
-                  MEDIA_OUTPUT_DIR: mediaDir,
-                },
-              }
-            ).trim();
-          } catch (err) {
-            // Surface stderr/stdout to make debugging skill scripts possible.
-            // execSync throws an Error with extra fields: stdout/stderr (Buffer|string)
-            const e = err as any;
-            const stdout = typeof e?.stdout === 'string' ? e.stdout : (Buffer.isBuffer(e?.stdout) ? e.stdout.toString('utf8') : '');
-            const stderr = typeof e?.stderr === 'string' ? e.stderr : (Buffer.isBuffer(e?.stderr) ? e.stderr.toString('utf8') : '');
-            const msg = [
-              e?.message ? String(e.message) : 'Skill script failed',
-              stdout ? `\n--- stdout ---\n${stdout.trim()}` : '',
-              stderr ? `\n--- stderr ---\n${stderr.trim()}` : '',
-            ].filter(Boolean).join('');
-            throw new Error(msg);
-          }
-
-          // Parse the output — skill scripts print "MEDIA:/path/to/file"
-          const mediaMatch = scriptOutput.match(/MEDIA:(.+)$/m);
-          const filePath = mediaMatch ? mediaMatch[1].trim() : '';
+        if (driver) {
+          const result = await driver.invoke({
+            prompt: refinedPrompt,
+            outputDir: mediaDir,
+            env: mergedEnv,
+            timeout: timeoutMs,
+            config: node.config as Record<string, unknown> | undefined,
+          });
 
           payload = {
             [promptKey]: refinedPrompt,
-            file_path: filePath,
-            status: filePath ? 'success' : 'error',
-            skill: skillName,
-            script_output: scriptOutput,
-            error: filePath ? null : 'No MEDIA: path in script output',
+            file_path: result.filePath,
+            status: result.filePath ? 'success' : 'error',
+            skill: driver.slug,
+            script_output: (result.metadata as any)?.script_output ?? '',
+            error: result.filePath ? null : 'No file path returned from driver',
           };
         } else {
-          // No skill script found — fall back to prompt-only output
           payload = {
             [promptKey]: refinedPrompt,
             file_path: '',
-            status: 'no_skill_script',
-            skill: skillName,
-            error: `No executable script found for skill "${skillName}" in ${skillSearchDirs.join(', ')}`,
+            status: 'no_driver',
+            skill: providerSlug,
+            error: `No media driver found for provider "${providerSlug}"`,
           };
         }
         text = JSON.stringify(payload, null, 2);
