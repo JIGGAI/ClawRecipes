@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 /**
  * Find a skill directory by searching common skill roots
@@ -96,13 +96,10 @@ export interface RunScriptOpts {
 
 export function runScript(opts: RunScriptOpts): string {
   const { runner, script, args = [], stdin, env, cwd, timeout } = opts;
-  
-  const command = args.length > 0 
-    ? `${runner} ${JSON.stringify(script)} ${args.map(arg => JSON.stringify(arg)).join(' ')}`
-    : `${runner} ${JSON.stringify(script)}`;
 
   try {
-    return execSync(command, {
+    // Use execFileSync (array args, no shell) to avoid quoting issues
+    return execFileSync(runner, [script, ...args], {
       cwd,
       timeout,
       encoding: 'utf8',
