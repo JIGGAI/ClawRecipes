@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult } from './types';
+import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult, parseDuration } from './types';
 import { findSkillDir, findVenvPython, runScript, parseMediaOutput } from './utils';
 
 export class RunwayVideo implements MediaDriver {
@@ -9,7 +9,8 @@ export class RunwayVideo implements MediaDriver {
   requiredEnvVars = ['RUNWAYML_API_SECRET'];
 
   async invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult> {
-    const { prompt, outputDir, env, timeout } = opts;
+    const { prompt, outputDir, env, timeout, config } = opts;
+    const duration = parseDuration(config);
 
     // Find the skill directory
     const skillDir = await findSkillDir(this.slug);
@@ -31,6 +32,7 @@ export class RunwayVideo implements MediaDriver {
       env: {
         ...env,
         HOME: process.env.HOME || '/home/control',
+        MEDIA_DURATION: duration,
       },
       cwd: outputDir,
       timeout,

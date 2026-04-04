@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult } from './types';
+import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult, parseDuration } from './types';
 import { findSkillDir, runScript, parseMediaOutput } from './utils';
 
 /**
@@ -33,7 +33,8 @@ export class KlingVideo implements MediaDriver {
   }
 
   async invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult> {
-    const { prompt, outputDir, env, timeout } = opts;
+    const { prompt, outputDir, env, timeout, config } = opts;
+    const duration = parseDuration(config);
 
     const skillDir = await findSkillDir(this.slug);
     if (!skillDir) {
@@ -53,7 +54,7 @@ export class KlingVideo implements MediaDriver {
       args: [
         '--prompt', prompt,
         '--output_dir', outputDir,
-        '--duration', '5',
+        '--duration', duration,
         '--aspect_ratio', '16:9',
         '--mode', 'pro',
       ],
