@@ -3,7 +3,7 @@ import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult, DurationConstrai
 import { findSkillDir, findVenvPython, runScript, parseMediaOutput } from './utils';
 
 export class LumaVideo implements MediaDriver {
-  slug = 'skill-luma-video';
+  slug = 'luma-video';
   mediaType = 'video' as const;
   displayName = 'Luma Video Generation';
   requiredEnvVars = ['LUMAAI_API_KEY'];
