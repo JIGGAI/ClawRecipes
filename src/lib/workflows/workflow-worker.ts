@@ -193,6 +193,19 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
   const results: Array<{ taskId: string; runId: string; nodeId: string; status: string }> = [];
 
+  // Default lock TTL (used when we don't know the node config yet).
+  // This must be comfortably larger than typical media generation durations.
+  const DEFAULT_LOCK_TTL_MS = 30 * 60 * 1000;
+
+  // Once we know the node config, we can set a tighter (but still safe) TTL.
+  const MIN_NODE_LOCK_TTL_MS = 10 * 60 * 1000;
+  const LOCK_TTL_BUFFER_MS = 2 * 60 * 1000;
+  const getNodeLockTtlMs = (node: WorkflowNode): number => {
+    const timeoutMsRaw = asRecord(node?.config ?? {})['timeoutMs'];
+    const timeoutMs = typeof timeoutMsRaw === 'number' && Number.isFinite(timeoutMsRaw) ? timeoutMsRaw : 0;
+    return Math.max(MIN_NODE_LOCK_TTL_MS, timeoutMs + LOCK_TTL_BUFFER_MS);
+  };
+
   for (let i = 0; i < limit; i++) {
     const dq = await dequeueNextTask(teamDir, agentId, { workerId, leaseSeconds: 120 });
     if (!dq.ok || !dq.task) break;
@@ -209,9 +222,19 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
       await ensureDir(lockDir);
 
+      const claimedAtIso = new Date().toISOString();
+      const lockInfo = {
+        workerId,
+        pid: process.pid,
+        taskId: task.id,
+        claimedAt: claimedAtIso,
+        ttlMs: DEFAULT_LOCK_TTL_MS,
+        expiresAt: new Date(Date.now() + DEFAULT_LOCK_TTL_MS).toISOString(),
+      };
+
       // Node-level lock to prevent double execution.
       try {
-        await fs.writeFile(lockPath, JSON.stringify({ workerId, taskId: task.id, claimedAt: new Date().toISOString() }, null, 2), { encoding: 'utf8', flag: 'wx' });
+        await fs.writeFile(lockPath, JSON.stringify(lockInfo, null, 2), { encoding: 'utf8', flag: 'wx' });
         lockHeld = true;
       } catch {
         // Lock exists. Treat it as contention unless it looks stale.
@@ -219,10 +242,27 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         let unlocked = false;
         try {
           const raw = await readTextFile(lockPath);
-          const parsed = JSON.parse(raw) as { claimedAt?: string };
+          const parsed = JSON.parse(raw) as { claimedAt?: string; ttlMs?: number; expiresAt?: string };
+
+          const expiresAtMs = parsed?.expiresAt ? Date.parse(String(parsed.expiresAt)) : NaN;
           const claimedAtMs = parsed?.claimedAt ? Date.parse(String(parsed.claimedAt)) : NaN;
-          const ageMs = Number.isFinite(claimedAtMs) ? Date.now() - claimedAtMs : NaN;
-          const stale = Number.isFinite(ageMs) && ageMs > 10 * 60 * 1000;
+          const parsedTtlMs = typeof parsed?.ttlMs === 'number' && Number.isFinite(parsed.ttlMs) ? parsed.ttlMs : NaN;
+
+          const computedExpiryMs = Number.isFinite(claimedAtMs) && Number.isFinite(parsedTtlMs)
+            ? claimedAtMs + parsedTtlMs
+            : NaN;
+
+          // Prefer explicit expiresAt from the lock file; otherwise fall back to (claimedAt + ttlMs).
+          // If neither exists (older locks), fall back to DEFAULT_LOCK_TTL_MS.
+          const effectiveExpiryMs = Number.isFinite(expiresAtMs)
+            ? expiresAtMs
+            : Number.isFinite(computedExpiryMs)
+              ? computedExpiryMs
+              : Number.isFinite(claimedAtMs)
+                ? claimedAtMs + DEFAULT_LOCK_TTL_MS
+                : NaN;
+
+          const stale = Number.isFinite(effectiveExpiryMs) && Date.now() > effectiveExpiryMs;
           if (stale) {
             await fs.unlink(lockPath);
             unlocked = true;
@@ -233,7 +273,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
         if (unlocked) {
           try {
-            await fs.writeFile(lockPath, JSON.stringify({ workerId, taskId: task.id, claimedAt: new Date().toISOString() }, null, 2), { encoding: 'utf8', flag: 'wx' });
+            await fs.writeFile(lockPath, JSON.stringify(lockInfo, null, 2), { encoding: 'utf8', flag: 'wx' });
             lockHeld = true;
           } catch { // intentional: lock contention, skip task
             results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_locked' });
@@ -255,35 +295,48 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       const runId = task.runId;
 
       const { run } = await loadRunFile(teamDir, runsDir, runId);
-    const workflowFile = String(run.workflow.file);
-    const workflowPath = path.join(workflowsDir, workflowFile);
-    const workflowRaw = await readTextFile(workflowPath);
-    const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
+      const workflowFile = String(run.workflow.file);
+      const workflowPath = path.join(workflowsDir, workflowFile);
+      const workflowRaw = await readTextFile(workflowPath);
+      const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
 
-    const nodeIdx = workflow.nodes.findIndex((n) => String(n.id) === String(task.nodeId));
-    if (nodeIdx < 0) throw new Error(`Node not found in workflow: ${task.nodeId}`);
-    const node = workflow.nodes[nodeIdx]!;
+      const nodeIdx = workflow.nodes.findIndex((n) => String(n.id) === String(task.nodeId));
+      if (nodeIdx < 0) throw new Error(`Node not found in workflow: ${task.nodeId}`);
+      const node = workflow.nodes[nodeIdx]!;
 
-    // Stale-task guard: expired claim recovery can surface older queue entries from behind the
-    // cursor. Before executing a dequeued task, verify that this node is still actually runnable
-    // for the current run state. Otherwise we can resurrect pre-approval work and overwrite
-    // canonical node outputs for runs that already advanced.
-    const currentRun = (await loadRunFile(teamDir, runsDir, task.runId)).run;
-    const currentNodeStates = loadNodeStatesFromRun(currentRun);
-    const currentStatus = currentNodeStates[String(node.id)]?.status;
-    const currentlyRunnableIdx = pickNextRunnableNodeIndex({ workflow, run: currentRun });
-    if (
-      currentStatus === 'success' ||
-      currentStatus === 'error' ||
-      currentStatus === 'waiting' ||
-      currentlyRunnableIdx === null ||
-      String(workflow.nodes[currentlyRunnableIdx]?.id ?? '') !== String(node.id)
-    ) {
-      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_stale' });
-      continue;
-    }
+      // Now that we know the node, tighten the lock TTL based on node.config.timeoutMs.
+      try {
+        const nodeLockTtlMs = getNodeLockTtlMs(node);
+        if (nodeLockTtlMs !== lockInfo.ttlMs) {
+          await fs.writeFile(
+            lockPath,
+            JSON.stringify({ ...lockInfo, ttlMs: nodeLockTtlMs, expiresAt: new Date(Date.now() + nodeLockTtlMs).toISOString() }, null, 2),
+            { encoding: 'utf8' },
+          );
+        }
+      } catch { // intentional: best-effort lock metadata update
+        // ignore
+      }
 
-    // Determine current lane + ticket path.
+      // Stale-task guard: expired claim recovery can surface older queue entries from behind the
+      // cursor. Before executing a dequeued task, verify that this node is still actually runnable
+      // for the current run state. Otherwise we can resurrect pre-approval work and overwrite
+      // canonical node outputs for runs that already advanced.
+      const currentNodeStates = loadNodeStatesFromRun(run);
+      const currentStatus = currentNodeStates[String(node.id)]?.status;
+      const currentlyRunnableIdx = pickNextRunnableNodeIndex({ workflow, run });
+      if (
+        currentStatus === 'success' ||
+        currentStatus === 'error' ||
+        currentStatus === 'waiting' ||
+        currentlyRunnableIdx === null ||
+        String(workflow.nodes[currentlyRunnableIdx]?.id ?? '') !== String(node.id)
+      ) {
+        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_stale' });
+        continue;
+      }
+
+      // Determine current lane + ticket path.
     const laneRaw = String(run.ticket.lane);
     assertLane(laneRaw);
     let curLane: WorkflowLane = laneRaw as WorkflowLane;
