@@ -10,7 +10,8 @@ export {
 export type { 
   MediaDriver, 
   MediaDriverInvokeOpts, 
-  MediaDriverResult 
+  MediaDriverResult,
+  DurationConstraints
 } from './types';
 
 export { NanoBananaPro } from './nano-banana-pro.driver';

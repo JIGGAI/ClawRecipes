@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult, parseDuration } from './types';
+import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult, DurationConstraints, parseDuration } from './types';
 import { findSkillDir, findVenvPython, runScript, parseMediaOutput } from './utils';
 
 export class LumaVideo implements MediaDriver {
@@ -7,6 +7,7 @@ export class LumaVideo implements MediaDriver {
   mediaType = 'video' as const;
   displayName = 'Luma Video Generation';
   requiredEnvVars = ['LUMAAI_API_KEY'];
+  durationConstraints: DurationConstraints = { minSeconds: 5, maxSeconds: 9, defaultSeconds: 5, stepSeconds: 4 };
 
   async invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult> {
     const { prompt, outputDir, env, timeout, config } = opts;

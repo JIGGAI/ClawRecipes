@@ -6,6 +6,7 @@ export class GenericDriver implements MediaDriver {
   mediaType: 'image' | 'video' | 'audio';
   displayName: string;
   requiredEnvVars: string[] = [];
+  durationConstraints = null;
 
   constructor(slug: string, mediaType: 'image' | 'video' | 'audio', displayName?: string) {
     this.slug = slug;

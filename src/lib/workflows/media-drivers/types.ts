@@ -23,6 +23,17 @@ export interface MediaDriverResult {
   metadata?: Record<string, unknown>;
 }
 
+export interface DurationConstraints {
+  /** Minimum duration in seconds */
+  minSeconds: number;
+  /** Maximum duration in seconds */
+  maxSeconds: number;
+  /** Default duration in seconds */
+  defaultSeconds: number;
+  /** Allowed step increments (null = any integer) */
+  stepSeconds?: number;
+}
+
 export interface MediaDriver {
   /** ClawHub slug or skill folder name */
   slug: string;
@@ -32,6 +43,8 @@ export interface MediaDriver {
   displayName: string;
   /** Env vars needed (checked for availability in provider dropdown) */
   requiredEnvVars: string[];
+  /** Duration constraints for video/audio providers (null for image) */
+  durationConstraints: DurationConstraints | null;
   /** Run the generation */
   invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult>;
 }
