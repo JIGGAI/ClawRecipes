@@ -3,6 +3,8 @@
 This document explains how ClawRecipes workflows work in practice.
 
 If you want a copy-paste cookbook after reading this reference, also see:
+
+- [WORKFLOW_NODES.md](WORKFLOW_NODES.md) — runtime node config reference (LLM/media/tool/approval)
 - [WORKFLOW_EXAMPLES.md](WORKFLOW_EXAMPLES.md)
 
 If you are trying to answer any of these questions, start here:
