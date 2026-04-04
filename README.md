@@ -7,7 +7,7 @@
 <p align="center">
   <img src="https://img.shields.io/github/v/release/JIGGAI/ClawRecipes?color=green&label=Latest%20Release" alt="Latest Release">
   <img src="https://img.shields.io/github/license/JIGGAI/ClawRecipes?color=orange" alt="License Apache 2.0">
-  <img src="https://img.shields.io/github/actions/workflow/status/JIGGAI/ClawRecipes/publish-dual.yml?label=Build" alt="Build Status">
+  <img src="https://img.shields.io/github/actions/workflow/status/JIGGAI/ClawRecipes/release.yml?label=Build" alt="Build Status">
   <img src="https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/Node.js-18+-339933?logo=node.js&logoColor=white" alt="Node.js 18+">
   <br>
