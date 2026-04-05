@@ -4,6 +4,29 @@ import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult, DurationConstrai
 import { findSkillDir, runScript, parseMediaOutput } from './utils';
 
 /**
+ * Map aspect ratios to Kling's supported values: 16:9, 9:16, 1:1
+ */
+function mapToKlingAspectRatio(ratio: string): string {
+  const normalized = ratio.toLowerCase().trim();
+  
+  // Direct matches
+  if (normalized === '16:9' || normalized === '9:16' || normalized === '1:1') {
+    return normalized;
+  }
+  
+  // Map common ratios to closest Kling equivalent
+  const mappings: Record<string, string> = {
+    '4:3': '1:1',      // 4:3 (1.33) → 1:1 (1.00) closest square-ish
+    '3:4': '9:16',     // 3:4 (0.75) → 9:16 (0.56) closest vertical
+    '21:9': '16:9',    // 21:9 (2.33) → 16:9 (1.78) closest widescreen
+    '2:1': '16:9',     // 2:1 (2.00) → 16:9 (1.78) closest widescreen
+    '1:2': '9:16',     // 1:2 (0.50) → 9:16 (0.56) closest vertical
+  };
+  
+  return mappings[normalized] || '16:9'; // default fallback
+}
+
+/**
  * Kling AI video driver — uses official `klingai` ClawHub skill.
  *
  * Auth: JWT via ~/.config/kling/.credentials (Access Key + Secret Key).
@@ -39,6 +62,10 @@ export class KlingVideo implements MediaDriver {
     const rawDuration = Math.max(3, Math.min(15, Number(parseDuration(config))));
     const duration = String(rawDuration);
 
+    // Kling only supports 16:9, 9:16, 1:1 — map other ratios to closest match
+    const rawAspectRatio = String(config?.aspect_ratio ?? config?.size ?? '16:9');
+    const aspectRatio = mapToKlingAspectRatio(rawAspectRatio);
+
     const skillDir = await findSkillDir(this.slug);
     if (!skillDir) {
       throw new Error(
@@ -58,7 +85,7 @@ export class KlingVideo implements MediaDriver {
         '--prompt', prompt,
         '--output_dir', outputDir,
         '--duration', duration,
-        '--aspect_ratio', String(config?.aspect_ratio ?? config?.size ?? '16:9'),
+        '--aspect_ratio', aspectRatio,
         '--mode', 'pro',
       ],
       env: {
