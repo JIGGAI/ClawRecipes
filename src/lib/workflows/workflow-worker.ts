@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import type { ToolTextResult } from '../../toolsInvoke';
 import { toolsInvoke } from '../../toolsInvoke';
@@ -7,7 +8,7 @@ import { resolveTeamDir } from '../workspace';
 import { getDriver } from './media-drivers/registry';
 import { GenericDriver } from './media-drivers/generic.driver';
 import { loadConfigEnv } from './media-drivers/utils';
-import type { WorkflowLane } from './workflow-types';
+import type { WorkflowLane, WorkflowNode, RunLog } from './workflow-types';
 import { dequeueNextTask, enqueueTask, releaseTaskClaim, compactQueue } from './workflow-queue';
 import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow-node-output-readers';
 import { readTextFile } from './workflow-runner-io';
@@ -16,6 +17,7 @@ import {
   asRecord, asString, isRecord,
   normalizeWorkflow,
   assertLane, ensureDir, fileExists,
+  isoCompact, nextTicketNumber, laneToStatus,
   moveRunTicket, appendRunLog, writeRunFile, loadRunFile,
   runFilePathFor, nodeLabel,
   loadNodeStatesFromRun, pickNextRunnableNodeIndex,
@@ -129,6 +131,18 @@ async function buildTemplateVars(
   } as Record<string, string>;
 
   const { run: runSnap } = await loadRunFile(teamDir, runsDir, runId);
+
+  // Expose triggerInput as template variables (for handoff-injected data)
+  if (runSnap.triggerInput && typeof runSnap.triggerInput === 'object') {
+    for (const [key, value] of Object.entries(runSnap.triggerInput)) {
+      if (typeof value === 'string') {
+        vars[`trigger.${key}`] = value;
+      } else if (value !== null && value !== undefined) {
+        vars[`trigger.${key}`] = JSON.stringify(value);
+      }
+    }
+  }
+
   for (const nr of (runSnap.nodeResults ?? [])) {
     const nid = String((nr as Record<string, unknown>).nodeId ?? '');
     const nrOutPath = String((nr as Record<string, unknown>).nodeOutputPath ?? '');
@@ -169,6 +183,102 @@ async function buildTemplateVars(
   }
 
   return vars;
+}
+
+/**
+ * Enqueue a workflow run from a handoff node.
+ * This is a lightweight version of enqueueWorkflowRun that lives in the worker
+ * to avoid circular imports (workflow-runner re-exports workflow-worker).
+ */
+async function enqueueWorkflowRunForHandoff(api: OpenClawPluginApi, opts: {
+  teamId: string;
+  workflowFile: string;
+  trigger?: { kind: string; at?: string };
+  triggerInput?: Record<string, unknown>;
+}): Promise<{ runId: string; runLogPath: string }> {
+  const teamId = String(opts.teamId);
+  const teamDir = resolveTeamDir(api, teamId);
+  const sharedContextDir = path.join(teamDir, 'shared-context');
+  const workflowsDir = path.join(sharedContextDir, 'workflows');
+  const runsDir = path.join(sharedContextDir, 'workflow-runs');
+
+  const workflowPath = path.join(workflowsDir, opts.workflowFile);
+  const raw = await readTextFile(workflowPath);
+  const workflow = normalizeWorkflow(JSON.parse(raw));
+
+  if (!workflow.nodes?.length) throw new Error('Handoff target workflow has no nodes');
+
+  const firstLaneRaw = String(
+    workflow.nodes.find(n => n?.config && typeof n.config === 'object' && 'lane' in n.config)?.config?.lane ?? 'backlog'
+  );
+  assertLane(firstLaneRaw);
+  const initialLane: WorkflowLane = firstLaneRaw;
+
+  const runId = `${isoCompact()}-${crypto.randomBytes(4).toString('hex')}`;
+  await ensureDir(runsDir);
+
+  const runDir = path.join(runsDir, runId);
+  await ensureDir(runDir);
+  await Promise.all([
+    ensureDir(path.join(runDir, 'node-outputs')),
+    ensureDir(path.join(runDir, 'artifacts')),
+    ensureDir(path.join(runDir, 'approvals')),
+  ]);
+
+  const runLogPath = path.join(runDir, 'run.json');
+
+  const ticketNum = await nextTicketNumber(teamDir);
+  const slug = `workflow-run-${(workflow.id ?? path.basename(opts.workflowFile, path.extname(opts.workflowFile))).replace(/[^a-z0-9-]+/gi, '-').toLowerCase()}`;
+  const ticketFile = `${ticketNum}-${slug}.md`;
+
+  const laneDir = path.join(teamDir, 'work', initialLane);
+  await ensureDir(laneDir);
+  const ticketPath = path.join(laneDir, ticketFile);
+
+  const trigger = opts.trigger ?? { kind: 'handoff' };
+  const createdAt = new Date().toISOString();
+  const handoffMeta = opts.triggerInput?._handoff as Record<string, unknown> | undefined;
+
+  const md = [
+    `# ${ticketNum} — Workflow run: ${workflow.name ?? workflow.id ?? opts.workflowFile}\n\n`,
+    `Owner: lead`,
+    `Status: ${laneToStatus(initialLane)}`,
+    `\n## Run`,
+    `- workflow: ${path.relative(teamDir, workflowPath)}`,
+    `- run dir: ${path.relative(teamDir, runDir)}`,
+    `- run file: ${path.relative(teamDir, runLogPath)}`,
+    `- trigger: ${trigger.kind}${trigger.at ? ` @ ${trigger.at}` : ''}`,
+    `- runId: ${runId}`,
+    handoffMeta ? `- handoff from: team=${handoffMeta.sourceTeamId}, workflow=${handoffMeta.sourceWorkflowName}, run=${handoffMeta.sourceRunId}` : '',
+    `\n## Notes`,
+    `- Created by: handoff node`,
+    ``,
+  ].filter(Boolean).join('\n');
+
+  const initialLog: RunLog = {
+    runId,
+    createdAt,
+    updatedAt: createdAt,
+    teamId,
+    workflow: { file: opts.workflowFile, id: workflow.id ?? null, name: workflow.name ?? null },
+    ticket: { file: path.relative(teamDir, ticketPath), number: ticketNum, lane: initialLane },
+    trigger,
+    ...(opts.triggerInput && Object.keys(opts.triggerInput).length > 0 ? { triggerInput: opts.triggerInput } : {}),
+    status: 'queued',
+    priority: 0,
+    claimedBy: null,
+    claimExpiresAt: null,
+    nextNodeIndex: 0,
+    events: [{ ts: createdAt, type: 'run.enqueued', lane: initialLane, trigger: trigger.kind }],
+    nodeResults: [],
+  };
+
+  await Promise.all([
+    fs.writeFile(ticketPath, md, 'utf8'),
+    fs.writeFile(runLogPath, JSON.stringify(initialLog, null, 2), 'utf8'),
+  ]);
+
+  return { runId, runLogPath };
 }
 
 // eslint-disable-next-line complexity, max-lines-per-function
@@ -1197,6 +1307,126 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
         events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind: node.kind, nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, mediaType, agentId: agentIdMedia || agentId, nodeOutputPath: path.relative(teamDir, nodeOutputAbs), bytes: new TextEncoder().encode(text).byteLength }],
+      }));
+    } else if (kind === 'handoff') {
+      // ── Handoff node: trigger a run on another workflow (optionally on a different team) ──
+      const config = asRecord((node as unknown as Record<string, unknown>)['config']);
+      const action = asRecord(node.action);
+
+      const targetTeamId = asString(config['targetTeamId'] ?? action['targetTeamId']).trim() || teamId;
+      const targetWorkflowId = asString(config['targetWorkflowId'] ?? action['targetWorkflowId']).trim();
+      if (!targetWorkflowId) throw new Error(`Node ${nodeLabel(node)} missing config.targetWorkflowId`);
+
+      // Resolve variable mapping: each key is the target's trigger input key, each value is a {{template}} expression
+      const variableMapping = asRecord(config['variableMapping'] ?? action['variableMapping']);
+
+      // Build template vars from prior node outputs
+      const vars = await buildTemplateVars(teamDir, runsDir, task.runId, workflowFile, workflow);
+      vars['node.id'] = node.id;
+
+      // Resolve mapped variables
+      const triggerInput: Record<string, unknown> = {
+        _handoff: {
+          sourceTeamId: teamId,
+          sourceWorkflowId: String(workflow.id ?? ''),
+          sourceWorkflowName: String(workflow.name ?? workflow.id ?? workflowFile),
+          sourceRunId: task.runId,
+          sourceNodeId: node.id,
+        },
+      };
+      for (const [targetKey, templateExpr] of Object.entries(variableMapping)) {
+        if (typeof templateExpr === 'string') {
+          triggerInput[targetKey] = templateReplace(templateExpr, vars);
+        }
+      }
+
+      // Find the target workflow file
+      const targetTeamDir = resolveTeamDir(api, targetTeamId);
+      const targetWorkflowsDir = path.join(targetTeamDir, 'shared-context', 'workflows');
+      let targetWorkflowFile = '';
+
+      // Try exact filename match first, then search by workflow id
+      const candidateFiles = [
+        `${targetWorkflowId}.json`,
+        `${targetWorkflowId}`,
+      ];
+      for (const candidate of candidateFiles) {
+        const candidatePath = path.join(targetWorkflowsDir, candidate);
+        if (await fileExists(candidatePath)) {
+          targetWorkflowFile = candidate;
+          break;
+        }
+      }
+
+      // If not found by filename, scan workflows for matching id
+      if (!targetWorkflowFile) {
+        try {
+          const wfFiles = await fs.readdir(targetWorkflowsDir);
+          for (const wf of wfFiles) {
+            if (!wf.endsWith('.json')) continue;
+            try {
+              const wfPath = path.join(targetWorkflowsDir, wf);
+              const wfRaw = await fs.readFile(wfPath, 'utf8');
+              const wfParsed = JSON.parse(wfRaw);
+              if (String(wfParsed.id ?? '') === targetWorkflowId || String(wfParsed.name ?? '') === targetWorkflowId) {
+                targetWorkflowFile = wf;
+                break;
+              }
+            } catch { /* skip unparseable workflows */ }
+          }
+        } catch { /* target workflows dir may not exist */ }
+      }
+
+      if (!targetWorkflowFile) {
+        throw new Error(`Handoff target workflow "${targetWorkflowId}" not found in team "${targetTeamId}"`);
+      }
+
+      // Enqueue the target workflow run with triggerInput
+      const enqueueResult = await enqueueWorkflowRunForHandoff(api, {
+        teamId: targetTeamId,
+        workflowFile: targetWorkflowFile,
+        trigger: { kind: 'handoff', at: new Date().toISOString() },
+        triggerInput,
+      });
+
+      // Save handoff output
+      const outputObj = {
+        runId: task.runId,
+        teamId,
+        nodeId: node.id,
+        kind: 'handoff',
+        completedAt: new Date().toISOString(),
+        text: JSON.stringify({
+          targetTeamId,
+          targetWorkflowId,
+          targetWorkflowFile,
+          targetRunId: enqueueResult.runId,
+          status: 'enqueued',
+          triggerInputKeys: Object.keys(triggerInput),
+        }, null, 2),
+      };
+
+      const defaultNodeOutputRel = path.join('node-outputs', `${String(nodeIdx).padStart(3, '0')}-${node.id}.json`);
+      const nodeOutputRel = String(node?.output?.path ?? '').trim() || defaultNodeOutputRel;
+      const nodeOutputAbs = path.resolve(runDir, nodeOutputRel);
+      await ensureDir(path.dirname(nodeOutputAbs));
+      await fs.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + '\n', 'utf8');
+
+      const completedTs = new Date().toISOString();
+      await appendRunLog(runPath, (cur) => ({
+        ...cur,
+        nextNodeIndex: nodeIdx + 1,
+        nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
+        events: [...cur.events, {
+          ts: completedTs, type: 'node.completed', nodeId: node.id, kind: 'handoff',
+          targetTeamId, targetWorkflowId, targetRunId: enqueueResult.runId,
+          nodeOutputPath: path.relative(teamDir, nodeOutputAbs),
+        }],
+        nodeResults: [...(cur.nodeResults ?? []), {
+          nodeId: node.id, kind: 'handoff',
+          targetTeamId, targetWorkflowId, targetRunId: enqueueResult.runId,
+          nodeOutputPath: path.relative(teamDir, nodeOutputAbs),
+        }],
       }));
     } else {
       throw new Error(`Worker does not yet support node kind: ${kind}`);

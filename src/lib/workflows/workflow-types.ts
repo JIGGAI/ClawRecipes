@@ -1,6 +1,6 @@
 export type WorkflowLane = 'backlog' | 'in-progress' | 'testing' | 'done';
 
-export type WorkflowNodeKind = 'llm' | 'human_approval' | 'writeback' | 'tool' | 'start' | 'end' | string;
+export type WorkflowNodeKind = 'llm' | 'human_approval' | 'writeback' | 'tool' | 'handoff' | 'start' | 'end' | string;
 
 export type WorkflowEdgeOn = 'success' | 'error' | 'always';
 
@@ -85,6 +85,7 @@ export type RunLog = {
   workflow: { file: string; id: string | null; name: string | null };
   ticket: { file: string; number: string; lane: WorkflowLane };
   trigger: { kind: string; at?: string };
+  triggerInput?: Record<string, unknown>;
   status: string;
   // Scheduler/runner fields
   priority?: number;
