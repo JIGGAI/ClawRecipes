@@ -499,6 +499,12 @@ export async function executeWorkflowNodes(opts: {
       }
     }
 
+    if (kind === 'handoff') {
+      // Handoff nodes are supported in the pull-based worker (workflow-worker.ts).
+      // The synchronous executor doesn't support them yet — use `enqueue` + worker-tick instead.
+      throw new Error(`Node ${nodeLabel(node)}: handoff nodes require pull-based execution (use 'openclaw recipes workflows enqueue' + worker-tick)`);
+    }
+
     throw new Error(`Unsupported node kind: ${node.kind} (${nodeLabel(node)})`);
   }
 
