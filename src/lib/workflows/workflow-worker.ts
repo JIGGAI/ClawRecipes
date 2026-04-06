@@ -281,6 +281,234 @@ async function enqueueWorkflowRunForHandoff(api: OpenClawPluginApi, opts: {
   return { runId, runLogPath };
 }
 
+/**
+ * Check for waiting_handoff runs and resolve them if the target run has completed.
+ * Called at the start of each worker tick before processing the normal queue.
+ */
+async function checkWaitingHandoffs(api: OpenClawPluginApi, teamId: string, teamDir: string): Promise<Array<{ runId: string; nodeId: string; status: string }>> {
+  const results: Array<{ runId: string; nodeId: string; status: string }> = [];
+  const runsDir = path.join(teamDir, 'shared-context', 'workflow-runs');
+
+  // Scan all active runs for handoff-waits directories
+  let runDirs: string[] = [];
+  try {
+    const entries = await fs.readdir(runsDir, { withFileTypes: true });
+    runDirs = entries.filter(e => e.isDirectory()).map(e => e.name);
+  } catch { return results; }
+
+  for (const runDirName of runDirs) {
+    const runDir = path.join(runsDir, runDirName);
+    const handoffWaitDir = path.join(runDir, 'handoff-waits');
+
+    let waitFiles: string[] = [];
+    try {
+      const entries = await fs.readdir(handoffWaitDir);
+      waitFiles = entries.filter(f => f.endsWith('.json'));
+    } catch { continue; } // No handoff-waits dir
+
+    if (waitFiles.length === 0) continue;
+
+    // Load current run to verify it's still waiting_handoff
+    const runPath = path.join(runDir, 'run.json');
+    let run: RunLog;
+    try {
+      const raw = await fs.readFile(runPath, 'utf8');
+      run = JSON.parse(raw) as RunLog;
+    } catch { continue; }
+
+    if (run.status !== 'waiting_handoff') {
+      // Clean up stale wait markers
+      for (const wf of waitFiles) {
+        try { await fs.unlink(path.join(handoffWaitDir, wf)); } catch { /* ignore */ }
+      }
+      continue;
+    }
+
+    for (const waitFile of waitFiles) {
+      const waitPath = path.join(handoffWaitDir, waitFile);
+      let marker: {
+        nodeId: string; nodeIdx: number;
+        targetTeamId: string; targetWorkflowId: string; targetWorkflowFile: string;
+        targetRunId: string; startedAt: string; timeoutAt: string;
+        nodeOutputRel: string;
+      };
+      try {
+        marker = JSON.parse(await fs.readFile(waitPath, 'utf8'));
+      } catch { continue; }
+
+      // Check timeout
+      const now = Date.now();
+      if (new Date(marker.timeoutAt).getTime() <= now) {
+        // Timeout — fail the node
+        const failTs = new Date().toISOString();
+        await appendRunLog(runPath, (cur) => ({
+          ...cur,
+          status: 'error',
+          nodeStates: { ...(cur.nodeStates ?? {}), [marker.nodeId]: { status: 'error', ts: failTs, message: 'Handoff wait timed out' } },
+          events: [...cur.events, {
+            ts: failTs, type: 'node.error', nodeId: marker.nodeId, kind: 'handoff',
+            error: `Handoff wait timed out after ${Math.round((now - new Date(marker.startedAt).getTime()) / 1000)}s`,
+          }],
+        }));
+        try { await fs.unlink(waitPath); } catch { /* ignore */ }
+        results.push({ runId: run.runId, nodeId: marker.nodeId, status: 'timeout' });
+        continue;
+      }
+
+      // Check target run status
+      const targetTeamDir = resolveTeamDir(api, marker.targetTeamId);
+      const targetRunsDir = path.join(targetTeamDir, 'shared-context', 'workflow-runs');
+      let targetRun: RunLog;
+      try {
+        const loaded = await loadRunFile(targetTeamDir, targetRunsDir, marker.targetRunId);
+        targetRun = loaded.run;
+      } catch {
+        // Target run not found — may have been cleaned up; fail
+        const failTs = new Date().toISOString();
+        await appendRunLog(runPath, (cur) => ({
+          ...cur,
+          status: 'error',
+          nodeStates: { ...(cur.nodeStates ?? {}), [marker.nodeId]: { status: 'error', ts: failTs, message: 'Target run not found' } },
+          events: [...cur.events, {
+            ts: failTs, type: 'node.error', nodeId: marker.nodeId, kind: 'handoff',
+            error: `Target run ${marker.targetRunId} not found in team ${marker.targetTeamId}`,
+          }],
+        }));
+        try { await fs.unlink(waitPath); } catch { /* ignore */ }
+        results.push({ runId: run.runId, nodeId: marker.nodeId, status: 'error' });
+        continue;
+      }
+
+      if (targetRun.status === 'completed' || targetRun.status === 'done') {
+        // Target completed — resolve handoff node with target's output
+        const targetOutput: Record<string, unknown> = {};
+        if (Array.isArray(targetRun.nodeResults)) {
+          for (const nr of targetRun.nodeResults) {
+            if (nr.nodeId && typeof nr.nodeId === 'string') {
+              targetOutput[nr.nodeId as string] = nr;
+            }
+          }
+        }
+
+        const nodeOutputAbs = path.resolve(runDir, marker.nodeOutputRel);
+        await ensureDir(path.dirname(nodeOutputAbs));
+        const outputObj = {
+          runId: run.runId,
+          teamId,
+          nodeId: marker.nodeId,
+          kind: 'handoff',
+          completedAt: new Date().toISOString(),
+          text: JSON.stringify({
+            targetTeamId: marker.targetTeamId,
+            targetWorkflowId: marker.targetWorkflowId,
+            targetRunId: marker.targetRunId,
+            status: 'completed',
+            targetOutput,
+          }, null, 2),
+        };
+        await fs.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + '\n', 'utf8');
+
+        const completedTs = new Date().toISOString();
+
+        // Load workflow to find next node
+        const workflowsDir = path.join(teamDir, 'shared-context', 'workflows');
+        let workflow;
+        try {
+          const wfRaw = await fs.readFile(path.join(workflowsDir, run.workflow.file), 'utf8');
+          workflow = normalizeWorkflow(JSON.parse(wfRaw));
+        } catch { workflow = null; }
+
+        await appendRunLog(runPath, (cur) => ({
+          ...cur,
+          status: 'waiting_workers',
+          nextNodeIndex: marker.nodeIdx + 1,
+          nodeStates: { ...(cur.nodeStates ?? {}), [marker.nodeId]: { status: 'success', ts: completedTs } },
+          events: [...cur.events, {
+            ts: completedTs, type: 'node.completed', nodeId: marker.nodeId, kind: 'handoff',
+            targetTeamId: marker.targetTeamId, targetWorkflowId: marker.targetWorkflowId,
+            targetRunId: marker.targetRunId, mode: 'wait-for-completion',
+            nodeOutputPath: marker.nodeOutputRel,
+          }],
+        }));
+
+        // Enqueue next node if workflow is available
+        if (workflow) {
+          const updatedRun = (await loadRunFile(teamDir, runsDir, run.runId)).run;
+          const nextIdx = pickNextRunnableNodeIndex({ workflow, run: updatedRun });
+
+          if (nextIdx !== null && nextIdx >= 0 && nextIdx < workflow.nodes.length) {
+            const nextNode = workflow.nodes[nextIdx];
+            if (nextNode.type === 'end' || nextNode.type === 'start') {
+              // Auto-complete start/end
+              const autoTs = new Date().toISOString();
+              await appendRunLog(runPath, (cur) => ({
+                ...cur,
+                nextNodeIndex: nextIdx + 1,
+                nodeStates: { ...(cur.nodeStates ?? {}), [nextNode.id]: { status: 'success', ts: autoTs } },
+                events: [...cur.events, { ts: autoTs, type: 'node.completed', nodeId: nextNode.id, kind: nextNode.type }],
+              }));
+              // Check if run is done
+              const afterAutoRun = (await loadRunFile(teamDir, runsDir, run.runId)).run;
+              const afterNext = pickNextRunnableNodeIndex({ workflow, run: afterAutoRun });
+              if (afterNext === null) {
+                const doneTs = new Date().toISOString();
+                await appendRunLog(runPath, (cur) => ({
+                  ...cur,
+                  status: 'completed',
+                  events: [...cur.events, { ts: doneTs, type: 'run.completed' }],
+                }));
+              }
+            } else {
+              // Enqueue next real node to the appropriate agent's queue
+              const assignedAgent = String(nextNode.assignedTo ?? '').trim();
+              const targetAgent = assignedAgent || run.claimedBy || '';
+              if (targetAgent) {
+                await enqueueTask(teamDir, targetAgent, {
+                  teamId,
+                  runId: run.runId,
+                  nodeId: nextNode.id,
+                  kind: 'execute_node',
+                });
+              }
+            }
+          } else if (nextIdx === null) {
+            // All nodes done
+            const doneTs = new Date().toISOString();
+            await appendRunLog(runPath, (cur) => ({
+              ...cur,
+              status: 'completed',
+              events: [...cur.events, { ts: doneTs, type: 'run.completed' }],
+            }));
+          }
+        }
+
+        try { await fs.unlink(waitPath); } catch { /* ignore */ }
+        results.push({ runId: run.runId, nodeId: marker.nodeId, status: 'completed' });
+      } else if (targetRun.status === 'error' || targetRun.status === 'failed') {
+        // Target failed — fail the handoff node too
+        const failTs = new Date().toISOString();
+        const lastError = targetRun.events?.filter(e => e.type === 'node.error').pop();
+        await appendRunLog(runPath, (cur) => ({
+          ...cur,
+          status: 'error',
+          nodeStates: { ...(cur.nodeStates ?? {}), [marker.nodeId]: {
+            status: 'error', ts: failTs,
+            message: `Target workflow failed: ${lastError?.error ?? 'unknown error'}`,
+          } },
+          events: [...cur.events, {
+            ts: failTs, type: 'node.error', nodeId: marker.nodeId, kind: 'handoff',
+            error: `Target run ${marker.targetRunId} failed`,
+          }],
+        }));
+        try { await fs.unlink(waitPath); } catch { /* ignore */ }
+        results.push({ runId: run.runId, nodeId: marker.nodeId, status: 'error' });
+      }
+      // else: still running — do nothing, check again next tick
+    }
+  }
+  return results;
+}
+
 // eslint-disable-next-line complexity, max-lines-per-function
 export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
   teamId: string;
@@ -302,6 +530,14 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
   const limit = typeof opts.limit === 'number' && opts.limit > 0 ? Math.floor(opts.limit) : 1;
 
   const results: Array<{ taskId: string; runId: string; nodeId: string; status: string }> = [];
+
+  // Check for waiting_handoff runs before processing normal queue
+  try {
+    const handoffResults = await checkWaitingHandoffs(api, teamId, teamDir);
+    for (const hr of handoffResults) {
+      results.push({ taskId: '', runId: hr.runId, nodeId: hr.nodeId, status: `handoff:${hr.status}` });
+    }
+  } catch { /* handoff check is best-effort */ }
 
   // Default lock TTL (used when we don't know the node config yet).
   // This must be comfortably larger than typical media generation durations.
@@ -1389,45 +1625,109 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         triggerInput,
       });
 
-      // Save handoff output
-      const outputObj = {
-        runId: task.runId,
-        teamId,
-        nodeId: node.id,
-        kind: 'handoff',
-        completedAt: new Date().toISOString(),
-        text: JSON.stringify({
-          targetTeamId,
-          targetWorkflowId,
-          targetWorkflowFile,
-          targetRunId: enqueueResult.runId,
-          status: 'enqueued',
-          triggerInputKeys: Object.keys(triggerInput),
-        }, null, 2),
-      };
+      const handoffMode = asString(config['mode'] ?? 'fire-and-forget').trim() || 'fire-and-forget';
 
+      // Save initial handoff output
       const defaultNodeOutputRel = path.join('node-outputs', `${String(nodeIdx).padStart(3, '0')}-${node.id}.json`);
       const nodeOutputRel = String(node?.output?.path ?? '').trim() || defaultNodeOutputRel;
       const nodeOutputAbs = path.resolve(runDir, nodeOutputRel);
       await ensureDir(path.dirname(nodeOutputAbs));
-      await fs.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + '\n', 'utf8');
 
-      const completedTs = new Date().toISOString();
-      await appendRunLog(runPath, (cur) => ({
-        ...cur,
-        nextNodeIndex: nodeIdx + 1,
-        nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
-        events: [...cur.events, {
-          ts: completedTs, type: 'node.completed', nodeId: node.id, kind: 'handoff',
-          targetTeamId, targetWorkflowId, targetRunId: enqueueResult.runId,
-          nodeOutputPath: path.relative(teamDir, nodeOutputAbs),
-        }],
-        nodeResults: [...(cur.nodeResults ?? []), {
-          nodeId: node.id, kind: 'handoff',
-          targetTeamId, targetWorkflowId, targetRunId: enqueueResult.runId,
-          nodeOutputPath: path.relative(teamDir, nodeOutputAbs),
-        }],
-      }));
+      if (handoffMode === 'wait-for-completion') {
+        // Phase 2: Wait for target run to complete
+        const waitTimeoutMs = typeof config['waitTimeoutMs'] === 'number' ? config['waitTimeoutMs'] as number : 5 * 60 * 1000;
+
+        const outputObj = {
+          runId: task.runId,
+          teamId,
+          nodeId: node.id,
+          kind: 'handoff',
+          text: JSON.stringify({
+            targetTeamId,
+            targetWorkflowId,
+            targetWorkflowFile,
+            targetRunId: enqueueResult.runId,
+            status: 'waiting',
+            triggerInputKeys: Object.keys(triggerInput),
+          }, null, 2),
+        };
+        await fs.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + '\n', 'utf8');
+
+        // Write handoff wait marker so the polling loop can find it
+        const handoffWaitDir = path.join(runDir, 'handoff-waits');
+        await ensureDir(handoffWaitDir);
+        const waitMarker = {
+          nodeId: node.id,
+          nodeIdx,
+          targetTeamId,
+          targetWorkflowId,
+          targetWorkflowFile,
+          targetRunId: enqueueResult.runId,
+          startedAt: new Date().toISOString(),
+          timeoutAt: new Date(Date.now() + waitTimeoutMs).toISOString(),
+          nodeOutputRel,
+        };
+        await fs.writeFile(
+          path.join(handoffWaitDir, `${node.id}.json`),
+          JSON.stringify(waitMarker, null, 2) + '\n',
+          'utf8',
+        );
+
+        const waitingTs = new Date().toISOString();
+        await appendRunLog(runPath, (cur) => ({
+          ...cur,
+          status: 'waiting_handoff',
+          nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'waiting', ts: waitingTs } },
+          events: [...cur.events, {
+            ts: waitingTs, type: 'node.waiting_handoff', nodeId: node.id, kind: 'handoff',
+            targetTeamId, targetWorkflowId, targetRunId: enqueueResult.runId,
+            mode: 'wait-for-completion', timeoutAt: waitMarker.timeoutAt,
+          }],
+          nodeResults: [...(cur.nodeResults ?? []), {
+            nodeId: node.id, kind: 'handoff',
+            targetTeamId, targetWorkflowId, targetRunId: enqueueResult.runId,
+            nodeOutputPath: path.relative(teamDir, nodeOutputAbs),
+          }],
+        }));
+
+        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'waiting_handoff' });
+        continue; // Skip the normal next-node enqueue logic
+      } else {
+        // Fire-and-forget: complete immediately
+        const outputObj = {
+          runId: task.runId,
+          teamId,
+          nodeId: node.id,
+          kind: 'handoff',
+          completedAt: new Date().toISOString(),
+          text: JSON.stringify({
+            targetTeamId,
+            targetWorkflowId,
+            targetWorkflowFile,
+            targetRunId: enqueueResult.runId,
+            status: 'enqueued',
+            triggerInputKeys: Object.keys(triggerInput),
+          }, null, 2),
+        };
+        await fs.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + '\n', 'utf8');
+
+        const completedTs = new Date().toISOString();
+        await appendRunLog(runPath, (cur) => ({
+          ...cur,
+          nextNodeIndex: nodeIdx + 1,
+          nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
+          events: [...cur.events, {
+            ts: completedTs, type: 'node.completed', nodeId: node.id, kind: 'handoff',
+            targetTeamId, targetWorkflowId, targetRunId: enqueueResult.runId,
+            nodeOutputPath: path.relative(teamDir, nodeOutputAbs),
+          }],
+          nodeResults: [...(cur.nodeResults ?? []), {
+            nodeId: node.id, kind: 'handoff',
+            targetTeamId, targetWorkflowId, targetRunId: enqueueResult.runId,
+            nodeOutputPath: path.relative(teamDir, nodeOutputAbs),
+          }],
+        }));
+      }
     } else {
       throw new Error(`Worker does not yet support node kind: ${kind}`);
     }
@@ -1439,6 +1739,11 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
     if (updated.status === 'awaiting_approval') {
       results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'awaiting_approval' });
+      continue;
+    }
+
+    if (updated.status === 'waiting_handoff') {
+      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'waiting_handoff' });
       continue;
     }
 
