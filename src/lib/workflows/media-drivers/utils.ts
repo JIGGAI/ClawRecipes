@@ -1,6 +1,7 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
+import { toolsInvoke } from '../../../toolsInvoke';
 
 /**
  * Find a skill directory by searching common skill roots
@@ -33,7 +34,7 @@ export async function findSkillDir(slug: string): Promise<string | null> {
  */
 export async function findVenvPython(skillDir: string): Promise<string> {
   const venvPython = path.join(skillDir, '.venv', 'bin', 'python');
-  
+
   try {
     await fs.access(venvPython);
     return venvPython;
@@ -48,7 +49,7 @@ export async function findVenvPython(skillDir: string): Promise<string> {
 export async function loadConfigEnv(): Promise<Record<string, string>> {
   const homedir = process.env.HOME || '/home/control';
   const configPath = path.join(homedir, '.openclaw', 'openclaw.json');
-  
+
   try {
     const cfgRaw = await fs.readFile(configPath, 'utf8');
     const cfgParsed = JSON.parse(cfgRaw);
@@ -82,9 +83,12 @@ export function parseMediaOutput(stdout: string): string {
 }
 
 /**
- * Execute a script with proper error handling and output capture
+ * Execute a script via the OpenClaw exec tool so this plugin package does not
+ * directly import child_process. We still pass argv as discrete args and feed
+ * prompt text via stdin through a small Python wrapper script.
  */
 export interface RunScriptOpts {
+  api: OpenClawPluginApi;
   runner: string;
   script: string;
   args?: string[];
@@ -94,26 +98,95 @@ export interface RunScriptOpts {
   timeout: number;
 }
 
-export function runScript(opts: RunScriptOpts): string {
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'"'"'`)}'`;
+}
+
+function buildPythonExecSnippet(opts: RunScriptOpts): string {
   const { runner, script, args = [], stdin, env, cwd, timeout } = opts;
+  const mergedEnv = {
+    ...env,
+    MEDIA_OUTPUT_DIR: cwd,
+  };
+
+  const payload = {
+    runner,
+    script,
+    args,
+    stdin: stdin ?? '',
+    env: mergedEnv,
+    cwd,
+    timeoutMs: timeout,
+  };
+
+  return [
+    'python3 - <<\'PY\'',
+    'import json, os, subprocess, sys',
+    `payload = json.loads(${shellQuote(JSON.stringify(payload))})`,
+    'env = os.environ.copy()',
+    'env.update({k: str(v) for k, v in payload["env"].items()})',
+    'res = subprocess.run(',
+    '    [payload["runner"], payload["script"], *payload.get("args", [])],',
+    '    input=payload.get("stdin", ""),',
+    '    text=True,',
+    '    capture_output=True,',
+    '    cwd=payload["cwd"],',
+    '    env=env,',
+    '    timeout=max(1, int(payload.get("timeoutMs", 1000) / 1000))',
+    ')',
+    'sys.stdout.write(res.stdout)',
+    'sys.stderr.write(res.stderr)',
+    'raise SystemExit(res.returncode)',
+    'PY',
+  ].join('\n');
+}
+
+export async function runScript(opts: RunScriptOpts): Promise<string> {
+  const { api, timeout } = opts;
+  const timeoutSeconds = Math.max(1, Math.ceil(timeout / 1000) + 5);
+  const command = buildPythonExecSnippet(opts);
 
   try {
-    return execFileSync(runner, [script, ...args], {
-      cwd,
-      timeout,
-      encoding: 'utf8',
-      input: stdin,
-      env: {
-        ...process.env,
-        ...env,
-        MEDIA_OUTPUT_DIR: cwd,
+    const toolRes = await toolsInvoke<unknown>(api, {
+      tool: 'exec',
+      args: {
+        command,
+        workdir: opts.cwd,
+        timeout: timeoutSeconds,
       },
-    }).trim();
+    });
+
+    if (typeof toolRes === 'string') return toolRes.trim();
+
+    const rec = (toolRes && typeof toolRes === 'object') ? toolRes as Record<string, unknown> : {};
+    const stdout = typeof rec.stdout === 'string'
+      ? rec.stdout
+      : typeof rec.output === 'string'
+      ? rec.output
+      : typeof rec.result === 'string'
+      ? rec.result
+      : '';
+    const stderr = typeof rec.stderr === 'string' ? rec.stderr : '';
+    const exitCode = typeof rec.exitCode === 'number'
+      ? rec.exitCode
+      : typeof rec.code === 'number'
+      ? rec.code
+      : 0;
+
+    if (exitCode !== 0) {
+      const msg = [
+        `Script execution failed with exit code ${exitCode}`,
+        stdout ? `\n--- stdout ---\n${stdout.trim()}` : '',
+        stderr ? `\n--- stderr ---\n${stderr.trim()}` : '',
+      ].filter(Boolean).join('');
+      throw new Error(msg);
+    }
+
+    return stdout.trim();
   } catch (err) {
-    // Surface stderr/stdout to make debugging skill scripts possible
-    const e = err as any;
-    const stdout = typeof e?.stdout === 'string' ? e.stdout : (Buffer.isBuffer(e?.stdout) ? e.stdout.toString('utf8') : '');
-    const stderr = typeof e?.stderr === 'string' ? e.stderr : (Buffer.isBuffer(e?.stderr) ? e.stderr.toString('utf8') : '');
+    const e = err as Error & { stdout?: unknown; stderr?: unknown };
+    const stdout = typeof e?.stdout === 'string' ? e.stdout : '';
+    const stderr = typeof e?.stderr === 'string' ? e.stderr : '';
     const msg = [
       e?.message ? String(e.message) : 'Script execution failed',
       stdout ? `\n--- stdout ---\n${stdout.trim()}` : '',
@@ -128,7 +201,7 @@ export function runScript(opts: RunScriptOpts): string {
  */
 export async function findScriptInSkill(skillDir: string, scriptCandidates: string[]): Promise<string | null> {
   const searchDirs = [skillDir, path.join(skillDir, 'scripts')];
-  
+
   for (const dir of searchDirs) {
     for (const candidate of scriptCandidates) {
       const scriptPath = path.join(dir, candidate);
@@ -140,6 +213,6 @@ export async function findScriptInSkill(skillDir: string, scriptCandidates: stri
       }
     }
   }
-  
+
   return null;
 }

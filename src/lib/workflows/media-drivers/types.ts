@@ -1,4 +1,7 @@
+import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
+
 export interface MediaDriverInvokeOpts {
+  api: OpenClawPluginApi;
   prompt: string;
   outputDir: string;
   env: Record<string, string>;

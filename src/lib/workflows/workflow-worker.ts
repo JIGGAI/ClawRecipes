@@ -1477,6 +1477,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         let payload: Record<string, unknown>;
         if (driver) {
           const result = await driver.invoke({
+            api,
             prompt: refinedPrompt,
             outputDir: mediaDir,
             env: mergedEnv,

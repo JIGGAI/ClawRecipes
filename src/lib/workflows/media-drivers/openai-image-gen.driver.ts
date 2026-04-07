@@ -28,7 +28,8 @@ export class OpenAIImageGen implements MediaDriver {
     const size = String(config?.size ?? '1024x1024');
 
     // Execute the script with stdin input
-    const scriptOutput = runScript({
+    const scriptOutput = await runScript({
+      api: opts.api,
       runner,
       script: scriptPath,
       stdin: prompt,
