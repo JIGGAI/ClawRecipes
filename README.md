@@ -4,6 +4,19 @@
   <img src="https://github.com/JIGGAI/ClawRecipes/blob/main/clawcipes_cook.jpg" alt="ClawRecipes logo" width="240" />
 </p>
 
+<p align="center">
+  <img src="https://img.shields.io/github/v/release/JIGGAI/ClawRecipes?color=green&label=Latest%20Release" alt="Latest Release">
+  <img src="https://img.shields.io/github/license/JIGGAI/ClawRecipes?color=orange" alt="License Apache 2.0">
+  <img src="https://img.shields.io/github/actions/workflow/status/JIGGAI/ClawRecipes/release.yml?label=Build" alt="Build Status">
+  <img src="https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white" alt="TypeScript">
+  <img src="https://img.shields.io/badge/Node.js-18+-339933?logo=node.js&logoColor=white" alt="Node.js 18+">
+  <br>
+  <img src="https://img.shields.io/badge/OpenClaw-Plugin-6366f1" alt="OpenClaw Plugin">
+  <img src="https://img.shields.io/badge/CLI-Tool-blue" alt="CLI Tool">
+  <img src="https://img.shields.io/badge/Team-Automation-8b5cf6" alt="Team Automation">
+  <img src="https://img.shields.io/badge/Workflow-Engine-0891b2" alt="Workflow Engine">
+</p>
+
 ClawRecipes is an **OpenClaw plugin** for scaffolding agents, teams, and file-first workflows from Markdown recipes.
 
 If you want the short version:

@@ -9,13 +9,114 @@ cronJobs:
     name: "Lead triage loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md."
+    agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
+    message: "Lead triage loop (Social Media Team): triage inbox/tickets, assign work, and update notes/status.md. Complete all pending triage before finishing."
+    enabledByDefault: false
+
+  - id: research-work-loop
+    name: "Research work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-research"
+    timeoutSeconds: 1800
+    message: "Work loop: check for research-assigned work (trends, competitor analysis, audience insights). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/research/agent-outputs/."
+    enabledByDefault: false
+  - id: listening-work-loop
+    name: "Social Listening work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-listening"
+    timeoutSeconds: 1800
+    message: "Work loop: check for social-listening work (monitor mentions, sentiment, conversations). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/listening/agent-outputs/."
+    enabledByDefault: false
+  - id: social-seo-work-loop
+    name: "Social SEO work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-social-seo"
+    timeoutSeconds: 1800
+    message: "Work loop: check for social-SEO work (hashtag research, keyword optimization, discoverability). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/social-seo/agent-outputs/."
+    enabledByDefault: false
+  - id: editorial-work-loop
+    name: "Editorial work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-editorial"
+    timeoutSeconds: 1800
+    message: "Work loop: check for editorial work (content calendar, copy review, brand voice). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/editorial/agent-outputs/."
+    enabledByDefault: false
+  - id: community-work-loop
+    name: "Community work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-community"
+    timeoutSeconds: 1800
+    message: "Work loop: check for community work (engage, moderate, build relationships). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/community/agent-outputs/."
+    enabledByDefault: false
+  - id: distributor-work-loop
+    name: "Distributor work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-distributor"
+    timeoutSeconds: 1800
+    message: "Work loop: check for distribution work (schedule posts, cross-post, syndicate content). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/distributor/agent-outputs/."
+    enabledByDefault: false
+  - id: tiktok-work-loop
+    name: "TikTok work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-tiktok"
+    timeoutSeconds: 1800
+    message: "Work loop: check for TikTok-assigned work (create, post, optimize short-form video). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/tiktok/agent-outputs/."
+    enabledByDefault: false
+  - id: instagram-work-loop
+    name: "Instagram work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-instagram"
+    timeoutSeconds: 1800
+    message: "Work loop: check for Instagram-assigned work (stories, reels, posts, engagement). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/instagram/agent-outputs/."
+    enabledByDefault: false
+  - id: youtube-work-loop
+    name: "YouTube work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-youtube"
+    timeoutSeconds: 1800
+    message: "Work loop: check for YouTube-assigned work (video content, descriptions, community). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/youtube/agent-outputs/."
+    enabledByDefault: false
+  - id: facebook-work-loop
+    name: "Facebook work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-facebook"
+    timeoutSeconds: 1800
+    message: "Work loop: check for Facebook-assigned work (posts, groups, ads, engagement). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/facebook/agent-outputs/."
+    enabledByDefault: false
+  - id: x-work-loop
+    name: "X/Twitter work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-x"
+    timeoutSeconds: 1800
+    message: "Work loop: check for X/Twitter-assigned work (tweets, threads, engagement, spaces). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/x/agent-outputs/."
+    enabledByDefault: false
+  - id: linkedin-work-loop
+    name: "LinkedIn work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-linkedin"
+    timeoutSeconds: 1800
+    message: "Work loop: check for LinkedIn-assigned work (posts, articles, professional engagement). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/linkedin/agent-outputs/."
     enabledByDefault: false
   - id: execution-loop
     name: "Execution loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md."
+    agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
+    message: "Execution loop (Social Media Team): complete in-progress tickets and update notes/status.md. Finish each ticket fully before moving on."
     enabledByDefault: false
   # pr-watcher omitted (enable only when a real PR integration exists)
 requiredSkills: []
@@ -119,9 +220,10 @@ templates:
     - `roles/<role>/agent-outputs/` (append-only)
     - `../shared-context/agent-outputs/` (team-level, read/write from role via `../`)
 
-    ## Role work loop contract (safe-idle)
+    ## Role work loop contract
     - No-op unless explicit queued work exists for the role.
-    - If work happens, write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
+    - If work exists, complete it fully. If too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains.
+    - Write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
 
   sharedContext.priorities: |
     # Priorities (lead-curated)

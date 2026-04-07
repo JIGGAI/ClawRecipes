@@ -47,6 +47,7 @@ import { handleScaffold, scaffoldAgentFromRecipe } from "./src/handlers/scaffold
 import { handleAddRoleToTeam } from "./src/handlers/team-add-role";
 import { reconcileRecipeCronJobs } from "./src/handlers/cron";
 import { handleWorkflowsApprove, handleWorkflowsPollApprovals, handleWorkflowsResume, handleWorkflowsRun, handleWorkflowsRunnerOnce, handleWorkflowsRunnerTick, handleWorkflowsWorkerTick } from "./src/handlers/workflows";
+import { handleMediaDriversList } from "./src/handlers/media-drivers";
 import { listRecipeFiles, loadRecipeById, workspacePath } from "./src/lib/recipes";
 import {
   executeWorkspaceCleanup,
@@ -654,10 +655,12 @@ const recipesPlugin = {
           .description("Claim and execute a single queued workflow run (intended for cron-driven runner)")
           .requiredOption("--team-id <teamId>", "Team id (workspace-<teamId>)")
           .option("--lease-seconds <n>", "Lease duration in seconds", (v: string) => Number(v))
-          .action(async (options: { teamId?: string; leaseSeconds?: number }) => {
+          .option("--run-id <runId>", "Only claim this specific run id")
+          .action(async (options: { teamId?: string; leaseSeconds?: number; runId?: string }) => {
             const res = await handleWorkflowsRunnerOnce(api, {
               teamId: String(options.teamId ?? ""),
               leaseSeconds: typeof options.leaseSeconds === "number" ? options.leaseSeconds : undefined,
+              runId: options.runId,
             });
             console.log(JSON.stringify(res, null, 2));
           });
@@ -724,6 +727,14 @@ workflows
               runId: String(options.runId ?? ''),
             });
             console.log(JSON.stringify(res, null, 2));
+          });
+
+        workflows
+          .command("media-drivers")
+          .description("List available media generation drivers with env-var availability")
+          .action(async () => {
+            const drivers = await handleMediaDriversList();
+            console.log(JSON.stringify(drivers));
           });
 
         workflows

@@ -28,6 +28,7 @@ export async function enqueueWorkflowRun(api: OpenClawPluginApi, opts: {
   teamId: string;
   workflowFile: string; // filename under shared-context/workflows/
   trigger?: { kind: string; at?: string };
+  triggerInput?: Record<string, unknown>;
 }) {
   const teamId = String(opts.teamId);
   const teamDir = resolveTeamDir(api, teamId);
@@ -95,6 +96,7 @@ export async function enqueueWorkflowRun(api: OpenClawPluginApi, opts: {
     workflow: { file: opts.workflowFile, id: workflow.id ?? null, name: workflow.name ?? null },
     ticket: { file: path.relative(teamDir, ticketPath), number: ticketNum, lane: initialLane },
     trigger,
+    ...(opts.triggerInput && Object.keys(opts.triggerInput).length > 0 ? { triggerInput: opts.triggerInput } : {}),
     status: 'queued',
     priority: 0,
     claimedBy: null,
@@ -125,6 +127,7 @@ export async function enqueueWorkflowRun(api: OpenClawPluginApi, opts: {
 export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
   teamId: string;
   leaseSeconds?: number;
+  runId?: string;
 }) {
   const teamId = String(opts.teamId);
   const teamDir = resolveTeamDir(api, teamId);
@@ -174,6 +177,14 @@ export async function runWorkflowRunnerOnce(api: OpenClawPluginApi, opts: {
     } catch { // intentional: skip malformed run.json
       // ignore parse errors
     }
+  }
+
+  // If a specific runId was requested, only consider that run.
+  const targetRunId = opts.runId?.trim();
+  if (targetRunId) {
+    const match = candidates.filter((c) => path.basename(path.dirname(c.file)) === targetRunId);
+    candidates.length = 0;
+    candidates.push(...match);
   }
 
   if (!candidates.length) {

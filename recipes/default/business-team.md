@@ -9,13 +9,58 @@ cronJobs:
     name: "Lead triage loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated lead triage loop (Business Team): triage inbox/tickets, assign work, and update notes/status.md."
+    agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
+    message: "Lead triage loop (Business Team): triage inbox/tickets, assign work, and update notes/status.md. Complete all pending triage before finishing."
+    enabledByDefault: false
+
+  - id: ops-work-loop
+    name: "Operations work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-ops"
+    timeoutSeconds: 1800
+    message: "Work loop: check for operations-assigned work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/ops/agent-outputs/."
+    enabledByDefault: false
+  - id: sales-work-loop
+    name: "Sales work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-sales"
+    timeoutSeconds: 1800
+    message: "Work loop: check for sales-assigned work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/sales/agent-outputs/."
+    enabledByDefault: false
+  - id: marketing-work-loop
+    name: "Marketing work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-marketing"
+    timeoutSeconds: 1800
+    message: "Work loop: check for marketing-assigned work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/marketing/agent-outputs/."
+    enabledByDefault: false
+  - id: finance-work-loop
+    name: "Finance work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-finance"
+    timeoutSeconds: 1800
+    message: "Work loop: check for finance-assigned work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/finance/agent-outputs/."
+    enabledByDefault: false
+  - id: analyst-work-loop
+    name: "Analyst work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-analyst"
+    timeoutSeconds: 1800
+    message: "Work loop: check for analytics-assigned work. If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/analyst/agent-outputs/."
     enabledByDefault: false
   - id: execution-loop
     name: "Execution loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated execution loop (Business Team): make progress on in-progress tickets and update notes/status.md."
+    agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
+    message: "Execution loop (Business Team): complete in-progress tickets and update notes/status.md. Finish each ticket fully before moving on."
     enabledByDefault: false
 requiredSkills: []
 team:
@@ -117,9 +162,10 @@ templates:
     - `roles/<role>/agent-outputs/` (append-only)
     - `../shared-context/agent-outputs/` (team-level, read/write from role via `../`)
 
-    ## Role work loop contract (safe-idle)
+    ## Role work loop contract
     - No-op unless explicit queued work exists for the role.
-    - If work happens, write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
+    - If work exists, complete it fully. If too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains.
+    - Write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
 
   sharedContext.priorities: |
     # Priorities (lead-curated)

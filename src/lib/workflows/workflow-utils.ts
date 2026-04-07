@@ -48,6 +48,8 @@ export function normalizeWorkflow(raw: unknown): Workflow {
       // LLM: allow either promptTemplatePath (preferred) or inline promptTemplate string
       ...(config['promptTemplate'] != null ? { promptTemplate: asString(config['promptTemplate']) } : {}),
       ...(config['promptTemplatePath'] != null ? { promptTemplatePath: asString(config['promptTemplatePath']) } : {}),
+      ...(config['model'] != null ? { model: asString(config['model']) } : {}),
+      ...(config['provider'] != null ? { provider: asString(config['provider']) } : {}),
 
       // Tool
       ...(config['tool'] != null ? { tool: asString(config['tool']) } : {}),

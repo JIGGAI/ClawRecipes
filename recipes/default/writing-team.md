@@ -9,13 +9,42 @@ cronJobs:
     name: "Lead triage loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md."
+    agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
+    message: "Lead triage loop (Writing Team): triage inbox/tickets, assign work, and update notes/status.md. Complete all pending triage before finishing."
+    enabledByDefault: false
+
+  - id: outliner-work-loop
+    name: "Outliner work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-outliner"
+    timeoutSeconds: 1800
+    message: "Work loop: check for outlining work (research, structure, create outlines). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/outliner/agent-outputs/."
+    enabledByDefault: false
+  - id: writer-work-loop
+    name: "Writer work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-writer"
+    timeoutSeconds: 1800
+    message: "Work loop: check for writing-assigned work (draft, revise, polish content). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/writer/agent-outputs/."
+    enabledByDefault: false
+  - id: editor-work-loop
+    name: "Editor work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-editor"
+    timeoutSeconds: 1800
+    message: "Work loop: check for editing work (review, proofread, fact-check, ensure quality). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/editor/agent-outputs/."
     enabledByDefault: false
   - id: execution-loop
     name: "Execution loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md."
+    agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
+    message: "Execution loop (Writing Team): complete in-progress tickets and update notes/status.md. Finish each ticket fully before moving on."
     enabledByDefault: false
   # pr-watcher omitted (enable only when a real PR integration exists)
 requiredSkills: []
@@ -106,9 +135,10 @@ templates:
     - `roles/<role>/agent-outputs/` (append-only)
     - `../shared-context/agent-outputs/` (team-level, read/write from role via `../`)
 
-    ## Role work loop contract (safe-idle)
+    ## Role work loop contract
     - No-op unless explicit queued work exists for the role.
-    - If work happens, write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
+    - If work exists, complete it fully. If too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains.
+    - Write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
 
   sharedContext.priorities: |
     # Priorities (lead-curated)

@@ -9,13 +9,42 @@ cronJobs:
     name: "Lead triage loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md."
+    agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
+    message: "Lead triage loop (Customer Support Team): triage inbox/tickets, assign work, and update notes/status.md. Complete all pending triage before finishing."
+    enabledByDefault: false
+
+  - id: triage-work-loop
+    name: "Triage work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-triage"
+    timeoutSeconds: 1800
+    message: "Work loop: check for triage-assigned tickets (categorize, route, escalate). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/triage/agent-outputs/."
+    enabledByDefault: false
+  - id: resolver-work-loop
+    name: "Resolver work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-resolver"
+    timeoutSeconds: 1800
+    message: "Work loop: check for resolver-assigned tickets (investigate, resolve, follow up). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/resolver/agent-outputs/."
+    enabledByDefault: false
+  - id: kb-writer-work-loop
+    name: "KB Writer work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-kb-writer"
+    timeoutSeconds: 1800
+    message: "Work loop: check for knowledge-base work (document solutions, update FAQs, maintain docs). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/kb-writer/agent-outputs/."
     enabledByDefault: false
   - id: execution-loop
     name: "Execution loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md."
+    agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
+    message: "Execution loop (Customer Support Team): complete in-progress tickets and update notes/status.md. Finish each ticket fully before moving on."
     enabledByDefault: false
   # pr-watcher omitted (enable only when a real PR integration exists)
 requiredSkills: []
@@ -106,9 +135,10 @@ templates:
     - `roles/<role>/agent-outputs/` (append-only)
     - `../shared-context/agent-outputs/` (team-level, read/write from role via `../`)
 
-    ## Role work loop contract (safe-idle)
+    ## Role work loop contract
     - No-op unless explicit queued work exists for the role.
-    - If work happens, write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
+    - If work exists, complete it fully. If too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains.
+    - Write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
 
   sharedContext.priorities: |
     # Priorities (lead-curated)

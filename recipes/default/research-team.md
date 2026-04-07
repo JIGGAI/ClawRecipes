@@ -9,13 +9,42 @@ cronJobs:
     name: "Lead triage loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated lead triage loop: triage inbox/tickets, assign work, and update notes/status.md."
+    agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
+    message: "Lead triage loop (Research Team): triage inbox/tickets, assign work, and update notes/status.md. Complete all pending triage before finishing."
+    enabledByDefault: false
+
+  - id: researcher-work-loop
+    name: "Researcher work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-researcher"
+    timeoutSeconds: 1800
+    message: "Work loop: check for research-assigned work (investigate, gather data, analyze). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/researcher/agent-outputs/."
+    enabledByDefault: false
+  - id: fact-checker-work-loop
+    name: "Fact Checker work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-fact-checker"
+    timeoutSeconds: 1800
+    message: "Work loop: check for fact-checking work (verify claims, check sources, flag issues). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/fact-checker/agent-outputs/."
+    enabledByDefault: false
+  - id: summarizer-work-loop
+    name: "Summarizer work loop (safe-idle)"
+    schedule: "*/30 7-23 * * 1-5"
+    timezone: "America/New_York"
+    agentId: "{{teamId}}-summarizer"
+    timeoutSeconds: 1800
+    message: "Work loop: check for summarization work (distill findings, create briefs, write reports). If you have work, complete it fully. If the task is too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains. Write outputs under roles/summarizer/agent-outputs/."
     enabledByDefault: false
   - id: execution-loop
     name: "Execution loop"
     schedule: "*/30 7-23 * * 1-5"
     timezone: "America/New_York"
-    message: "Automated execution loop: make progress on in-progress tickets, keep changes small/safe, and update notes/status.md."
+    agentId: "{{teamId}}-lead"
+    timeoutSeconds: 1800
+    message: "Execution loop (Research Team): complete in-progress tickets and update notes/status.md. Finish each ticket fully before moving on."
     enabledByDefault: false
   # pr-watcher omitted (enable only when a real PR integration exists)
 requiredSkills: []
@@ -106,9 +135,10 @@ templates:
     - `roles/<role>/agent-outputs/` (append-only)
     - `../shared-context/agent-outputs/` (team-level, read/write from role via `../`)
 
-    ## Role work loop contract (safe-idle)
+    ## Role work loop contract
     - No-op unless explicit queued work exists for the role.
-    - If work happens, write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
+    - If work exists, complete it fully. If too large for one session, complete a meaningful self-contained piece and update the ticket with what's done and what remains.
+    - Write back in order: ticket → `../notes/status.md` → `roles/<role>/agent-outputs/`.
 
   sharedContext.priorities: |
     # Priorities (lead-curated)

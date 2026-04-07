@@ -64,7 +64,7 @@ type CronReconcileScope =
 
 function buildCronJobForCreate(
   scope: CronReconcileScope,
-  j: { id: string; name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; enabledByDefault?: boolean; delivery?: 'none' | 'announce' },
+  j: { id: string; name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; enabledByDefault?: boolean; delivery?: 'none' | 'announce'; timeoutSeconds?: number },
   wantEnabled: boolean
 ): Record<string, unknown> {
   const name =
@@ -90,10 +90,12 @@ function buildCronJobForCreate(
     wakeMode: "next-heartbeat",
     sessionTarget,
     schedule: { kind: "cron", expr: j.schedule, ...(j.timezone ? { tz: j.timezone } : {}) },
-    payload: effectiveAgentId ? { kind: "agentTurn", message: j.message } : { kind: "systemEvent", text: j.message },
+    payload: effectiveAgentId
+      ? { kind: "agentTurn", message: j.message, ...(j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {}) }
+      : { kind: "systemEvent", text: j.message },
     ...(j.delivery === 'none'
       ? { delivery: { mode: "none" } }
-      : j.channel || j.to
+      : j.delivery === 'announce' || j.channel || j.to
         ? {
             delivery: {
               mode: "announce",
@@ -102,12 +104,14 @@ function buildCronJobForCreate(
               bestEffort: true,
             },
           }
-        : {}),
+        : // Default to none — OpenClaw defaults isolated agentTurn crons to
+          // "announce" which errors when no channel target is available.
+          { delivery: { mode: "none" } }),
   };
 }
 
 function buildCronJobPatch(
-  j: { name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; delivery?: 'none' | 'announce' },
+  j: { name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; delivery?: 'none' | 'announce'; timeoutSeconds?: number },
   name: string
 ): CronJobPatch {
   const effectiveAgentId = typeof j.agentId === "string" && j.agentId.trim() ? j.agentId.trim() : undefined;
@@ -119,17 +123,23 @@ function buildCronJobPatch(
     sessionTarget: effectiveAgentId ? "isolated" : "main",
     wakeMode: "next-heartbeat",
     schedule: { kind: "cron", expr: j.schedule, ...(j.timezone ? { tz: j.timezone } : {}) },
-    payload: effectiveAgentId ? { kind: "agentTurn", message: j.message } : { kind: "systemEvent", text: j.message },
+    payload: effectiveAgentId
+      ? { kind: "agentTurn", message: j.message, ...(j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {}) }
+      : { kind: "systemEvent", text: j.message },
   };
   if (j.delivery === 'none') {
     patch.delivery = { mode: "none" };
-  } else if (j.channel || j.to) {
+  } else if (j.delivery === 'announce' || j.channel || j.to) {
     patch.delivery = {
       mode: "announce",
       ...(j.channel ? { channel: j.channel } : {}),
       ...(j.to ? { to: j.to } : {}),
       bestEffort: true,
     };
+  } else {
+    // Default to none — OpenClaw defaults isolated agentTurn crons to
+    // "announce" which errors when no channel target is available.
+    patch.delivery = { mode: "none" };
   }
   return patch;
 }

@@ -249,9 +249,13 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       const r1 = await runWorkflowRunnerOnce(api, { teamId });
       expect(r1.ok).toBe(true);
 
-      // Execute draft_assets and approval (approval will be executed by the worker and set awaiting_approval).
+      // Execute draft_assets (enqueues approval onto team lead).
       const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
       expect(w1.ok).toBe(true);
+
+      // Lead picks up the approval node and sets awaiting_approval.
+      const wLead1 = await runWorkflowWorkerTick(api, { teamId, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
+      expect(wLead1.ok).toBe(true);
 
       // Reject approval and resume -> should enqueue draft_assets again (needs_revision).
       const runId = enq.runId;
@@ -372,6 +376,10 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
       expect(w1.ok).toBe(true);
 
+      // Lead picks up the approval node and sets awaiting_approval.
+      const wLead = await runWorkflowWorkerTick(api, { teamId, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
+      expect(wLead.ok).toBe(true);
+
       await approveWorkflowRun(api, { teamId, runId: enq.runId, approved: true });
       const resumed = await resumeWorkflowRun(api, { teamId, runId: enq.runId });
       expect(resumed.ok).toBe(true);
@@ -444,6 +452,9 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       await runWorkflowRunnerOnce(api, { teamId });
       await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 10, workerId: "worker-writer" });
 
+      // Lead picks up the approval node and sets awaiting_approval.
+      await runWorkflowWorkerTick(api, { teamId, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
+
       const approved = await approveWorkflowRun(api, { teamId, runId: enq.runId, approved: true });
       expect(approved.ok).toBe(true);
       const resumed = await resumeWorkflowRun(api, { teamId, runId: enq.runId });
@@ -514,6 +525,9 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       await runWorkflowRunnerOnce(api, { teamId });
       await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 10, workerId: "worker-a" });
       await runWorkflowWorkerTick(api, { teamId, agentId: "agent-b", limit: 10, workerId: "worker-b" });
+
+      // Lead picks up the approval node and sets awaiting_approval.
+      await runWorkflowWorkerTick(api, { teamId, agentId: `${teamId}-lead`, limit: 10, workerId: "worker-lead" });
 
       await approveWorkflowRun(api, { teamId, runId: enq.runId, approved: true });
       const resumed = await resumeWorkflowRun(api, { teamId, runId: enq.runId });
@@ -633,6 +647,69 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       expect(secondInput?.previousNodeOutput).toEqual({ ok: true, mocked: true });
       expect(typeof secondInput?.INPUT_JSON).toBe("string");
       expect(String(secondInput?.INPUT_JSON)).toContain('"ok": true');
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("worker splits canonical provider/model strings before calling llm-task", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-llm-model";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      toolCalls.length = 0;
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "llm-model.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+
+      const workflow = {
+        id: "llm-model",
+        name: "Demo: llm model normalization",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "draft_assets",
+            kind: "llm",
+            assignedTo: { agentId: "agent-writer" },
+            action: {
+              promptTemplate: "Write a first draft.",
+              model: "anthropic/claude-sonnet-4-20250514",
+            },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "draft_assets", on: "success" },
+          { from: "draft_assets", to: "end", on: "success" },
+        ],
+      };
+
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi();
+      const enq = await enqueueWorkflowRun(api, { teamId, workflowFile });
+      expect(enq.ok).toBe(true);
+
+      const r1 = await runWorkflowRunnerOnce(api, { teamId });
+      expect(r1.ok).toBe(true);
+
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 5, workerId: "w-writer" });
+      expect(w1.ok).toBe(true);
+
+      const llmCalls = toolCalls.filter((c) => c.tool === "llm-task-fixed" || c.tool === "llm-task");
+      expect(llmCalls.length).toBe(1);
+      expect(llmCalls[0]!.args?.provider).toBe("anthropic");
+      expect(llmCalls[0]!.args?.model).toBe("claude-sonnet-4-20250514");
     } finally {
       process.env.OPENCLAW_WORKSPACE = prevWorkspace;
       await fs.rm(base, { recursive: true, force: true });
