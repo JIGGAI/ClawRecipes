@@ -50,7 +50,6 @@ export class NanoBananaPro implements MediaDriver {
       },
       cwd: outputDir,
       timeout,
-      sessionKey: opts.sessionKey,
     });
 
     // nano-banana-pro prints the full path on stdout

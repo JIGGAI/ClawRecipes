@@ -39,12 +39,11 @@ export class RunwayVideo implements MediaDriver {
       },
       cwd: outputDir,
       timeout,
-      sessionKey: opts.sessionKey,
     });
 
     // Parse the MEDIA: output
     const filePath = parseMediaOutput(scriptOutput);
-    
+
     if (!filePath) {
       throw new Error(`No MEDIA: path found in script output. Output: ${scriptOutput}`);
     }

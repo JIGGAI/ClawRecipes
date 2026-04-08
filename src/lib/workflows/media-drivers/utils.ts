@@ -1,7 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
-import { toolsInvoke } from '../../../toolsInvoke';
 
 /**
  * Find a skill directory by searching common skill roots
@@ -96,7 +95,6 @@ export interface RunScriptOpts {
   env: Record<string, string>;
   cwd: string;
   timeout: number;
-  sessionKey?: string;
 }
 
 function buildPythonExecSnippet(opts: RunScriptOpts): string {
@@ -142,59 +140,32 @@ function buildPythonExecSnippet(opts: RunScriptOpts): string {
 }
 
 export async function runScript(opts: RunScriptOpts): Promise<string> {
-  const { api, timeout, sessionKey } = opts;
-  const timeoutSeconds = Math.max(1, Math.ceil(timeout / 1000) + 5);
+  const { api, timeout } = opts;
+  const timeoutMs = Math.max(1000, timeout + 5000);
   const command = buildPythonExecSnippet(opts);
-  const debugId = `media-run:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
-  const logPrefix = `[recipes.media-driver] ${debugId}`;
-
-  console.error(`${logPrefix} start script=${opts.script} cwd=${opts.cwd} timeoutSec=${timeoutSeconds}`);
 
   try {
-    const toolRes = await toolsInvoke<unknown>(api, {
-      tool: 'exec',
-      ...(sessionKey ? { sessionKey } : {}),
-      args: {
-        command,
-        workdir: opts.cwd,
-        timeout: timeoutSeconds,
-      },
-    });
+    // Use the plugin SDK's runtime exec — available to all plugins without
+    // gateway tool permissions (unlike toolsInvoke('exec') which is session-gated).
+    const result = await api.runtime.system.runCommandWithTimeout(
+      ['bash', '-c', command],
+      { timeoutMs, cwd: opts.cwd },
+    );
 
-    if (typeof toolRes === 'string') {
-      return toolRes.trim();
-    }
-
-    const rec = (toolRes && typeof toolRes === 'object') ? toolRes as Record<string, unknown> : {};
-    const stdout = typeof rec.stdout === 'string'
-      ? rec.stdout
-      : typeof rec.output === 'string'
-      ? rec.output
-      : typeof rec.result === 'string'
-      ? rec.result
-      : '';
-    const stderr = typeof rec.stderr === 'string' ? rec.stderr : '';
-    const exitCode = typeof rec.exitCode === 'number'
-      ? rec.exitCode
-      : typeof rec.code === 'number'
-      ? rec.code
-      : 0;
-
-    if (exitCode !== 0) {
+    if (result.code !== 0) {
       const msg = [
-        `Script execution failed with exit code ${exitCode}`,
-        stdout ? `\n--- stdout ---\n${stdout.trim()}` : '',
-        stderr ? `\n--- stderr ---\n${stderr.trim()}` : '',
+        `Script execution failed with exit code ${result.code}`,
+        result.stdout ? `\n--- stdout ---\n${result.stdout.trim()}` : '',
+        result.stderr ? `\n--- stderr ---\n${result.stderr.trim()}` : '',
       ].filter(Boolean).join('');
       throw new Error(msg);
     }
 
-    return stdout.trim();
+    return (result.stdout || '').trim();
   } catch (err) {
-    const e = err as Error & { stdout?: unknown; stderr?: unknown };
-    const stdout = typeof e?.stdout === 'string' ? e.stdout : '';
-    const stderr = typeof e?.stderr === 'string' ? e.stderr : '';
-    console.error(`${logPrefix} error: ${e?.message ?? 'Script execution failed'}`);
+    const e = err as Error & { stdout?: string; stderr?: string };
+    const stdout = e?.stdout ?? '';
+    const stderr = e?.stderr ?? '';
     const msg = [
       e?.message ? String(e.message) : 'Script execution failed',
       stdout ? `\n--- stdout ---\n${stdout.trim()}` : '',

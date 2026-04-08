@@ -54,7 +54,6 @@ export class GenericDriver implements MediaDriver {
       },
       cwd: outputDir,
       timeout,
-      sessionKey: opts.sessionKey,
     });
 
     // Try to parse MEDIA: output first
