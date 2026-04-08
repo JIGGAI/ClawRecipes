@@ -669,7 +669,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       // cursor. Before executing a dequeued task, verify that this node is still actually runnable
       // for the current run state. Otherwise we can resurrect pre-approval work and overwrite
       // canonical node outputs for runs that already advanced.
-      const currentNodeStates = loadNodeStatesFromRun(run);
+      const currentNodeStates = loadNodeStatesFromRun(run, { workflow });
       const currentStatus = currentNodeStates[String(node.id)]?.status;
       const currentlyRunnableIdx = pickNextRunnableNodeIndex({ workflow, run });
       if (
