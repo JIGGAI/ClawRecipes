@@ -40,6 +40,7 @@ export class OpenAIImageGen implements MediaDriver {
       },
       cwd: outputDir,
       timeout,
+      sessionKey: opts.sessionKey,
     });
 
     // Parse the MEDIA: output

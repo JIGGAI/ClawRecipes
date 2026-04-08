@@ -7,6 +7,7 @@ export interface MediaDriverInvokeOpts {
   env: Record<string, string>;
   timeout: number;
   config?: Record<string, unknown>;
+  sessionKey?: string;
 }
 
 const DEFAULT_DURATION_SECONDS = 15;

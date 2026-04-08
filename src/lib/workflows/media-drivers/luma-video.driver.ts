@@ -39,6 +39,7 @@ export class LumaVideo implements MediaDriver {
       },
       cwd: outputDir,
       timeout,
+      sessionKey: opts.sessionKey,
     });
 
     // Parse the MEDIA: output

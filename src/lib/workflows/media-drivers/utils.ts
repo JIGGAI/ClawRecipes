@@ -96,6 +96,7 @@ export interface RunScriptOpts {
   env: Record<string, string>;
   cwd: string;
   timeout: number;
+  sessionKey?: string;
 }
 
 function shellQuote(value: string): string {
@@ -142,14 +143,14 @@ function buildPythonExecSnippet(opts: RunScriptOpts): string {
 }
 
 export async function runScript(opts: RunScriptOpts): Promise<string> {
-  const { api, timeout } = opts;
+  const { api, timeout, sessionKey } = opts;
   const timeoutSeconds = Math.max(1, Math.ceil(timeout / 1000) + 5);
   const command = buildPythonExecSnippet(opts);
 
   try {
     const toolRes = await toolsInvoke<unknown>(api, {
       tool: 'exec',
-      sessionKey: 'agent:main:main',
+      ...(sessionKey ? { sessionKey } : {}),
       args: {
         command,
         workdir: opts.cwd,
