@@ -99,10 +99,6 @@ export interface RunScriptOpts {
   sessionKey?: string;
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
-}
-
 function buildPythonExecSnippet(opts: RunScriptOpts): string {
   const { runner, script, args = [], stdin, env, cwd, timeout } = opts;
   const mergedEnv = {
@@ -120,25 +116,28 @@ function buildPythonExecSnippet(opts: RunScriptOpts): string {
     timeoutMs: timeout,
   };
 
+  // Base64-encode the payload to avoid shell injection and heredoc delimiter collisions.
+  const payloadB64 = Buffer.from(JSON.stringify(payload)).toString('base64');
+
   return [
-    'python3 - <<\'PY\'',
-    'import json, os, subprocess, sys',
-    `payload = json.loads(${shellQuote(JSON.stringify(payload))})`,
-    'env = os.environ.copy()',
-    'env.update({k: str(v) for k, v in payload["env"].items()})',
-    'res = subprocess.run(',
-    '    [payload["runner"], payload["script"], *payload.get("args", [])],',
-    '    input=payload.get("stdin", ""),',
-    '    text=True,',
-    '    capture_output=True,',
-    '    cwd=payload["cwd"],',
-    '    env=env,',
-    '    timeout=max(1, int(payload.get("timeoutMs", 1000) / 1000))',
-    ')',
-    'sys.stdout.write(res.stdout)',
-    'sys.stderr.write(res.stderr)',
-    'raise SystemExit(res.returncode)',
-    'PY',
+    `python3 -c '`,
+    `import base64, json, os, subprocess, sys;`,
+    `payload = json.loads(base64.b64decode("${payloadB64}").decode());`,
+    `env = os.environ.copy();`,
+    `env.update({k: str(v) for k, v in payload["env"].items()});`,
+    `res = subprocess.run(`,
+    `  [payload["runner"], payload["script"], *payload.get("args", [])],`,
+    `  input=payload.get("stdin", ""),`,
+    `  text=True,`,
+    `  capture_output=True,`,
+    `  cwd=payload["cwd"],`,
+    `  env=env,`,
+    `  timeout=max(1, int(payload.get("timeoutMs", 1000) / 1000))`,
+    `);`,
+    `sys.stdout.write(res.stdout);`,
+    `sys.stderr.write(res.stderr);`,
+    `raise SystemExit(res.returncode)`,
+    `'`,
   ].join('\n');
 }
 
@@ -149,11 +148,9 @@ export async function runScript(opts: RunScriptOpts): Promise<string> {
   const debugId = `media-run:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
   const logPrefix = `[recipes.media-driver] ${debugId}`;
 
-  console.error(`${logPrefix} start runner=${opts.runner} script=${opts.script} cwd=${opts.cwd} timeoutMs=${timeout} timeoutSec=${timeoutSeconds} sessionKey=${sessionKey || '<default>'}`);
-  console.error(`${logPrefix} args=${JSON.stringify(opts.args ?? [])} stdinChars=${opts.stdin?.length ?? 0} envKeys=${Object.keys(opts.env ?? {}).length}`);
+  console.error(`${logPrefix} start script=${opts.script} cwd=${opts.cwd} timeoutSec=${timeoutSeconds}`);
 
   try {
-    console.error(`${logPrefix} invoking toolsInvoke(exec)`);
     const toolRes = await toolsInvoke<unknown>(api, {
       tool: 'exec',
       ...(sessionKey ? { sessionKey } : {}),
@@ -163,10 +160,8 @@ export async function runScript(opts: RunScriptOpts): Promise<string> {
         timeout: timeoutSeconds,
       },
     });
-    console.error(`${logPrefix} toolsInvoke(exec) returned type=${typeof toolRes}`);
 
     if (typeof toolRes === 'string') {
-      console.error(`${logPrefix} string result chars=${toolRes.length}`);
       return toolRes.trim();
     }
 
@@ -185,8 +180,6 @@ export async function runScript(opts: RunScriptOpts): Promise<string> {
       ? rec.code
       : 0;
 
-    console.error(`${logPrefix} parsed result exitCode=${exitCode} stdoutChars=${stdout.length} stderrChars=${stderr.length}`);
-
     if (exitCode !== 0) {
       const msg = [
         `Script execution failed with exit code ${exitCode}`,
@@ -196,13 +189,12 @@ export async function runScript(opts: RunScriptOpts): Promise<string> {
       throw new Error(msg);
     }
 
-    console.error(`${logPrefix} success stdoutPreview=${JSON.stringify(stdout.slice(0, 300))}`);
     return stdout.trim();
   } catch (err) {
     const e = err as Error & { stdout?: unknown; stderr?: unknown };
     const stdout = typeof e?.stdout === 'string' ? e.stdout : '';
     const stderr = typeof e?.stderr === 'string' ? e.stderr : '';
-    console.error(`${logPrefix} error message=${JSON.stringify(e?.message ?? 'Script execution failed')} stdoutChars=${stdout.length} stderrChars=${stderr.length}`);
+    console.error(`${logPrefix} error: ${e?.message ?? 'Script execution failed'}`);
     const msg = [
       e?.message ? String(e.message) : 'Script execution failed',
       stdout ? `\n--- stdout ---\n${stdout.trim()}` : '',

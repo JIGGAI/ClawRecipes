@@ -39,7 +39,8 @@ export class NanoBananaPro implements MediaDriver {
     const resolution = maxDim >= 3840 ? '4K' : maxDim >= 1792 ? '2K' : '1K';
 
     // Execute the script with argparse CLI interface
-    const scriptOutput = runScript({
+    const scriptOutput = await runScript({
+      api: opts.api,
       runner,
       script: scriptPath,
       args: ['--prompt', prompt, '--filename', filename, '--resolution', resolution],
@@ -49,6 +50,7 @@ export class NanoBananaPro implements MediaDriver {
       },
       cwd: outputDir,
       timeout,
+      sessionKey: opts.sessionKey,
     });
 
     // nano-banana-pro prints the full path on stdout

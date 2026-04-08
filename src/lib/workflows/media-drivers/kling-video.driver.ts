@@ -78,7 +78,8 @@ export class KlingVideo implements MediaDriver {
     // The official skill is a Node.js script (not Python)
     const runner = 'node';
 
-    const scriptOutput = runScript({
+    const scriptOutput = await runScript({
+      api: opts.api,
       runner,
       script: scriptPath,
       args: [
@@ -94,6 +95,7 @@ export class KlingVideo implements MediaDriver {
       },
       cwd: outputDir,
       timeout,
+      sessionKey: opts.sessionKey,
     });
 
     // The script prints "Done: /path/to/file.mp4" or "Saved: /path/to/file.mp4"
