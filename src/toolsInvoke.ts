@@ -6,6 +6,19 @@ export const TOOLS_INVOKE_TIMEOUT_MS = 120_000;
 export const RETRY_DELAY_BASE_MS = 150;
 export const GATEWAY_DEFAULT_PORT = 18789;
 
+/**
+ * Custom error class that preserves HTTP status from gateway responses.
+ * Used downstream to classify errors (e.g. 402 → funding, 429 → rate-limit).
+ */
+export class ToolsInvokeError extends Error {
+  httpStatus: number;
+  constructor(message: string, httpStatus: number) {
+    super(message);
+    this.name = 'ToolsInvokeError';
+    this.httpStatus = httpStatus;
+  }
+}
+
 export type ToolTextResult = { content?: Array<{ type: string; text?: string }> };
 
 export type ToolsInvokeRequest = {
@@ -43,7 +56,7 @@ async function doSingleToolsInvoke<T>(url: string, token: string, req: ToolsInvo
   }).finally(() => clearTimeout(t));
 
   const json = (await res.json()) as ToolsInvokeResponse;
-  if (!res.ok || !json.ok) throw new Error(parseToolsInvokeError(json, res.status));
+  if (!res.ok || !json.ok) throw new ToolsInvokeError(parseToolsInvokeError(json, res.status), res.status);
   return json.result as T;
 }
 
