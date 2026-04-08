@@ -146,8 +146,14 @@ export async function runScript(opts: RunScriptOpts): Promise<string> {
   const { api, timeout, sessionKey } = opts;
   const timeoutSeconds = Math.max(1, Math.ceil(timeout / 1000) + 5);
   const command = buildPythonExecSnippet(opts);
+  const debugId = `media-run:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`;
+  const logPrefix = `[recipes.media-driver] ${debugId}`;
+
+  console.error(`${logPrefix} start runner=${opts.runner} script=${opts.script} cwd=${opts.cwd} timeoutMs=${timeout} timeoutSec=${timeoutSeconds} sessionKey=${sessionKey || '<default>'}`);
+  console.error(`${logPrefix} args=${JSON.stringify(opts.args ?? [])} stdinChars=${opts.stdin?.length ?? 0} envKeys=${Object.keys(opts.env ?? {}).length}`);
 
   try {
+    console.error(`${logPrefix} invoking toolsInvoke(exec)`);
     const toolRes = await toolsInvoke<unknown>(api, {
       tool: 'exec',
       ...(sessionKey ? { sessionKey } : {}),
@@ -157,8 +163,12 @@ export async function runScript(opts: RunScriptOpts): Promise<string> {
         timeout: timeoutSeconds,
       },
     });
+    console.error(`${logPrefix} toolsInvoke(exec) returned type=${typeof toolRes}`);
 
-    if (typeof toolRes === 'string') return toolRes.trim();
+    if (typeof toolRes === 'string') {
+      console.error(`${logPrefix} string result chars=${toolRes.length}`);
+      return toolRes.trim();
+    }
 
     const rec = (toolRes && typeof toolRes === 'object') ? toolRes as Record<string, unknown> : {};
     const stdout = typeof rec.stdout === 'string'
@@ -175,6 +185,8 @@ export async function runScript(opts: RunScriptOpts): Promise<string> {
       ? rec.code
       : 0;
 
+    console.error(`${logPrefix} parsed result exitCode=${exitCode} stdoutChars=${stdout.length} stderrChars=${stderr.length}`);
+
     if (exitCode !== 0) {
       const msg = [
         `Script execution failed with exit code ${exitCode}`,
@@ -184,11 +196,13 @@ export async function runScript(opts: RunScriptOpts): Promise<string> {
       throw new Error(msg);
     }
 
+    console.error(`${logPrefix} success stdoutPreview=${JSON.stringify(stdout.slice(0, 300))}`);
     return stdout.trim();
   } catch (err) {
     const e = err as Error & { stdout?: unknown; stderr?: unknown };
     const stdout = typeof e?.stdout === 'string' ? e.stdout : '';
     const stderr = typeof e?.stderr === 'string' ? e.stderr : '';
+    console.error(`${logPrefix} error message=${JSON.stringify(e?.message ?? 'Script execution failed')} stdoutChars=${stdout.length} stderrChars=${stderr.length}`);
     const msg = [
       e?.message ? String(e.message) : 'Script execution failed',
       stdout ? `\n--- stdout ---\n${stdout.trim()}` : '',
