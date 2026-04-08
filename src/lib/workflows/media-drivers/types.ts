@@ -1,9 +1,13 @@
+import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
+
 export interface MediaDriverInvokeOpts {
+  api: OpenClawPluginApi;
   prompt: string;
   outputDir: string;
   env: Record<string, string>;
   timeout: number;
   config?: Record<string, unknown>;
+  sessionKey?: string;
 }
 
 const DEFAULT_DURATION_SECONDS = 15;

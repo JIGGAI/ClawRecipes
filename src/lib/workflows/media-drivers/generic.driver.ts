@@ -43,7 +43,8 @@ export class GenericDriver implements MediaDriver {
     }
 
     // Execute the script with stdin input (most common interface)
-    const scriptOutput = runScript({
+    const scriptOutput = await runScript({
+      api: opts.api,
       runner,
       script: scriptPath,
       stdin: prompt,
@@ -53,6 +54,7 @@ export class GenericDriver implements MediaDriver {
       },
       cwd: outputDir,
       timeout,
+      sessionKey: opts.sessionKey,
     });
 
     // Try to parse MEDIA: output first

@@ -1384,6 +1384,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       const style = asString(config['style']).trim() || 'natural';
       const outputPathRaw = asString(config['outputPath']).trim();
       const agentIdMedia = asString(config['agentId'] ?? action['agentId'] ?? '').trim();
+      const mediaExecSessionKey = asString(config['execSessionKey'] ?? action['execSessionKey'] ?? '').trim();
 
       if (!promptTemplateRaw) throw new Error(`Node ${nodeLabel(node)} missing prompt or promptTemplate for media generation`);
 
@@ -1477,11 +1478,13 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         let payload: Record<string, unknown>;
         if (driver) {
           const result = await driver.invoke({
+            api,
             prompt: refinedPrompt,
             outputDir: mediaDir,
             env: mergedEnv,
             timeout: timeoutMs,
             config: node.config as Record<string, unknown> | undefined,
+            sessionKey: mediaExecSessionKey || undefined,
           });
 
           payload = {
