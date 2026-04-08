@@ -1034,6 +1034,19 @@ workflows
             logScaffoldResult(res, String(options.recipe));
           });
 
+        cmd
+          .command("kitchen-manifest")
+          .description("Generate the Kitchen manifest file (pre-computed nav/shell data for ClawKitchen)")
+          .option("--output <path>", "Override output path (default: ~/.openclaw/kitchen-manifest.json)")
+          .action(async (options: { output?: string }) => {
+            const { generateKitchenManifest } = await import("./src/lib/kitchen-manifest");
+            const manifest = await generateKitchenManifest({
+              api,
+              outputPath: options.output || undefined,
+            });
+            console.log(JSON.stringify({ ok: true, generatedAt: manifest.generatedAt, teams: Object.keys(manifest.teams).length, agents: manifest.agents.length, recipes: manifest.recipes.length }));
+          });
+
       },
       { commands: ["recipes"] },
     );

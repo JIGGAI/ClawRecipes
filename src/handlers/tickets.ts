@@ -7,6 +7,7 @@ import { ticketStageDir } from "../lib/lanes";
 import { computeNextTicketNumber, TICKET_FILENAME_REGEX } from "../lib/ticket-finder";
 import { resolveTeamContext } from "../lib/workspace";
 import { VALID_ROLES, VALID_STAGES } from "../lib/constants";
+import { scheduleManifestRegeneration } from "../lib/kitchen-manifest";
 
 export function patchTicketField(md: string, key: string, value: string): string {
   const lineRe = new RegExp(`^${key}:\\s.*$`, "m");
@@ -110,6 +111,7 @@ export async function handleMoveTicket(
 
   // Assignment stubs are deprecated; no archival behavior.
 
+  scheduleManifestRegeneration(api);
   return { ok: true, from: srcPath, to: destPath };
 }
 
@@ -293,6 +295,7 @@ export async function handleDispatch(
     // Dispatch still succeeds; nudgeQueued stays false so caller knows the nudge was skipped.
     nudgeQueued = false;
   }
+  scheduleManifestRegeneration(api);
   return { ok: true as const, wrote: plan.files.map((f) => f.path), nudgeQueued };
 }
 

@@ -13,6 +13,7 @@ import { pickRecipeId } from "../lib/recipe-id";
 import { recipeIdTakenForTeam, validateRecipeAndSkills, writeWorkspaceRecipeFile } from "../lib/scaffold-utils";
 import { scaffoldAgentFromRecipe } from "./scaffold";
 import { renderTemplate } from "../lib/template";
+import { scheduleManifestRegeneration } from "../lib/kitchen-manifest";
 import { reconcileRecipeCronJobs } from "./cron";
 import { lintRecipe } from "../lib/recipe-lint";
 
@@ -510,6 +511,7 @@ export async function handleScaffoldTeam(
     scope: { kind: "team", teamId, recipeId: recipe.id, stateDir: teamDir },
     cronInstallation: cfg.cronInstallation,
   });
+  scheduleManifestRegeneration(api);
   return {
     ok: true as const,
     teamId,
@@ -645,6 +647,7 @@ export async function executeMigrateTeamPlan(
     await applyAgentSnippetsToOpenClawConfig(api, agentSnippets);
   }
 
+  scheduleManifestRegeneration(api);
   return { ok: true as const, migrated: plan.teamId, destTeamDir: dest.teamDir, agentIds: plan.agentIds };
 }
 
@@ -707,5 +710,6 @@ export async function handleRemoveTeam(
   });
   await writeOpenClawConfig(api, cfgObj);
   await saveCronStore(cronJobsPath, cronStore);
+  scheduleManifestRegeneration(api);
   return { ok: true as const, result };
 }
