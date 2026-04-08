@@ -149,6 +149,7 @@ export async function runScript(opts: RunScriptOpts): Promise<string> {
   try {
     const toolRes = await toolsInvoke<unknown>(api, {
       tool: 'exec',
+      sessionKey: 'agent:main:main',
       args: {
         command,
         workdir: opts.cwd,
