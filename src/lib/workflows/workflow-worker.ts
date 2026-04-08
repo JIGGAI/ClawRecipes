@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
 import type { ToolTextResult } from '../../toolsInvoke';
 import { toolsInvoke } from '../../toolsInvoke';
+import { classifyError, errorCategoryLabel } from './workflow-error-classify';
 import { resolveTeamDir } from '../workspace';
 import { getDriver } from './media-drivers/registry';
 import { GenericDriver } from './media-drivers/generic.driver';
@@ -911,6 +912,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         text = JSON.stringify(payload, null, 2);
       } catch (e) {
         const eRec = asRecord(e);
+        const errorCategory = classifyError(e);
         const errorDetails = {
           message: e instanceof Error ? e.message : String(e),
           name: e instanceof Error ? e.name : undefined,
@@ -919,6 +921,8 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           details: eRec['details'],
           data: eRec['data'],
           cause: e instanceof Error && 'cause' in e ? (e as Error & { cause?: unknown }).cause : undefined,
+          errorCategory,
+          errorCategoryLabel: errorCategory !== 'unknown' ? errorCategoryLabel(errorCategory) : undefined,
         };
         const errMsg = `LLM execution failed for node ${nodeLabel(node)}: ${errorDetails.message}`;
         const errorTs = new Date().toISOString();
@@ -928,18 +932,18 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           updatedAt: errorTs,
           nodeStates: {
             ...(cur.nodeStates ?? {}),
-            [node.id]: { status: 'error', ts: errorTs, error: errMsg, details: errorDetails },
+            [node.id]: { status: 'error', ts: errorTs, error: errMsg, details: errorDetails, errorCategory },
           },
           events: [
             ...cur.events,
-            { ts: errorTs, type: 'node.error', nodeId: node.id, kind: node.kind, message: errMsg, details: errorDetails },
+            { ts: errorTs, type: 'node.error', nodeId: node.id, kind: node.kind, message: errMsg, details: errorDetails, errorCategory },
           ],
           nodeResults: [
             ...(cur.nodeResults ?? []),
-            { nodeId: node.id, kind: node.kind, agentId: agentIdExec, error: errMsg, details: errorDetails },
+            { nodeId: node.id, kind: node.kind, agentId: agentIdExec, error: errMsg, details: errorDetails, errorCategory },
           ],
         }));
-        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'error' });
+        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'error', errorCategory });
         continue;
       }
 
@@ -1356,16 +1360,17 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, tool: toolName, artifactPath: path.relative(teamDir, artifactPath), nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
         }));
       } catch (e) {
-        await fs.writeFile(artifactPath, JSON.stringify({ ok: false, tool: toolName, error: (e as Error).message }, null, 2) + '\n', 'utf8');
+        const errorCategory = classifyError(e);
+        await fs.writeFile(artifactPath, JSON.stringify({ ok: false, tool: toolName, error: (e as Error).message, errorCategory }, null, 2) + '\n', 'utf8');
         const errorTs = new Date().toISOString();
         await appendRunLog(runPath, (cur) => ({
           ...cur,
           status: 'error',
-          nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'error', ts: errorTs } },
-          events: [...cur.events, { ts: errorTs, type: 'node.error', nodeId: node.id, kind: node.kind, tool: toolName, message: (e as Error).message, artifactPath: path.relative(teamDir, artifactPath) }],
-          nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, tool: toolName, error: (e as Error).message, artifactPath: path.relative(teamDir, artifactPath) }],
+          nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'error', ts: errorTs, errorCategory } },
+          events: [...cur.events, { ts: errorTs, type: 'node.error', nodeId: node.id, kind: node.kind, tool: toolName, message: (e as Error).message, artifactPath: path.relative(teamDir, artifactPath), errorCategory }],
+          nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, tool: toolName, error: (e as Error).message, artifactPath: path.relative(teamDir, artifactPath), errorCategory }],
         }));
-        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'error', error: (e as Error).message });
+        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'error', error: (e as Error).message, errorCategory });
         continue;
       }
     } else if (kind === 'media-image' || kind === 'media-video' || kind === 'media-audio') {
@@ -1504,6 +1509,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         }
         text = JSON.stringify(payload, null, 2);
       } catch (e) {
+        const errorCategory = classifyError(e);
         const errDetails = e instanceof Error
           ? { message: e.message, name: e.name, stack: e.stack?.split('\n').slice(0, 5).join(' | ') }
           : { message: String(e) };
@@ -1513,11 +1519,11 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           ...cur,
           status: 'error',
           updatedAt: errorTs,
-          nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'error', ts: errorTs, error: errMsg } },
-          events: [...cur.events, { ts: errorTs, type: 'node.error', nodeId: node.id, kind: node.kind, message: errMsg }],
-          nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, agentId: agentIdMedia || agentId, error: errMsg }],
+          nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'error', ts: errorTs, error: errMsg, errorCategory } },
+          events: [...cur.events, { ts: errorTs, type: 'node.error', nodeId: node.id, kind: node.kind, message: errMsg, errorCategory }],
+          nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind: node.kind, agentId: agentIdMedia || agentId, error: errMsg, errorCategory }],
         }));
-        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'error' });
+        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'error', errorCategory });
         continue;
       }
 
