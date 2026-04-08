@@ -192,7 +192,7 @@ export async function moveRunTicket(opts: {
   return { ticketPath: dest };
 }
 
-export function loadNodeStatesFromRun(run: RunLog): Record<string, { status: 'success' | 'error' | 'waiting'; ts: string }> {
+export function loadNodeStatesFromRun(run: RunLog, opts?: { workflow?: Workflow }): Record<string, { status: 'success' | 'error' | 'waiting'; ts: string }> {
   const out: Record<string, { status: 'success' | 'error' | 'waiting'; ts: string }> = {};
 
   const cur = run.nodeStates;
@@ -215,6 +215,19 @@ export function loadNodeStatesFromRun(run: RunLog): Record<string, { status: 'su
     if (type === 'node.error') out[nodeId] = { status: 'error', ts };
     if (type === 'node.awaiting_approval') out[nodeId] = { status: 'waiting', ts };
     if (type === 'node.approved') out[nodeId] = { status: 'success', ts };
+  }
+
+  // Revision semantics: when a run is in needs_revision, the approval handler
+  // clears nodeStates from nextNodeIndex onward, but events are append-only.
+  // The event-based reconstruction above would re-populate states that were
+  // deliberately cleared. Remove them so the stale-task guard in the worker
+  // does not reject re-enqueued revision tasks.
+  if (run.status === 'needs_revision' && typeof run.nextNodeIndex === 'number' && opts?.workflow) {
+    const nodes = Array.isArray(opts.workflow.nodes) ? opts.workflow.nodes : [];
+    for (let i = Math.max(0, run.nextNodeIndex); i < nodes.length; i++) {
+      const id = asString(nodes[i]?.id).trim();
+      if (id) delete out[id];
+    }
   }
 
   return out;
