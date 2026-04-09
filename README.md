@@ -59,6 +59,8 @@ openclaw plugins list
 
 > **Note:** The OpenClaw plugin installer enforces `pluginApi` version checks. If you see a version mismatch error, use the npm install method below instead.
 
+> During install you may see: `Plugin "recipes" has 2 suspicious code pattern(s)`. This is expected — ClawRecipes reads API keys from your OpenClaw config and passes them to media generation scripts (e.g., DALL-E, Kling). This is required for workflow execution and is not a security concern.
+
 **npm install**
 
 ```bash
