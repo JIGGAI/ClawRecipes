@@ -49,7 +49,7 @@ It is built for people who want durable artifacts on disk, not hidden app state.
 
 ### 1) Install the plugin
 
-**From npm**
+**OpenClaw plugin install (recommended)**
 
 ```bash
 openclaw plugins install @jiggai/recipes
@@ -57,7 +57,17 @@ openclaw gateway restart
 openclaw plugins list
 ```
 
-**From a local checkout**
+> **Note:** The OpenClaw plugin installer enforces `pluginApi` version checks. If you see a version mismatch error, use the npm install method below instead.
+
+**npm install**
+
+```bash
+npm install @jiggai/recipes --prefix ~/.openclaw/plugins
+openclaw gateway restart
+openclaw plugins list
+```
+
+**From a local checkout (development)**
 
 ```bash
 git clone https://github.com/JIGGAI/ClawRecipes.git ~/ClawRecipes
