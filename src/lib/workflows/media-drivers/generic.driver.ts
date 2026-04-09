@@ -1,6 +1,5 @@
 import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult } from './types';
 import { findSkillDir, findVenvPython, runScript, parseMediaOutput, findScriptInSkill, loadConfigEnv } from './utils';
-import { loadConfigEnv } from './utils';
 
 export class GenericDriver implements MediaDriver {
   slug: string;
