@@ -1,5 +1,6 @@
 import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult } from './types';
-import { findSkillDir, findVenvPython, runScript, parseMediaOutput, findScriptInSkill } from './utils';
+import { findSkillDir, findVenvPython, runScript, parseMediaOutput, findScriptInSkill, loadConfigEnv } from './utils';
+import { loadConfigEnv } from './utils';
 
 export class GenericDriver implements MediaDriver {
   slug: string;
@@ -15,7 +16,8 @@ export class GenericDriver implements MediaDriver {
   }
 
   async invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult> {
-    const { prompt, outputDir, env, timeout } = opts;
+    const { prompt, outputDir, timeout } = opts;
+    const env = await loadConfigEnv();
 
     // Find the skill directory
     const skillDir = await findSkillDir(this.slug);

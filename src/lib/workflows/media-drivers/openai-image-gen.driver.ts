@@ -1,6 +1,7 @@
 import * as path from 'path';
 import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult } from './types';
-import { findSkillDir, findVenvPython, runScript, parseMediaOutput } from './utils';
+import { findSkillDir, findVenvPython, runScript, parseMediaOutput, loadConfigEnv } from './utils';
+import { loadConfigEnv } from './utils';
 
 export class OpenAIImageGen implements MediaDriver {
   slug = 'openai-image-gen';
@@ -10,7 +11,8 @@ export class OpenAIImageGen implements MediaDriver {
   durationConstraints = null;
 
   async invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult> {
-    const { prompt, outputDir, env, timeout, config } = opts;
+    const { prompt, outputDir, timeout, config } = opts;
+    const env = await loadConfigEnv();
 
     // Find the skill directory
     const skillDir = await findSkillDir(this.slug);

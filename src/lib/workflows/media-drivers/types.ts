@@ -4,7 +4,6 @@ export interface MediaDriverInvokeOpts {
   api: OpenClawPluginApi;
   prompt: string;
   outputDir: string;
-  env: Record<string, string>;
   timeout: number;
   config?: Record<string, unknown>;
 }
