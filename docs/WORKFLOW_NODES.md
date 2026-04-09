@@ -116,8 +116,38 @@ Tool nodes call a tool by name with JSON args. Example:
 - `fs.append`
 - `outbound.post`
 - `message.send`
+- `exec` (shell command execution)
 
 Tool nodes support template vars inside string args.
+
+#### Exec tool nodes
+
+Nodes with `"tool": "exec"` run shell commands via the plugin runtime (not the gateway). This means **any agent** can execute them — there is no need to assign exec nodes to `main`.
+
+Config fields:
+- `args.command` (string): the shell command to run (passed to `bash -c`)
+- `args.workdir` (string, optional): working directory (defaults to the team workspace)
+- `args.timeout` (number, optional): timeout in seconds (default: 120)
+
+**Agent assignment:** Assign exec nodes to the same agent that handles the surrounding workflow — typically the team lead. Avoid assigning to `main` unless the node specifically needs the personal workspace context.
+
+```json
+{
+  "id": "run_script",
+  "type": "tool",
+  "name": "Run deploy script",
+  "config": {
+    "tool": "exec",
+    "args": {
+      "command": "bash scripts/deploy.sh --env={{run.id}}",
+      "timeout": 60
+    },
+    "agentId": "my-team-lead"
+  }
+}
+```
+
+> **Why not `main`?** Each agent has its own worker queue and cron. If you assign a node to `main` but there's no worker cron for `main` on that team, the task will sit in the queue indefinitely. Use the team's existing agents to keep things flowing.
 
 ---
 
