@@ -53,11 +53,16 @@ It is built for people who want durable artifacts on disk, not hidden app state.
 
 ```bash
 openclaw plugins install @jiggai/recipes
+openclaw plugins enable recipes
 openclaw gateway restart
 openclaw plugins list
 ```
 
+> If you see `plugins.allow is empty; discovered non-bundled plugins may auto-load`, run `openclaw plugins enable recipes` to explicitly allowlist the plugin and suppress the warning.
+
 > **Note:** The OpenClaw plugin installer enforces `pluginApi` version checks. If you see a version mismatch error, use the npm install method below instead.
+
+> During install you may see: `Plugin "recipes" has 2 suspicious code pattern(s)`. This is expected — ClawRecipes reads API keys from your OpenClaw config and passes them to media generation scripts (e.g., DALL-E, Kling). This is required for workflow execution and is not a security concern.
 
 **npm install**
 
