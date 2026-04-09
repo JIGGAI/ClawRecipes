@@ -9,6 +9,7 @@
       "./index.ts"
     ],
     "compat": {
+      "pluginApi": "2026.4",
       "pluginApiRange": ">=2026.3"
     },
     "build": {
