@@ -749,9 +749,20 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         'workflow.id': String(workflow.id ?? ''),
         'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
       };
-      
+
       // Load node outputs and make them available as template variables
       const { run: runSnap } = await loadRunFile(teamDir, runsDir, task.runId);
+
+      // Expose triggerInput as template variables (for handoff-injected data)
+      if (runSnap.triggerInput && typeof runSnap.triggerInput === 'object') {
+        for (const [key, value] of Object.entries(runSnap.triggerInput)) {
+          if (typeof value === 'string') {
+            vars[`trigger.${key}`] = value;
+          } else if (value !== null && value !== undefined) {
+            vars[`trigger.${key}`] = JSON.stringify(value);
+          }
+        }
+      }
       for (const nr of (runSnap.nodeResults ?? [])) {
         const nid = String((nr as Record<string, unknown>).nodeId ?? '');
         const nrOutPath = String((nr as Record<string, unknown>).nodeOutputPath ?? '');
@@ -1258,9 +1269,20 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             'workflow.id': String(workflow.id ?? ''),
             'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
           };
-          
+
           // Load node outputs and make them available as template variables
           const { run: runSnap } = await loadRunFile(teamDir, runsDir, task.runId);
+
+          // Expose triggerInput as template variables (for handoff-injected data)
+          if (runSnap.triggerInput && typeof runSnap.triggerInput === 'object') {
+            for (const [key, value] of Object.entries(runSnap.triggerInput)) {
+              if (typeof value === 'string') {
+                vars[`trigger.${key}`] = value;
+              } else if (value !== null && value !== undefined) {
+                vars[`trigger.${key}`] = JSON.stringify(value);
+              }
+            }
+          }
           for (const nr of (runSnap.nodeResults ?? [])) {
             const nid = String((nr as Record<string, unknown>).nodeId ?? '');
             const nrOutPath = String((nr as Record<string, unknown>).nodeOutputPath ?? '');
