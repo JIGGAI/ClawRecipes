@@ -1,7 +1,6 @@
 import * as path from 'path';
 import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult } from './types';
 import { findSkillDir, findVenvPython, runScript, loadConfigEnv } from './utils';
-import { loadConfigEnv } from './utils';
 
 export class NanoBananaPro implements MediaDriver {
   slug = 'nano-banana-pro';

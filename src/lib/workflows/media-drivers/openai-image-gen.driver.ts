@@ -1,7 +1,6 @@
 import * as path from 'path';
 import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult } from './types';
 import { findSkillDir, findVenvPython, runScript, parseMediaOutput, loadConfigEnv } from './utils';
-import { loadConfigEnv } from './utils';
 
 export class OpenAIImageGen implements MediaDriver {
   slug = 'openai-image-gen';
