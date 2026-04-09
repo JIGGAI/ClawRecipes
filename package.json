@@ -26,7 +26,8 @@
     "recipes/",
     "docs/",
     "clawcipes_cook.jpg",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "test": "vitest run",
