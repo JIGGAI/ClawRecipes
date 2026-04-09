@@ -1509,8 +1509,9 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
         // ── Step 2: Invoke the media driver to generate actual media ─────
         const providerSlug = provider;
+        // Load API keys from openclaw.json config (OPENAI_API_KEY, GEMINI_API_KEY, etc.)
+        // The subprocess inherits process.env automatically — only config overrides are needed.
         const configEnv = await loadConfigEnv();
-        const mergedEnv = { ...process.env, ...configEnv } as Record<string, string>;
 
         // Find a registered driver, or fall back to auto-discovered generic driver
         let driver = getDriver(providerSlug);
@@ -1525,7 +1526,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             api,
             prompt: refinedPrompt,
             outputDir: mediaDir,
-            env: mergedEnv,
+            env: configEnv,
             timeout: timeoutMs,
             config: node.config as Record<string, unknown> | undefined,
           });
