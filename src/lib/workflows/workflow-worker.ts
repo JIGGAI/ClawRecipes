@@ -1329,10 +1329,28 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             }
           }
 
-          const toolRes = await toolsInvoke<unknown>(api, {
-            tool: toolName,
-            args: processedToolArgs,
-          });
+          let toolRes: unknown;
+          if (toolName === 'exec') {
+            // Route exec tool calls through the plugin SDK runtime instead of
+            // the gateway — the gateway exec tool is session-gated and unavailable
+            // to most workflow worker sessions.
+            const command = String((processedToolArgs as Record<string, unknown>).command ?? '');
+            const workdir = String((processedToolArgs as Record<string, unknown>).workdir ?? teamDir);
+            const timeoutSec = Number((processedToolArgs as Record<string, unknown>).timeout) || 120;
+            const result = await api.runtime.system.runCommandWithTimeout(
+              ['bash', '-c', command],
+              { timeoutMs: timeoutSec * 1000, cwd: workdir },
+            );
+            if (result.code !== 0) {
+              throw new Error(`exec failed (code=${result.code}):\n${result.stderr || result.stdout}`);
+            }
+            toolRes = { stdout: result.stdout, stderr: result.stderr, code: result.code };
+          } else {
+            toolRes = await toolsInvoke<unknown>(api, {
+              tool: toolName,
+              args: processedToolArgs,
+            });
+          }
 
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: processedToolArgs, result: toolRes }, null, 2) + '\n', 'utf8');
         }
