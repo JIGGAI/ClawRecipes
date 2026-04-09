@@ -1,7 +1,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult, DurationConstraints, parseDuration } from './types';
-import { findSkillDir, runScript, parseMediaOutput } from './utils';
+import { findSkillDir, runScript, parseMediaOutput, loadConfigEnv } from './utils';
 
 /**
  * Map aspect ratios to Kling's supported values: 16:9, 9:16, 1:1
@@ -57,7 +57,8 @@ export class KlingVideo implements MediaDriver {
   }
 
   async invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult> {
-    const { prompt, outputDir, env, timeout, config } = opts;
+    const { prompt, outputDir, timeout, config } = opts;
+    const env = await loadConfigEnv();
     // Kling supports 3-15s; clamp to valid range
     const rawDuration = Math.max(3, Math.min(15, Number(parseDuration(config))));
     const duration = String(rawDuration);

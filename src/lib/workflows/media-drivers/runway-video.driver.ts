@@ -1,6 +1,6 @@
 import * as path from 'path';
 import { MediaDriver, MediaDriverInvokeOpts, MediaDriverResult, DurationConstraints, parseDuration } from './types';
-import { findSkillDir, findVenvPython, runScript, parseMediaOutput } from './utils';
+import { findSkillDir, findVenvPython, runScript, parseMediaOutput, loadConfigEnv } from './utils';
 
 export class RunwayVideo implements MediaDriver {
   slug = 'runway-video';
@@ -10,7 +10,8 @@ export class RunwayVideo implements MediaDriver {
   durationConstraints: DurationConstraints = { minSeconds: 5, maxSeconds: 10, defaultSeconds: 10, stepSeconds: 5 };
 
   async invoke(opts: MediaDriverInvokeOpts): Promise<MediaDriverResult> {
-    const { prompt, outputDir, env, timeout, config } = opts;
+    const { prompt, outputDir, timeout, config } = opts;
+    const env = await loadConfigEnv();
     const duration = parseDuration(config);
 
     // Find the skill directory

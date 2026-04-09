@@ -8,7 +8,6 @@ import { classifyError, errorCategoryLabel } from './workflow-error-classify';
 import { resolveTeamDir } from '../workspace';
 import { getDriver } from './media-drivers/registry';
 import { GenericDriver } from './media-drivers/generic.driver';
-import { loadConfigEnv } from './media-drivers/utils';
 import type { WorkflowLane, WorkflowNode, RunLog } from './workflow-types';
 import { dequeueNextTask, enqueueTask, releaseTaskClaim, compactQueue } from './workflow-queue';
 import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow-node-output-readers';
@@ -1509,9 +1508,6 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
         // ── Step 2: Invoke the media driver to generate actual media ─────
         const providerSlug = provider;
-        // Load API keys from openclaw.json config (OPENAI_API_KEY, GEMINI_API_KEY, etc.)
-        // The subprocess inherits process.env automatically — only config overrides are needed.
-        const configEnv = await loadConfigEnv();
 
         // Find a registered driver, or fall back to auto-discovered generic driver
         let driver = getDriver(providerSlug);
@@ -1526,7 +1522,6 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             api,
             prompt: refinedPrompt,
             outputDir: mediaDir,
-            env: configEnv,
             timeout: timeoutMs,
             config: node.config as Record<string, unknown> | undefined,
           });
