@@ -340,6 +340,10 @@ export async function loadRunFile(teamDir: string, runsDir: string, runId: strin
 export async function writeRunFile(runPath: string, fn: (cur: RunLog) => RunLog) {
   const raw = await readTextFile(runPath);
   const cur = JSON.parse(raw) as RunLog;
-  const next = fn(cur);
+  const next0 = fn(cur);
+  const next = {
+    ...next0,
+    updatedAt: new Date().toISOString(),
+  };
   await fs.writeFile(runPath, JSON.stringify(next, null, 2), 'utf8');
 }

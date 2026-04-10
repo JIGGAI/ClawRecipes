@@ -1112,7 +1112,11 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             // to most workflow worker sessions.
             const command = String((processedToolArgs as Record<string, unknown>).command ?? '');
             const workdir = String((processedToolArgs as Record<string, unknown>).workdir ?? teamDir);
-            const timeoutSec = Number((processedToolArgs as Record<string, unknown>).timeout) || 120;
+            // Timeout priority: args.timeout (seconds) > config.timeoutMs (ms) > 120s default
+            const nodeConfig = asRecord((node as unknown as Record<string, unknown>)['config']);
+            const argsTimeoutSec = Number((processedToolArgs as Record<string, unknown>).timeout) || 0;
+            const configTimeoutMs = Number(nodeConfig['timeoutMs']) || 0;
+            const timeoutSec = argsTimeoutSec || (configTimeoutMs > 0 ? Math.ceil(configTimeoutMs / 1000) : 120);
             const result = await api.runtime.system.runCommandWithTimeout(
               ['bash', '-c', command],
               { timeoutMs: timeoutSec * 1000, cwd: workdir },
