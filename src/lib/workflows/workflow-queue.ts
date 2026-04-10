@@ -336,3 +336,77 @@ export async function compactQueue(teamDir: string, agentId: string, opts?: { mi
 
   return { ok: true as const, compacted: true, removedBytes: st.offsetBytes, remainingBytes: remaining.length };
 }
+
+const TERMINAL_STATUSES = new Set(['completed', 'error', 'canceled', 'done', 'failed']);
+
+/**
+ * Remove queue tasks whose runs no longer exist or are in a terminal state.
+ * Returns summary of what was cleaned.
+ */
+export async function cleanupQueues(teamDir: string): Promise<{
+  ok: true;
+  queuesProcessed: number;
+  tasksRemoved: number;
+  tasksKept: number;
+}> {
+  const qDir = queueDir(teamDir);
+  const runsDir = path.join(teamDir, 'shared-context', 'workflow-runs');
+
+  let files: string[];
+  try {
+    files = (await fs.readdir(qDir)).filter((f) => f.endsWith('.jsonl'));
+  } catch {
+    return { ok: true, queuesProcessed: 0, tasksRemoved: 0, tasksKept: 0 };
+  }
+
+  let totalRemoved = 0;
+  let totalKept = 0;
+
+  for (const file of files) {
+    const qPath = path.join(qDir, file);
+    let raw: string;
+    try {
+      raw = await fs.readFile(qPath, 'utf8');
+    } catch { continue; }
+
+    const lines = raw.split('\n').filter((l) => l.trim());
+    if (!lines.length) continue;
+
+    const kept: string[] = [];
+    for (const line of lines) {
+      try {
+        const task = JSON.parse(line) as QueueTask;
+        const runPath = path.join(runsDir, task.runId, 'run.json');
+
+        let remove = false;
+        try {
+          const runRaw = await fs.readFile(runPath, 'utf8');
+          const run = JSON.parse(runRaw) as { status?: string };
+          if (TERMINAL_STATUSES.has(run.status ?? '')) remove = true;
+        } catch {
+          // Run file doesn't exist — orphaned task
+          remove = true;
+        }
+
+        if (remove) {
+          totalRemoved++;
+        } else {
+          kept.push(line);
+          totalKept++;
+        }
+      } catch {
+        // Malformed line — discard
+        totalRemoved++;
+      }
+    }
+
+    if (kept.length !== lines.length) {
+      await fs.writeFile(qPath, kept.length ? kept.join('\n') + '\n' : '', 'utf8');
+      // Reset cursor state since we rewrote the file
+      const agentId = file.replace(/\.jsonl$/, '');
+      await writeState(teamDir, agentId, { offsetBytes: 0, updatedAt: new Date().toISOString() });
+    }
+  }
+
+  return { ok: true, queuesProcessed: files.length, tasksRemoved: totalRemoved, tasksKept: totalKept };
+}
