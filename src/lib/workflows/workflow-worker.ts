@@ -552,7 +552,17 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     return Math.max(MIN_NODE_LOCK_TTL_MS, timeoutMs + LOCK_TTL_BUFFER_MS);
   };
 
-  for (let i = 0; i < limit; i++) {
+  // We want to process up to `limit` ACTUAL executions per tick. Stale tasks
+  // (runs that are already past the dequeued node — e.g. after a terminal
+  // run leaves dead entries in a shared agent queue) don't do any real work,
+  // so they shouldn't consume the execution budget; otherwise a backlog of
+  // stale tasks can starve in-flight runs for several ticks.
+  //
+  // Cap the total number of dequeue attempts to keep a pathological queue
+  // from turning a single tick into an unbounded scan.
+  let executedCount = 0;
+  const maxDequeues = Math.max(limit * 4, limit + 20);
+  for (let totalDequeues = 0; executedCount < limit && totalDequeues < maxDequeues; totalDequeues++) {
     const dq = await dequeueNextTask(teamDir, agentId, { workerId, leaseSeconds: 120 });
     if (!dq.ok || !dq.task) break;
 
@@ -562,6 +572,21 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
     const lockDir = path.join(runDir, 'locks');
     const lockPath = path.join(lockDir, `${task.nodeId}.lock`);
     let lockHeld = false;
+    // Tracks whether this dequeue should count against the execution budget.
+    // Defaults to true; the stale-skip path below flips it to false so stale
+    // tasks (queue entries for nodes that already advanced past success)
+    // don't starve real work from the `limit` budget.
+    //
+    // NOTE: `skipped_locked` does NOT flip this flag. Lock contention means
+    // real work is pending (just held up by another worker or a ghost lock),
+    // and the skipped_locked branch re-enqueues the task to avoid losing it.
+    // Letting lock contention escape the budget here would amplify that
+    // re-enqueue within a single tick: each dequeue past the cursor would
+    // drop a new copy at the tail (hasPendingTaskFor can't see it yet), and
+    // the loop would fabricate up to `maxDequeues` duplicates for one stuck
+    // lock. Bounding lock contention by the normal limit keeps the queue
+    // growth to O(limit) per tick.
+    let countedTowardLimit = true;
 
     try {
       if (task.kind !== 'execute_node') continue;
@@ -622,6 +647,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             await fs.writeFile(lockPath, JSON.stringify(lockInfo, null, 2), { encoding: 'utf8', flag: 'wx' });
             lockHeld = true;
           } catch { // intentional: lock contention, skip task
+            // Counts against the budget — see note on `countedTowardLimit`.
             results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_locked' });
             continue;
           }
@@ -643,6 +669,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
               kind: 'execute_node',
             });
           }
+          // Counts against the budget — see note on `countedTowardLimit`.
           results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_locked' });
           continue;
         }
@@ -688,6 +715,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         currentlyRunnableIdx === null ||
         String(workflow.nodes[currentlyRunnableIdx]?.id ?? '') !== String(node.id)
       ) {
+        countedTowardLimit = false;
         results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_stale' });
         continue;
       }
@@ -1659,6 +1687,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       } catch { // intentional: best-effort claim release
         // ignore
       }
+      if (countedTowardLimit) executedCount++;
     }
 
   }
