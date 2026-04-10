@@ -101,6 +101,41 @@ export async function enqueueTask(teamDir: string, agentId: string, task: Omit<Q
   return { ok: true as const, path: p, task: entry };
 }
 
+/**
+ * Check whether a pending task matching {runId, nodeId} already exists in
+ * the queue past the current cursor. Used to avoid enqueueing duplicates
+ * when a re-queue would otherwise race with an in-flight tick.
+ */
+export async function hasPendingTaskFor(
+  teamDir: string,
+  agentId: string,
+  match: { runId: string; nodeId: string }
+): Promise<boolean> {
+  const qPath = queuePathFor(teamDir, agentId);
+  if (!(await fileExists(qPath))) return false;
+
+  const st = await loadState(teamDir, agentId);
+  let raw: string;
+  try {
+    raw = await fs.readFile(qPath, 'utf8');
+  } catch { // intentional: best-effort read
+    return false;
+  }
+
+  // Only consider lines at/after the cursor.
+  const tail = raw.slice(st.offsetBytes);
+  for (const line of tail.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const t = JSON.parse(line) as QueueTask;
+      if (t && t.runId === match.runId && t.nodeId === match.nodeId) return true;
+    } catch { // intentional: skip malformed queue line
+      continue;
+    }
+  }
+  return false;
+}
+
 type QueueState = {
   offsetBytes: number;
   updatedAt: string;

@@ -9,7 +9,7 @@ import { resolveTeamDir } from '../workspace';
 import { getDriver } from './media-drivers/registry';
 import { GenericDriver } from './media-drivers/generic.driver';
 import type { WorkflowLane, WorkflowNode, RunLog } from './workflow-types';
-import { dequeueNextTask, enqueueTask, releaseTaskClaim, compactQueue } from './workflow-queue';
+import { dequeueNextTask, enqueueTask, hasPendingTaskFor, releaseTaskClaim, compactQueue } from './workflow-queue';
 import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow-node-output-readers';
 import { readTextFile } from './workflow-runner-io';
 import { resolveApprovalBindingTarget } from './workflow-node-executor';
@@ -626,13 +626,23 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             continue;
           }
         } else {
-          // Requeue to avoid task loss since dequeueNextTask already advanced the queue cursor.
-          await enqueueTask(teamDir, agentId, {
-            teamId,
+          // The lock is still live and held by another worker. The cursor has
+          // already advanced past this task, so under naive logic we'd lose it.
+          // Re-enqueue — but ONLY if no equivalent task is already pending.
+          // Otherwise repeated ticks against a stuck lock would pile up dozens
+          // of duplicates for the same {runId, nodeId}.
+          const alreadyPending = await hasPendingTaskFor(teamDir, agentId, {
             runId: task.runId,
             nodeId: task.nodeId,
-            kind: 'execute_node',
           });
+          if (!alreadyPending) {
+            await enqueueTask(teamDir, agentId, {
+              teamId,
+              runId: task.runId,
+              nodeId: task.nodeId,
+              kind: 'execute_node',
+            });
+          }
           results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_locked' });
           continue;
         }
