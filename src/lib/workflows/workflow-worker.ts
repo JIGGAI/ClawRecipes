@@ -1122,7 +1122,10 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
               { timeoutMs: timeoutSec * 1000, cwd: workdir },
             );
             if (result.code !== 0) {
-              throw new Error(`exec failed (code=${result.code}):\n${result.stderr || result.stdout}`);
+              const stderr = String(result.stderr ?? '').trim();
+              const stdout = String(result.stdout ?? '').trim();
+              const combined = [stderr, stdout].filter(Boolean).join('\n---stdout---\n');
+              throw new Error(`exec failed (code=${result.code}):\n${combined}`);
             }
             toolRes = { stdout: result.stdout, stderr: result.stderr, code: result.code };
           } else {
