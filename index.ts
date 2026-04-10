@@ -46,7 +46,7 @@ import {
 import { handleScaffold, scaffoldAgentFromRecipe } from "./src/handlers/scaffold";
 import { handleAddRoleToTeam } from "./src/handlers/team-add-role";
 import { reconcileRecipeCronJobs } from "./src/handlers/cron";
-import { handleWorkflowsApprove, handleWorkflowsPollApprovals, handleWorkflowsResume, handleWorkflowsRun, handleWorkflowsRunnerOnce, handleWorkflowsRunnerTick, handleWorkflowsWorkerTick } from "./src/handlers/workflows";
+import { handleWorkflowsApprove, handleWorkflowsCleanupQueues, handleWorkflowsPollApprovals, handleWorkflowsResume, handleWorkflowsRun, handleWorkflowsRunnerOnce, handleWorkflowsRunnerTick, handleWorkflowsWorkerTick } from "./src/handlers/workflows";
 import { handleMediaDriversList } from "./src/handlers/media-drivers";
 import { listRecipeFiles, loadRecipeById, workspacePath } from "./src/lib/recipes";
 import {
@@ -746,6 +746,17 @@ workflows
             const res = await handleWorkflowsPollApprovals(api, {
               teamId: String(options.teamId ?? ''),
               limit: typeof options.limit === "number" ? options.limit : undefined,
+            });
+            console.log(JSON.stringify(res, null, 2));
+          });
+
+        workflows
+          .command("cleanup-queues")
+          .description("Remove stale queue tasks for runs that are completed, errored, or deleted")
+          .requiredOption("--team-id <teamId>", "Team id (workspace-<teamId>)")
+          .action(async (options: { teamId?: string }) => {
+            const res = await handleWorkflowsCleanupQueues(api, {
+              teamId: String(options.teamId ?? ''),
             });
             console.log(JSON.stringify(res, null, 2));
           });
