@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { dequeueNextTask, enqueueTask, queuePathFor, releaseTaskClaim } from "../src/lib/workflows/workflow-queue";
+import { dequeueNextTask, enqueueTask, hasPendingTaskFor, queuePathFor, releaseTaskClaim } from "../src/lib/workflows/workflow-queue";
 
 async function tmpTeamDir() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "workflow-queue-test-"));
@@ -107,6 +107,46 @@ describe("workflow-queue", () => {
       const dq2 = await dequeueNextTask(teamDir, "agent-a", { workerId: "worker-b", leaseSeconds: 1 });
       expect(dq2.ok).toBe(true);
       expect(dq2.task?.task.id).toBe(enq.task.id);
+    } finally {
+      await fs.rm(teamDir, { recursive: true, force: true });
+    }
+  });
+
+  test("hasPendingTaskFor finds a matching task past the cursor", async () => {
+    const teamDir = await tmpTeamDir();
+    try {
+      await enqueueTask(teamDir, "agent-a", { teamId: "t1", runId: "r1", nodeId: "n1", kind: "execute_node" });
+      await enqueueTask(teamDir, "agent-a", { teamId: "t1", runId: "r2", nodeId: "n2", kind: "execute_node" });
+
+      expect(await hasPendingTaskFor(teamDir, "agent-a", { runId: "r1", nodeId: "n1" })).toBe(true);
+      expect(await hasPendingTaskFor(teamDir, "agent-a", { runId: "r2", nodeId: "n2" })).toBe(true);
+      expect(await hasPendingTaskFor(teamDir, "agent-a", { runId: "rX", nodeId: "nX" })).toBe(false);
+      // runId matches but nodeId does not:
+      expect(await hasPendingTaskFor(teamDir, "agent-a", { runId: "r1", nodeId: "n2" })).toBe(false);
+    } finally {
+      await fs.rm(teamDir, { recursive: true, force: true });
+    }
+  });
+
+  test("hasPendingTaskFor ignores tasks already consumed (behind the cursor)", async () => {
+    const teamDir = await tmpTeamDir();
+    try {
+      await enqueueTask(teamDir, "agent-a", { teamId: "t1", runId: "r1", nodeId: "n1", kind: "execute_node" });
+      const dq = await dequeueNextTask(teamDir, "agent-a", { workerId: "w1" });
+      expect(dq.task?.task.runId).toBe("r1");
+      await releaseTaskClaim(teamDir, "agent-a", dq.task!.task.id);
+
+      // The task is now behind the cursor -- hasPendingTaskFor should not see it.
+      expect(await hasPendingTaskFor(teamDir, "agent-a", { runId: "r1", nodeId: "n1" })).toBe(false);
+    } finally {
+      await fs.rm(teamDir, { recursive: true, force: true });
+    }
+  });
+
+  test("hasPendingTaskFor returns false when queue file does not exist", async () => {
+    const teamDir = await tmpTeamDir();
+    try {
+      expect(await hasPendingTaskFor(teamDir, "agent-a", { runId: "r1", nodeId: "n1" })).toBe(false);
     } finally {
       await fs.rm(teamDir, { recursive: true, force: true });
     }
