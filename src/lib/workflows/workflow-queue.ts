@@ -123,10 +123,16 @@ export async function readNextTasks(teamDir: string, agentId: string, opts?: { l
     return { ok: true as const, tasks: [] as QueueTask[], consumed: 0, message: 'Queue file not present.' };
   }
 
-  const st = await loadState(teamDir, agentId);
+  let st = await loadState(teamDir, agentId);
   const fh = await fs.open(qPath, 'r');
   try {
     const stat = await fh.stat();
+    // If the queue file was truncated/rotated, the cursor may point past EOF.
+    // Reset to 0 so we re-scan from the beginning instead of silently skipping tasks.
+    if (st.offsetBytes > stat.size) {
+      st = { offsetBytes: 0, updatedAt: new Date().toISOString() };
+      await writeState(teamDir, agentId, st);
+    }
     if (st.offsetBytes >= stat.size) {
       return { ok: true as const, tasks: [] as QueueTask[], consumed: 0, message: 'No new tasks.' };
     }
@@ -173,7 +179,7 @@ export async function dequeueNextTask(
     return { ok: true as const, task: null as DequeuedTask | null, message: 'Queue file not present.' };
   }
 
-  const st = await loadState(teamDir, agentId);
+  let st = await loadState(teamDir, agentId);
   const workerId = String(opts?.workerId ?? `worker:${process.pid}`);
   const leaseSeconds = typeof opts?.leaseSeconds === 'number' ? opts.leaseSeconds : undefined;
 
@@ -219,6 +225,12 @@ export async function dequeueNextTask(
   const fh = await fs.open(qPath, 'r');
   try {
     const stat = await fh.stat();
+    // If the queue file was truncated/rotated, the cursor may point past EOF.
+    // Reset to 0 so we re-scan from the beginning instead of silently skipping tasks.
+    if (st.offsetBytes > stat.size) {
+      st = { offsetBytes: 0, updatedAt: new Date().toISOString() };
+      await writeState(teamDir, agentId, st);
+    }
     if (st.offsetBytes < stat.size) {
       const toRead = Math.min(stat.size - st.offsetBytes, 256 * 1024);
       const buf = Buffer.alloc(toRead);
