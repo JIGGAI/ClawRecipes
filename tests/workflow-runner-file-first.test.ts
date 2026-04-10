@@ -715,4 +715,225 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       await fs.rm(base, { recursive: true, force: true });
     }
   });
+
+  test("stale-skipped tasks do not consume the worker-tick execution budget", async () => {
+    // Regression guard for the Option B fix: when a shared agent queue has
+    // stale tasks (for nodes that already advanced past "success") sitting
+    // ahead of a real task, a worker-tick with `limit: 1` should STILL
+    // reach and execute the real task in a single tick. Previously, stale
+    // tasks each consumed a slot in the limit budget, so a queue with 5
+    // stale entries followed by 1 real task would take 6 ticks to drain.
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-stale-budget";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "stale-budget.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+      const workflow = {
+        id: "stale-budget",
+        name: "Stale tasks must not starve the execution budget",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "do-work",
+            kind: "tool",
+            assignedTo: { agentId: "agent-shared" },
+            action: {
+              tool: "fs.append",
+              args: {
+                path: "shared-context/REAL_WORK.log",
+                content: "did work run={{run.id}}\n",
+              },
+            },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "do-work", on: "success" },
+          { from: "do-work", to: "end", on: "success" },
+        ],
+      };
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi();
+
+      // 1. Run one workflow end-to-end so its `do-work` node is marked
+      //    success. After this, any task for that run+node is "stale".
+      const firstEnq = await enqueueWorkflowRun(api, { teamId, workflowFile });
+      expect(firstEnq.ok).toBe(true);
+      await runWorkflowRunnerOnce(api, { teamId });
+      await runWorkflowWorkerTick(api, { teamId, agentId: "agent-shared", limit: 5, workerId: "worker-warmup" });
+      const firstRun = JSON.parse(await fs.readFile(firstEnq.runLogPath, "utf8")) as { status: string };
+      expect(firstRun.status).toBe("completed");
+
+      // 2. Seed 5 stale tasks for the already-completed run's do-work node.
+      //    The stale-task guard will reject each (node status === 'success').
+      const staleCount = 5;
+      for (let i = 0; i < staleCount; i++) {
+        await enqueueTask(teamDir, "agent-shared", {
+          teamId,
+          runId: firstEnq.runId,
+          nodeId: "do-work",
+          kind: "execute_node",
+        });
+      }
+
+      // 3. Enqueue a brand-new run. Its do-work task gets enqueued by the
+      //    runner BEHIND the stale tasks.
+      const secondEnq = await enqueueWorkflowRun(api, { teamId, workflowFile });
+      expect(secondEnq.ok).toBe(true);
+      await runWorkflowRunnerOnce(api, { teamId });
+
+      // 4. Tick the worker with limit=1. Old behavior: would process 1
+      //    stale task and exit, leaving 4 stale + 1 real in the queue.
+      //    New behavior: drains all 5 stale tasks AND executes the real
+      //    one in a single tick.
+      const w = await runWorkflowWorkerTick(api, {
+        teamId,
+        agentId: "agent-shared",
+        limit: 1,
+        workerId: "worker-budget",
+      });
+      expect(w.ok).toBe(true);
+
+      const results = (w as { results: Array<{ status: string; runId: string }> }).results;
+      const skippedStale = results.filter((r) => r.status === "skipped_stale").length;
+      // A real execution for the new run emits either "ok" (node completed
+      // and handed off) or "completed" (node completed and the whole run
+      // finished). Both count as "did real work this tick".
+      const executedForNewRun = results.filter(
+        (r) => r.runId === secondEnq.runId && (r.status === "ok" || r.status === "completed")
+      ).length;
+
+      // The key property: even with limit=1 and many stale tasks ahead of
+      // the real one, a single tick reaches and executes the real task.
+      // (Old code would have exited after the first skipped_stale.)
+      expect(skippedStale).toBeGreaterThanOrEqual(staleCount);
+      expect(executedForNewRun).toBe(1);
+
+      // 5. The new run's do-work side effect should have landed.
+      const secondRun = JSON.parse(await fs.readFile(secondEnq.runLogPath, "utf8")) as { status: string };
+      expect(secondRun.status).toBe("completed");
+      const appended = await fs.readFile(path.join(teamDir, "shared-context", "REAL_WORK.log"), "utf8");
+      // Two real executions — one from the warmup and one from this test.
+      expect(appended.match(/did work run=/g)?.length).toBe(2);
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("lock contention stays bounded by limit (no within-tick re-enqueue amplification)", async () => {
+    // Regression guard for a subtle interaction in the Option B budget fix:
+    // `skipped_locked` re-enqueues the task so it isn't lost. If lock
+    // contention were allowed to escape the execution budget, a single tick
+    // against a stuck lock would dequeue-and-re-enqueue the same task up to
+    // `maxDequeues` times, bloating the queue file. Lock contention MUST
+    // count against the budget so queue growth is O(limit) per tick.
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-lock-bound";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "lock-bound.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+      const workflow = {
+        id: "lock-bound",
+        name: "Lock contention bounded by limit",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "locked-node",
+            kind: "tool",
+            assignedTo: { agentId: "agent-locked" },
+            action: {
+              tool: "fs.append",
+              args: { path: "shared-context/WORK.log", content: "work\n" },
+            },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "locked-node", on: "success" },
+          { from: "locked-node", to: "end", on: "success" },
+        ],
+      };
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi();
+      const enq = await enqueueWorkflowRun(api, { teamId, workflowFile });
+      expect(enq.ok).toBe(true);
+      await runWorkflowRunnerOnce(api, { teamId });
+
+      // Plant a fresh, NON-stale lock file for the locked-node. This simulates
+      // another worker currently executing the same node. The running worker
+      // tick should dequeue, see the live lock, re-enqueue once, and move on
+      // — NOT keep re-enqueuing copies until maxDequeues is exhausted.
+      const lockDir = path.join(teamDir, "shared-context", "workflow-runs", enq.runId, "locks");
+      await fs.mkdir(lockDir, { recursive: true });
+      const claimedAt = new Date().toISOString();
+      await fs.writeFile(
+        path.join(lockDir, "locked-node.lock"),
+        JSON.stringify({
+          workerId: "other-worker",
+          pid: 999999,
+          taskId: "other-task",
+          claimedAt,
+          ttlMs: 30 * 60 * 1000,
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        }, null, 2),
+        "utf8"
+      );
+
+      const queuePath = path.join(teamDir, "shared-context", "workflow-queues", "agent-locked.jsonl");
+      const queueBytesBefore = (await fs.readFile(queuePath, "utf8")).length;
+
+      const w = await runWorkflowWorkerTick(api, {
+        teamId,
+        agentId: "agent-locked",
+        limit: 5,
+        workerId: "worker-lock-test",
+      });
+      expect(w.ok).toBe(true);
+
+      const results = (w as { results: Array<{ status: string }> }).results;
+      const locked = results.filter((r) => r.status === "skipped_locked").length;
+
+      // With the budget bound, a limit=5 tick against a single stuck lock
+      // should produce at most `limit` skipped_locked entries — not
+      // maxDequeues (=25). The pre-fix amplification would have made this
+      // 20+.
+      expect(locked).toBeLessThanOrEqual(5);
+      expect(locked).toBeGreaterThanOrEqual(1);
+
+      // Queue growth should also be bounded. One task was originally
+      // enqueued; re-enqueuing happens at most once per iteration, bounded
+      // by `limit`. Observed growth should be well under maxDequeues.
+      const queueBytesAfter = (await fs.readFile(queuePath, "utf8")).length;
+      const growthRatio = queueBytesAfter / Math.max(queueBytesBefore, 1);
+      expect(growthRatio).toBeLessThan(10); // 10× is generous; real growth is ~5×
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
 });
