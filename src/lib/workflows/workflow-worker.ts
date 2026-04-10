@@ -739,77 +739,8 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       await ensureDir(path.dirname(nodeOutputAbs));
 
       const promptRaw = promptTemplateInline ? promptTemplateInline : await readTextFile(promptPathAbs);
-      
-      // Build template variables (same as fs.write/fs.append)
-      const vars = {
-        date: new Date().toISOString(),
-        'run.id': runId,
-        'run.timestamp': runId,
-        'workflow.id': String(workflow.id ?? ''),
-        'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
-      };
 
-      // Load node outputs and make them available as template variables
-      const { run: runSnap } = await loadRunFile(teamDir, runsDir, task.runId);
-
-      // Expose triggerInput as template variables (for handoff-injected data)
-      if (runSnap.triggerInput && typeof runSnap.triggerInput === 'object') {
-        for (const [key, value] of Object.entries(runSnap.triggerInput)) {
-          if (typeof value === 'string') {
-            vars[`trigger.${key}`] = value;
-          } else if (value !== null && value !== undefined) {
-            vars[`trigger.${key}`] = JSON.stringify(value);
-          }
-        }
-      }
-      for (const nr of (runSnap.nodeResults ?? [])) {
-        const nid = String((nr as Record<string, unknown>).nodeId ?? '');
-        const nrOutPath = String((nr as Record<string, unknown>).nodeOutputPath ?? '');
-        if (nid && nrOutPath) {
-          try {
-            const outAbs = path.resolve(teamDir, nrOutPath);
-            const outputContent = await fs.readFile(outAbs, 'utf8');
-            vars[`${nid}.output`] = outputContent;
-            
-            // Parse JSON outputs and make fields accessible
-            try {
-              const parsed = JSON.parse(outputContent.trim());
-              if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                for (const [key, value] of Object.entries(parsed)) {
-                  if (typeof value === 'string') {
-                    vars[`${nid}.${key}`] = value;
-                    
-                    // Special handling for 'text' field - try to parse as nested JSON
-                    if (key === 'text') {
-                      try {
-                        const nestedParsed = JSON.parse(value);
-                        if (nestedParsed && typeof nestedParsed === 'object' && !Array.isArray(nestedParsed)) {
-                          for (const [nestedKey, nestedValue] of Object.entries(nestedParsed)) {
-                            if (typeof nestedValue === 'string') {
-                              vars[`${nid}.${nestedKey}`] = nestedValue;
-                            } else if (nestedValue !== null && nestedValue !== undefined) {
-                              vars[`${nid}.${nestedKey}_json`] = JSON.stringify(nestedValue);
-                            }
-                          }
-                        }
-                      } catch {
-                        // If nested parsing fails, just keep the text field as is
-                      }
-                    }
-                  } else if (value !== null && value !== undefined) {
-                    // For non-string values, provide JSON representation
-                    vars[`${nid}.${key}_json`] = JSON.stringify(value);
-                  }
-                }
-              }
-            } catch {
-              // If output isn't valid JSON, skip parsing but keep raw output
-            }
-          } catch { /* node output may not exist */ }
-        }
-      }
-      
-      // Apply template variable replacement
+      const vars = await buildTemplateVars(teamDir, runsDir, runId, workflowFile, workflow);
       const prompt = templateReplace(promptRaw, vars);
 
       // Build output format instructions from outputFields when defined
@@ -1071,7 +1002,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         `\nReply with:`,
         `- approve ${code}`,
         `- decline ${code} <what to change>`,
-        `\n(You can also review in Kitchen: http://localhost:7777/teams/${teamId}/workflows/${workflow.id ?? ''})`,
+        `\n(You can also review in Kitchen: ${process.env['CK_BASE_URL'] || 'http://localhost:7777'}/teams/${teamId}/workflows/${workflow.id ?? ''})`,
       ].join('\n');
 
       await toolsInvoke<ToolTextResult>(api, {
@@ -1114,61 +1045,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           if (!relPathRaw) throw new Error('fs.append requires args.path');
           if (!contentRaw) throw new Error('fs.append requires args.content');
 
-          const vars = {
-            date: new Date().toISOString(),
-            'run.id': runId,
-            'workflow.id': String(workflow.id ?? ''),
-            'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
-          };
-
-          // Load node outputs (same as fs.write)
-          const { run: runSnap } = await loadRunFile(teamDir, runsDir, task.runId);
-          for (const nr of (runSnap.nodeResults ?? [])) {
-            const nid = String((nr as Record<string, unknown>).nodeId ?? '');
-            const nrOutPath = String((nr as Record<string, unknown>).nodeOutputPath ?? '');
-            if (nid && nrOutPath) {
-              try {
-                const outAbs = path.resolve(teamDir, nrOutPath);
-                const outputContent = await fs.readFile(outAbs, 'utf8');
-                vars[`${nid}.output`] = outputContent;
-                
-                // Parse JSON outputs and make fields accessible
-                try {
-                  const parsed = JSON.parse(outputContent.trim());
-                  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                    for (const [key, value] of Object.entries(parsed)) {
-                      if (typeof value === 'string') {
-                        vars[`${nid}.${key}`] = value;
-                        
-                        // Special handling for 'text' field - try to parse as nested JSON
-                        if (key === 'text') {
-                          try {
-                            const nestedParsed = JSON.parse(value);
-                            if (nestedParsed && typeof nestedParsed === 'object' && !Array.isArray(nestedParsed)) {
-                              for (const [nestedKey, nestedValue] of Object.entries(nestedParsed)) {
-                                if (typeof nestedValue === 'string') {
-                                  vars[`${nid}.${nestedKey}`] = nestedValue;
-                                } else if (nestedValue !== null && nestedValue !== undefined) {
-                                  vars[`${nid}.${nestedKey}_json`] = JSON.stringify(nestedValue);
-                                }
-                              }
-                            }
-                          } catch {
-                            // If nested parsing fails, just keep the text field as is
-                          }
-                        }
-                      } else if (value !== null && value !== undefined) {
-                        // For non-string values, provide JSON representation
-                        vars[`${nid}.${key}_json`] = JSON.stringify(value);
-                      }
-                    }
-                  }
-                } catch {
-                  // If output isn't valid JSON, skip parsing but keep raw output
-                }
-              } catch { /* node output may not exist */ }
-            }
-          }
+          const vars = await buildTemplateVars(teamDir, runsDir, runId, workflowFile, workflow);
 
           const relPath = templateReplace(relPathRaw, vars);
           const content = templateReplace(contentRaw, vars);
@@ -1184,67 +1061,12 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           const result = { appendedTo: path.relative(teamDir, abs), bytes: Buffer.byteLength(content, 'utf8') };
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
 
-
         } else if (toolName === 'fs.write') {
           const relPathRaw = String(toolArgs.path ?? '').trim();
           const contentRaw = String(toolArgs.content ?? '');
           if (!relPathRaw) throw new Error('fs.write requires args.path');
 
-          const vars = {
-            date: new Date().toISOString(),
-            'run.id': runId,
-            'run.timestamp': runId,
-            'workflow.id': String(workflow.id ?? ''),
-            'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
-          };
-          // Also inject node outputs so templates like {{brand_review.output}} resolve
-          const { run: runSnap } = await loadRunFile(teamDir, runsDir, task.runId);
-          for (const nr of (runSnap.nodeResults ?? [])) {
-            const nid = String((nr as Record<string, unknown>).nodeId ?? '');
-            const nrOutPath = String((nr as Record<string, unknown>).nodeOutputPath ?? '');
-            if (nid && nrOutPath) {
-              try {
-                const outAbs = path.resolve(teamDir, nrOutPath);
-                const outputContent = await fs.readFile(outAbs, 'utf8');
-                vars[`${nid}.output`] = outputContent;
-                
-                // Parse JSON outputs and make fields accessible
-                try {
-                  const parsed = JSON.parse(outputContent.trim());
-                  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                    for (const [key, value] of Object.entries(parsed)) {
-                      if (typeof value === 'string') {
-                        vars[`${nid}.${key}`] = value;
-                        
-                        // Special handling for 'text' field - try to parse as nested JSON
-                        if (key === 'text') {
-                          try {
-                            const nestedParsed = JSON.parse(value);
-                            if (nestedParsed && typeof nestedParsed === 'object' && !Array.isArray(nestedParsed)) {
-                              for (const [nestedKey, nestedValue] of Object.entries(nestedParsed)) {
-                                if (typeof nestedValue === 'string') {
-                                  vars[`${nid}.${nestedKey}`] = nestedValue;
-                                } else if (nestedValue !== null && nestedValue !== undefined) {
-                                  vars[`${nid}.${nestedKey}_json`] = JSON.stringify(nestedValue);
-                                }
-                              }
-                            }
-                          } catch {
-                            // If nested parsing fails, just keep the text field as is
-                          }
-                        }
-                      } else if (value !== null && value !== undefined) {
-                        // For non-string values, provide JSON representation
-                        vars[`${nid}.${key}_json`] = JSON.stringify(value);
-                      }
-                    }
-                  }
-                } catch {
-                  // If output isn't valid JSON, skip parsing but keep raw output
-                }
-              } catch { /* node output may not exist */ }
-            }
-          }
+          const vars = await buildTemplateVars(teamDir, runsDir, runId, workflowFile, workflow);
           const relPath = templateReplace(relPathRaw, vars);
           const content = templateReplace(contentRaw, vars);
 
@@ -1260,75 +1082,8 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
 
         } else {
-          // Build template variables for general tool nodes (same as fs.write/fs.append)
-          const vars = {
-            date: new Date().toISOString(),
-            'run.id': runId,
-            'run.timestamp': runId,
-            'workflow.id': String(workflow.id ?? ''),
-            'workflow.name': String(workflow.name ?? workflow.id ?? workflowFile),
-          };
+          const vars = await buildTemplateVars(teamDir, runsDir, runId, workflowFile, workflow);
 
-          // Load node outputs and make them available as template variables
-          const { run: runSnap } = await loadRunFile(teamDir, runsDir, task.runId);
-
-          // Expose triggerInput as template variables (for handoff-injected data)
-          if (runSnap.triggerInput && typeof runSnap.triggerInput === 'object') {
-            for (const [key, value] of Object.entries(runSnap.triggerInput)) {
-              if (typeof value === 'string') {
-                vars[`trigger.${key}`] = value;
-              } else if (value !== null && value !== undefined) {
-                vars[`trigger.${key}`] = JSON.stringify(value);
-              }
-            }
-          }
-          for (const nr of (runSnap.nodeResults ?? [])) {
-            const nid = String((nr as Record<string, unknown>).nodeId ?? '');
-            const nrOutPath = String((nr as Record<string, unknown>).nodeOutputPath ?? '');
-            if (nid && nrOutPath) {
-              try {
-                const outAbs = path.resolve(teamDir, nrOutPath);
-                const outputContent = await fs.readFile(outAbs, 'utf8');
-                vars[`${nid}.output`] = outputContent;
-                
-                // Parse JSON outputs and make fields accessible
-                try {
-                  const parsed = JSON.parse(outputContent.trim());
-                  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-                    for (const [key, value] of Object.entries(parsed)) {
-                      if (typeof value === 'string') {
-                        vars[`${nid}.${key}`] = value;
-                        
-                        // Special handling for 'text' field - try to parse as nested JSON
-                        if (key === 'text') {
-                          try {
-                            const nestedParsed = JSON.parse(value);
-                            if (nestedParsed && typeof nestedParsed === 'object' && !Array.isArray(nestedParsed)) {
-                              for (const [nestedKey, nestedValue] of Object.entries(nestedParsed)) {
-                                if (typeof nestedValue === 'string') {
-                                  vars[`${nid}.${nestedKey}`] = nestedValue;
-                                } else if (nestedValue !== null && nestedValue !== undefined) {
-                                  vars[`${nid}.${nestedKey}_json`] = JSON.stringify(nestedValue);
-                                }
-                              }
-                            }
-                          } catch {
-                            // If nested parsing fails, just keep the text field as is
-                          }
-                        }
-                      } else if (value !== null && value !== undefined) {
-                        // For non-string values, provide JSON representation
-                        vars[`${nid}.${key}_json`] = JSON.stringify(value);
-                      }
-                    }
-                  }
-                } catch {
-                  // If output isn't valid JSON, skip parsing but keep raw output
-                }
-              } catch { /* node output may not exist */ }
-            }
-          }
-          
           // Apply template variable replacement to all string values in toolArgs
           const processedToolArgs: Record<string, unknown> = {};
           for (const [key, value] of Object.entries(toolArgs)) {
@@ -1357,7 +1112,11 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             // to most workflow worker sessions.
             const command = String((processedToolArgs as Record<string, unknown>).command ?? '');
             const workdir = String((processedToolArgs as Record<string, unknown>).workdir ?? teamDir);
-            const timeoutSec = Number((processedToolArgs as Record<string, unknown>).timeout) || 120;
+            // Timeout priority: args.timeout (seconds) > config.timeoutMs (ms) > 120s default
+            const nodeConfig = asRecord((node as unknown as Record<string, unknown>)['config']);
+            const argsTimeoutSec = Number((processedToolArgs as Record<string, unknown>).timeout) || 0;
+            const configTimeoutMs = Number(nodeConfig['timeoutMs']) || 0;
+            const timeoutSec = argsTimeoutSec || (configTimeoutMs > 0 ? Math.ceil(configTimeoutMs / 1000) : 120);
             const result = await api.runtime.system.runCommandWithTimeout(
               ['bash', '-c', command],
               { timeoutMs: timeoutSec * 1000, cwd: workdir },
