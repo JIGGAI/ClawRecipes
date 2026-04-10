@@ -1,0 +1,300 @@
+{
+  "schema": "clawkitchen.workflow.v1",
+  "id": "marketing-image-generation-handoff",
+  "name": "Marketing: Image Generation + Handoff",
+  "version": 1,
+  "timezone": "America/New_York",
+  "triggers": [
+    {
+      "kind": "cron",
+      "id": "t-every-5-min",
+      "name": "Every 5 minutes",
+      "enabled": false,
+      "expr": "*/5 * * * *",
+      "tz": "America/New_York"
+    }
+  ],
+  "meta": {
+    "templateId": "marketing-image-generation-handoff",
+    "approvalProvider": "telegram",
+    "approvalTarget": "<your-telegram-user-id>",
+    "writeback": {
+      "postLogPath": "shared-context/marketing/POST_LOG.md",
+      "learningsJsonlPath": "shared-context/memory/marketing_learnings.jsonl"
+    },
+    "platforms": [
+      "x",
+      "instagram",
+      "tiktok",
+      "youtube"
+    ],
+    "approvalBindingId": "marketing-approval"
+  },
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "name": "Start",
+      "x": 74.31536865234375,
+      "y": 81.3770751953125,
+      "config": {}
+    },
+    {
+      "id": "research",
+      "type": "llm",
+      "name": "Research + idea",
+      "x": 300.12744140625,
+      "y": 79.87017822265625,
+      "config": {
+        "promptTemplate": "Do competitive + trend research for mens hair trends and Hair Mechanix in Michigan. Produce: 5 angles + supporting bullets.",
+        "agentId": "marketing-team-analyst",
+        "outputFields": [
+          {
+            "name": "angles",
+            "type": "list"
+          },
+          {
+            "name": "sources",
+            "type": "list"
+          }
+        ]
+      }
+    },
+    {
+      "id": "draft_assets",
+      "type": "llm",
+      "name": "Draft platform assets",
+      "x": 560.0146484375,
+      "y": 79.625,
+      "config": {
+        "promptTemplate": "Using the research output, draft platform-specific variants applying proven viral psychology:\n\n{{research.output}}\n\n**EMOTIONAL TRIGGER (REQUIRED):** Every post must trigger one of these emotions:\n- NSFW (\"That's crazy!\") - shocking/surprising\n- LOL (\"That's funny!\") - humor/entertainment  \n- OHHH (\"Now I get it!\") - aha moments/simplification\n- WOW (\"That's amazing!\") - success stories\n- FINALLY (\"Someone said it!\") - validating opinions\n- WTF (\"That pisses me off!\") - frustration with status quo\n\n**IDENTITY TARGETING:** Use 'There are two types of men' or 'This is for men who...'\n**US vs THEM:** Position against inefficient alternatives (not competitors)\n\nState which emotion you're targeting and why.\n\nProvide per platform text that apply to the output fields (i.e. instagram, tiktok, x, etc)\n\nGenerate an image prompt for the topic\n\nOutput fields: {emotion:'OHHH',platforms:{x:{hook,body},instagram:{hook,body,assetNotes},tiktok:{hook,script,assetNotes},youtube:{hook,script,assetNotes}}}",
+        "agentId": "marketing-team-copywriter",
+        "outputFields": [
+          {
+            "name": "platforms",
+            "type": "json"
+          },
+          {
+            "name": "emotion",
+            "type": "text"
+          },
+          {
+            "name": "prompt",
+            "type": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "generate_image",
+      "type": "media-image",
+      "name": "Generate post image",
+      "x": 665.7322998046875,
+      "y": 304.6747131347656,
+      "config": {
+        "mediaType": "image",
+        "provider": "nano-banana-image",
+        "prompt": "{{draft_assets.prompt}}",
+        "size": "1024x1024",
+        "quality": "standard",
+        "style": "natural",
+        "agentId": "marketing-team-designer",
+        "execSessionKey": "agent:main:main"
+      }
+    },
+    {
+      "id": "qc_brand",
+      "type": "llm",
+      "name": "QC / brand consistency",
+      "x": 820,
+      "y": 80.12911987304688,
+      "config": {
+        "agentId": "marketing-team-compliance",
+        "promptTemplate": "Review drafts for consistency and ensure image aligns with copy. Apply corrections. always mention @hairmx and how it applies to the post. Remove any hashtags if present. If an image was generated in the previous step, note its path for inclusion in posts. no posting without approval. Output JSON: {platforms:{...}, notes:[...]}",
+        "outputFields": [
+          {
+            "name": "platforms",
+            "type": "json"
+          },
+          {
+            "name": "notes",
+            "type": "text"
+          },
+          {
+            "name": "image_field",
+            "type": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "instagram_packet",
+      "type": "llm",
+      "name": "Instagram packet (for social handoff)",
+      "x": 947.9728088378906,
+      "y": 306.75958251953125,
+      "config": {
+        "agentId": "marketing-team-lead",
+        "promptTemplate": "You are preparing a handoff packet for the Social team to publish to Instagram.\n\nInputs:\n- QC/Brand JSON: {{qc_brand.platforms_json}}\n- Image generation output: {{generate_image.output}}\n  (Look for 'image_field' or 'file_path' field \u2014 this is a local file path to the generated image)\n\nExtract the final Instagram caption text from the QC/Brand JSON (platforms.instagram key). If the QC output includes hook/body, combine into a single caption (hook first, then blank line, then body). Ensure it mentions @hairmx and contains NO hashtags.\n\nFor mediaUrl:\n- If the image output has a file_path or image_field, return it as-is (the social workflow will handle upload).\n- If you find an https URL, use that instead.\n- Otherwise return empty string.\n\nOutput STRICT JSON: {\"content\":string,\"mediaUrl\":string,\"scheduledAt\":string}. scheduledAt should be an ISO timestamp if scheduling, otherwise empty string.",
+        "outputFields": [
+          {
+            "name": "content",
+            "type": "text"
+          },
+          {
+            "name": "mediaUrl",
+            "type": "text"
+          },
+          {
+            "name": "scheduledAt",
+            "type": "text"
+          }
+        ]
+      }
+    },
+    {
+      "id": "approval",
+      "type": "human_approval",
+      "name": "Human approval",
+      "x": 1080,
+      "y": 80,
+      "config": {
+        "provider": "telegram",
+        "messageTemplate": "{{workflow.name}} \u2014 Approval needed\nRun: {{run.id}}\n\n{{instagram_packet.content}}\n{{instagram_packet.mediaUrl}}\n{{instagram_packet.scheduledAt}}",
+        "approvalBindingId": "marketing-approval",
+        "target": "<your-telegram-user-id>"
+      }
+    },
+    {
+      "id": "handoff_social_instagram",
+      "type": "handoff",
+      "name": "Handoff to Social Team (Instagram)",
+      "x": 1230.0803833007812,
+      "y": 304.931396484375,
+      "config": {
+        "targetTeamId": "social-team",
+        "targetWorkflowId": "social-media-publish",
+        "mode": "fire-and-forget",
+        "variableMapping": {
+          "content": "{{instagram_packet.content}}",
+          "mediaUrl": "{{instagram_packet.mediaUrl}}",
+          "scheduledAt": "{{instagram_packet.scheduledAt}}",
+          "kitchenTeamId": "marketing-team",
+          "integrationIds": "<your-postiz-integration-id>"
+        },
+        "agentId": "marketing-team-lead"
+      }
+    },
+    {
+      "id": "write_post_log",
+      "type": "tool",
+      "name": "Append POST_LOG.md",
+      "x": 1554.9974975585938,
+      "y": 220.83203125,
+      "config": {
+        "tool": "fs.append",
+        "args": {
+          "path": "shared-context/marketing/POST_LOG.md",
+          "content": "- {{date}} {{platforms}} posted. Run={{run.id}}\\n"
+        },
+        "agentId": "marketing-team-analyst"
+      }
+    },
+    {
+      "id": "write_learnings",
+      "type": "tool",
+      "name": "Append marketing_learnings.jsonl",
+      "x": 1554.9373779296875,
+      "y": 431.86236572265625,
+      "config": {
+        "tool": "fs.append",
+        "args": {
+          "path": "shared-context/memory/marketing_learnings.jsonl",
+          "content": "{\"ts\":\"{{date}}\",\"runId\":\"{{run.id}}\",\"notes\":{{qc_brand.notes_json}}}\\n"
+        },
+        "agentId": "marketing-team-analyst"
+      }
+    },
+    {
+      "id": "update_ticket",
+      "type": "llm",
+      "name": "Update ticket with details",
+      "x": 1863.8912353515625,
+      "y": 322.3258056640625,
+      "config": {
+        "promptTemplate": "A marketing cadence workflow run just completed. Update the associated ticket with all run details.\n\nWorkflow: {{workflow.name}}\nRun ID: {{run.id}}\nDate: {{date}}\n\nResearch output:\n{{research.output}}\n\nDraft assets:\n{{draft_assets.output}}\n\nGenerated image:\n{{generate_image.output}}\n\nQC/Brand review:\n{{qc_brand.output}}\n\nPosting results:\n{{handoff_social_instagram.output}}\n\nWrite a clear, dated summary under ## Comments in the ticket capturing:\n- What was researched and which angle was chosen\n- What image was generated and its visual concept\n- What platforms were posted to\n- The final approved copy and image\n- Any QC notes or corrections made\n- Links to posted content if available\n\nThen move the ticket to work/done/.",
+        "agentId": "marketing-team-lead"
+      }
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "name": "End",
+      "x": 2144.94775390625,
+      "y": 321.6875305175781,
+      "config": {}
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-start-research",
+      "from": "start",
+      "to": "research"
+    },
+    {
+      "id": "e-research-draft",
+      "from": "research",
+      "to": "draft_assets"
+    },
+    {
+      "id": "e-draft-image",
+      "from": "draft_assets",
+      "to": "generate_image"
+    },
+    {
+      "id": "e-image-qc",
+      "from": "generate_image",
+      "to": "qc_brand"
+    },
+    {
+      "id": "e-log-ticket",
+      "from": "write_post_log",
+      "to": "update_ticket"
+    },
+    {
+      "id": "e-learnings-ticket",
+      "from": "write_learnings",
+      "to": "update_ticket"
+    },
+    {
+      "id": "e-ticket-end",
+      "from": "update_ticket",
+      "to": "end"
+    },
+    {
+      "id": "e-qc-instagram-packet",
+      "from": "qc_brand",
+      "to": "instagram_packet"
+    },
+    {
+      "id": "e-instagram-packet-approval",
+      "from": "instagram_packet",
+      "to": "approval"
+    },
+    {
+      "id": "e-approval-handoff-social",
+      "from": "approval",
+      "to": "handoff_social_instagram"
+    },
+    {
+      "id": "e1775513527729",
+      "from": "handoff_social_instagram",
+      "to": "write_post_log"
+    },
+    {
+      "id": "e1775513535656",
+      "from": "handoff_social_instagram",
+      "to": "write_learnings"
+    }
+  ]
+}

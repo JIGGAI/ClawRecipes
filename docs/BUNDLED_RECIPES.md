@@ -6,6 +6,11 @@ ClawRecipes ships with bundled recipes in:
 recipes/default/
 ```
 
+> **Looking for bundled workflow examples** (not team recipes)? See
+> [`WORKFLOW_EXAMPLES_BUNDLED.md`](./WORKFLOW_EXAMPLES_BUNDLED.md) and the
+> [`examples/workflows/`](../examples/workflows/) directory for four
+> ready-to-run workflow definitions with matching cron-install scripts.
+
 You can browse them with:
 
 ```bash

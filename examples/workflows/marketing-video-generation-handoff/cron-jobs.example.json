@@ -1,0 +1,133 @@
+{
+  "version": 1,
+  "_comment": "Cron jobs for the 'marketing-video-generation-handoff' example workflow. Import with: openclaw cron import --from-file cron-jobs.example.json (or use install-crons.sh which does the same via individual `openclaw cron add` calls). Before using: (1) scaffold a team with teamId='marketing-team' OR change team_id placeholders; (2) ensure the referenced agents exist in that team; (3) consider gateway agents.defaults.maxConcurrent (24 recommended when running many workflow crons).",
+  "teamId": "marketing-team",
+  "jobs": [
+    {
+      "agentId": "main",
+      "name": "workflow-runner-tick:marketing-team",
+      "description": "Workflow runner-tick cron",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "*/5 * * * *"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Runner tick (workflow executor): openclaw recipes workflows runner-tick --team-id marketing-team --concurrency 4 --lease-seconds 900",
+        "timeoutSeconds": 900
+      },
+      "delivery": {
+        "mode": "none",
+        "channel": "last"
+      }
+    },
+    {
+      "agentId": "main",
+      "name": "workflow-worker:marketing-team:marketing-team-analyst",
+      "description": "Workflow worker cron",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "*/5 * * * *"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Workflow worker tick (marketing-team-analyst).\n\nRun exactly one shell command using the exec tool.\n\nCommand:\nbash -lc 'openclaw recipes workflows worker-tick --team-id marketing-team --agent-id marketing-team-analyst --limit 5 --worker-id cron'\n\nRules:\n- Execute with exec and wait for completion.\n- If it succeeds, respond exactly: NO_REPLY\n- If it fails, respond with one short error line.",
+        "timeoutSeconds": 120
+      },
+      "delivery": {
+        "mode": "none",
+        "channel": "last"
+      }
+    },
+    {
+      "agentId": "main",
+      "name": "workflow-worker:marketing-team:marketing-team-compliance",
+      "description": "Workflow worker cron",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "*/5 * * * *"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Workflow worker tick (marketing-team-compliance).\n\nRun exactly one shell command using the exec tool.\n\nCommand:\nbash -lc 'openclaw recipes workflows worker-tick --team-id marketing-team --agent-id marketing-team-compliance --limit 5 --worker-id cron'\n\nRules:\n- Execute with exec and wait for completion.\n- If it succeeds, respond exactly: NO_REPLY\n- If it fails, respond with one short error line.",
+        "timeoutSeconds": 120
+      },
+      "delivery": {
+        "mode": "none",
+        "channel": "last"
+      }
+    },
+    {
+      "agentId": "main",
+      "name": "workflow-worker:marketing-team:marketing-team-copywriter",
+      "description": "Workflow worker cron",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "*/5 * * * *"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Workflow worker tick (marketing-team-copywriter).\n\nRun exactly one shell command using the exec tool.\n\nCommand:\nbash -lc 'openclaw recipes workflows worker-tick --team-id marketing-team --agent-id marketing-team-copywriter --limit 5 --worker-id cron'\n\nRules:\n- Execute with exec and wait for completion.\n- If it succeeds, respond exactly: NO_REPLY\n- If it fails, respond with one short error line.",
+        "timeoutSeconds": 120
+      },
+      "delivery": {
+        "mode": "none",
+        "channel": "last"
+      }
+    },
+    {
+      "agentId": "main",
+      "name": "workflow-worker:marketing-team:marketing-team-designer",
+      "description": "Workflow worker cron",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "*/5 * * * *"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Workflow worker tick (marketing-team-designer).\n\nRun exactly one shell command using the exec tool.\n\nCommand:\nbash -lc 'openclaw recipes workflows worker-tick --team-id marketing-team --agent-id marketing-team-designer --limit 5 --worker-id cron'\n\nRules:\n- Execute with exec and wait for completion.\n- If it succeeds, respond exactly: NO_REPLY\n- If it fails, respond with one short error line.",
+        "timeoutSeconds": 120
+      },
+      "delivery": {
+        "mode": "none",
+        "channel": "last"
+      }
+    },
+    {
+      "agentId": "main",
+      "name": "workflow-worker:marketing-team:marketing-team-lead",
+      "description": "Workflow worker cron",
+      "enabled": true,
+      "schedule": {
+        "kind": "cron",
+        "expr": "*/5 * * * *"
+      },
+      "sessionTarget": "isolated",
+      "wakeMode": "now",
+      "payload": {
+        "kind": "agentTurn",
+        "message": "Workflow worker tick (marketing-team-lead).\n\nRun exactly one shell command using the exec tool.\n\nCommand:\nbash -lc 'openclaw recipes workflows worker-tick --team-id marketing-team --agent-id marketing-team-lead --limit 5 --worker-id cron'\n\nRules:\n- Execute with exec and wait for completion.\n- If it succeeds, respond exactly: NO_REPLY\n- If it fails, respond with one short error line.",
+        "timeoutSeconds": 120
+      },
+      "delivery": {
+        "mode": "none",
+        "channel": "last"
+      }
+    }
+  ]
+}
