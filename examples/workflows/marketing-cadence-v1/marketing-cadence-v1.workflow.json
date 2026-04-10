@@ -1,0 +1,239 @@
+{
+  "schema": "clawkitchen.workflow.v1",
+  "id": "marketing-cadence-v1",
+  "name": "Marketing Cadence (v1)",
+  "version": 1,
+  "timezone": "America/New_York",
+  "triggers": [
+    {
+      "kind": "cron",
+      "id": "t-every-5-min",
+      "name": "Weekdays at 9am",
+      "enabled": false,
+      "expr": "0 9 * * 1-5",
+      "tz": "America/New_York"
+    }
+  ],
+  "meta": {
+    "templateId": "marketing-cadence-v1",
+    "approvalProvider": "telegram",
+    "approvalTarget": "<your-telegram-user-id>",
+    "writeback": {
+      "postLogPath": "shared-context/marketing/POST_LOG.md",
+      "learningsJsonlPath": "shared-context/memory/marketing_learnings.jsonl"
+    },
+    "platforms": [
+      "x",
+      "instagram",
+      "tiktok",
+      "youtube"
+    ],
+    "approvalBindingId": "marketing-approval"
+  },
+  "nodes": [
+    {
+      "id": "start",
+      "type": "start",
+      "name": "Start",
+      "x": 60,
+      "y": 120,
+      "config": {}
+    },
+    {
+      "id": "research",
+      "type": "llm",
+      "name": "Research + idea",
+      "x": 300.12744140625,
+      "y": 80,
+      "config": {
+        "promptTemplate": "Do competitive + trend research. Produce: 5 angles + supporting bullets. Output JSON: {angles:[...], sources:[...]}",
+        "agentId": "marketing-team-analyst",
+        "model": "openai-codex/gpt-5.2"
+      }
+    },
+    {
+      "id": "draft_assets",
+      "type": "llm",
+      "name": "Draft platform assets",
+      "x": 559.8851318359375,
+      "y": 79.88510131835938,
+      "config": {
+        "promptTemplate": "Using the research output, draft platform-specific variants applying proven viral psychology:\n\n**EMOTIONAL TRIGGER (REQUIRED):** Every post must trigger one of these emotions:\n- NSFW (\"That's crazy!\") - shocking/surprising\n- LOL (\"That's funny!\") - humor/entertainment  \n- OHHH (\"Now I get it!\") - aha moments/simplification\n- WOW (\"That's amazing!\") - success stories\n- FINALLY (\"Someone said it!\") - validating opinions\n- WTF (\"That pisses me off!\") - frustration with status quo\n\n**IDENTITY TARGETING:** Use 'There are two types of...' or 'This is for founders who...'\n**US vs THEM:** Position against inefficient alternatives (not competitors)\n\nState which emotion you're targeting and why.\n\nAlso include an `image_brief` field: a concise (under 1000 chars) visual concept description for DALL-E image generation. Describe the scene, composition, color palette, and mood \u2014 NO text/words in the image. This should capture the emotional hook visually without repeating the copy.\n\nOutput JSON: {emotion:'OHHH',image_brief:'A split-screen illustration showing...',platforms:{x:{hook,body},instagram:{hook,body,assetNotes},tiktok:{hook,script,assetNotes},youtube:{hook,script,assetNotes}}}",
+        "agentId": "marketing-team-copywriter",
+        "model": "openai-codex/gpt-5.2"
+      }
+    },
+    {
+      "id": "qc_brand",
+      "type": "llm",
+      "name": "QC / brand consistency",
+      "x": 820,
+      "y": 80.12911987304688,
+      "config": {
+        "agentId": "marketing-team-compliance",
+        "promptTemplate": "Review drafts for consistency and note the image concept for visual alignment. Apply corrections. Always mention @ClawRecipes and how it applies to the post. Remove any hashtags if present.\n\nImage concept from designer:\n{{generate_image.output}}\n\nEnsure the copy and visual concept work together effectively. No posting without approval. Output JSON: {platforms:{...}, image_concept: \"brief description of planned visual\", notes:[...]}",
+        "model": "openai-codex/gpt-5.2"
+      }
+    },
+    {
+      "id": "approval",
+      "type": "human_approval",
+      "name": "Human approval",
+      "x": 1080,
+      "y": 80,
+      "config": {
+        "provider": "telegram",
+        "messageTemplate": "{{workflow.name}} \u2014 Approval needed\nRun: {{run.id}}\n\n{{packet.note}}",
+        "approvalBindingId": "marketing-approval",
+        "target": "<your-telegram-user-id>"
+      }
+    },
+    {
+      "id": "post_to_platforms",
+      "type": "tool",
+      "name": "Post (after approval)",
+      "x": 1340,
+      "y": 80,
+      "config": {
+        "tool": "marketing.post_all",
+        "args": {
+          "platforms": [
+            "x",
+            "instagram",
+            "tiktok",
+            "youtube"
+          ],
+          "draftsFromNode": "qc_brand"
+        },
+        "agentId": "marketing-team-lead"
+      }
+    },
+    {
+      "id": "write_post_log",
+      "type": "tool",
+      "name": "Append POST_LOG.md",
+      "x": 1600,
+      "y": 60,
+      "config": {
+        "tool": "fs.append",
+        "args": {
+          "path": "shared-context/marketing/POST_LOG.md",
+          "content": "- {{date}} {{platforms}} posted. Run={{run.id}}\\n"
+        },
+        "agentId": "marketing-team-analyst"
+      }
+    },
+    {
+      "id": "write_learnings",
+      "type": "tool",
+      "name": "Append marketing_learnings.jsonl",
+      "x": 1600,
+      "y": 140,
+      "config": {
+        "tool": "fs.append",
+        "args": {
+          "path": "shared-context/memory/marketing_learnings.jsonl",
+          "content": "{\"ts\":\"{{date}}\",\"runId\":\"{{run.id}}\",\"notes\":{{qc_brand.notes_json}}}\\n"
+        },
+        "agentId": "marketing-team-analyst"
+      }
+    },
+    {
+      "id": "update_ticket",
+      "type": "llm",
+      "name": "Update ticket with details",
+      "x": 1860,
+      "y": 100,
+      "config": {
+        "promptTemplate": "A marketing cadence workflow run just completed. Update the associated ticket with all run details.\n\nWorkflow: {{workflow.name}}\nRun ID: {{run.id}}\nDate: {{date}}\n\nResearch output:\n{{research.output}}\n\nDraft assets:\n{{draft_assets.output}}\n\nGenerated image:\n{{generate_image.output}}\n\nQC/Brand review:\n{{qc_brand.output}}\n\nPosting results:\n{{post_to_platforms.output}}\n\nWrite a clear, dated summary under ## Comments in the ticket capturing:\n- What was researched and which angle was chosen\n- What image was generated and its visual concept\n- What platforms were posted to\n- The final approved copy and image\n- Any QC notes or corrections made\n- Links to posted content if available\n\nThen move the ticket to work/done/.",
+        "agentId": "marketing-team-lead"
+      }
+    },
+    {
+      "id": "end",
+      "type": "end",
+      "name": "End",
+      "x": 2120,
+      "y": 120,
+      "config": {}
+    },
+    {
+      "id": "post_preview",
+      "type": "tool",
+      "name": "Post preview (dry run)",
+      "x": 1075.5960693359375,
+      "y": 215.87786865234375,
+      "config": {
+        "tool": "marketing.post_all",
+        "args": {
+          "platforms": [
+            "x",
+            "instagram",
+            "tiktok",
+            "youtube"
+          ],
+          "draftsFromNode": "qc_brand",
+          "dryRun": true
+        },
+        "agentId": "marketing-team-lead"
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-start-research",
+      "from": "start",
+      "to": "research"
+    },
+    {
+      "id": "e-research-draft",
+      "from": "research",
+      "to": "draft_assets"
+    },
+    {
+      "id": "e-draft_assets-qc_brand",
+      "from": "draft_assets",
+      "to": "qc_brand"
+    },
+    {
+      "id": "e-approval-post",
+      "from": "approval",
+      "to": "post_to_platforms"
+    },
+    {
+      "id": "e-post-log",
+      "from": "post_to_platforms",
+      "to": "write_post_log"
+    },
+    {
+      "id": "e-post-learnings",
+      "from": "post_to_platforms",
+      "to": "write_learnings"
+    },
+    {
+      "id": "e-log-ticket",
+      "from": "write_post_log",
+      "to": "update_ticket"
+    },
+    {
+      "id": "e-learnings-ticket",
+      "from": "write_learnings",
+      "to": "update_ticket"
+    },
+    {
+      "id": "e-ticket-end",
+      "from": "update_ticket",
+      "to": "end"
+    },
+    {
+      "id": "e-qc-preview",
+      "from": "qc_brand",
+      "to": "post_preview"
+    },
+    {
+      "id": "e-preview-approval",
+      "from": "post_preview",
+      "to": "approval"
+    }
+  ]
+}

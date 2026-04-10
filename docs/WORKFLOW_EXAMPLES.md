@@ -1,9 +1,18 @@
 # Workflow examples
 
-This document gives you copyable workflow patterns for ClawRecipes.
+This document gives you copyable workflow **patterns** for ClawRecipes —
+small snippets that illustrate individual node kinds and graph shapes.
 
-Use it together with:
+> **Looking for full, production-style workflows?**
+> See [`WORKFLOW_EXAMPLES_BUNDLED.md`](./WORKFLOW_EXAMPLES_BUNDLED.md) and
+> [`examples/workflows/`](../examples/workflows/). Those are four end-to-end
+> workflows (marketing cadence variants + social publish) complete with
+> matching cron jobs and install scripts, ready to drop into a fresh team.
+
+Use this doc together with:
 - [WORKFLOW_RUNS_FILE_FIRST.md](WORKFLOW_RUNS_FILE_FIRST.md) — concepts, node kinds, triggers, runs, edges
+- [WORKFLOW_NODES.md](WORKFLOW_NODES.md) — reference for every node type
+- [WORKFLOW_EXAMPLES_BUNDLED.md](WORKFLOW_EXAMPLES_BUNDLED.md) — full bundled examples + cron + concurrency guide
 - [OUTBOUND_POSTING.md](OUTBOUND_POSTING.md) — publishing/posting setup
 
 ---

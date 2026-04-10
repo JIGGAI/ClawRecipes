@@ -188,8 +188,28 @@ openclaw recipes workflows resume \
   --run-id <runId>
 ```
 
+### Bundled workflow examples
+
+Four ready-to-run workflow examples ship under
+[`examples/workflows/`](examples/workflows/):
+
+- [`marketing-cadence-v1`](examples/workflows/marketing-cadence-v1/) — text-only marketing cadence
+- [`marketing-image-generation-handoff`](examples/workflows/marketing-image-generation-handoff/) — image generation + handoff to social publish
+- [`marketing-video-generation-handoff`](examples/workflows/marketing-video-generation-handoff/) — video generation cadence
+- [`social-media-publish`](examples/workflows/social-media-publish/) — handoff target that publishes via kitchen-plugin-marketing + Postiz
+
+Each example directory contains the workflow JSON, a `cron-jobs.example.json`,
+an `install-crons.sh` helper, and a per-example README with prerequisites
+and install steps. See [docs/WORKFLOW_EXAMPLES_BUNDLED.md](docs/WORKFLOW_EXAMPLES_BUNDLED.md)
+for the catalog, required cron jobs, and a recommendation on
+`agents.defaults.maxConcurrent` sizing.
+
 See also:
 - [docs/WORKFLOW_RUNS_FILE_FIRST.md](docs/WORKFLOW_RUNS_FILE_FIRST.md)
+- [docs/WORKFLOW_NODES.md](docs/WORKFLOW_NODES.md)
+- [docs/WORKFLOW_APPROVALS.md](docs/WORKFLOW_APPROVALS.md)
+- [docs/WORKFLOW_EXAMPLES.md](docs/WORKFLOW_EXAMPLES.md) — small, hand-rolled pattern snippets
+- [docs/WORKFLOW_EXAMPLES_BUNDLED.md](docs/WORKFLOW_EXAMPLES_BUNDLED.md) — full bundled examples + cron/concurrency guide
 - [docs/OUTBOUND_POSTING.md](docs/OUTBOUND_POSTING.md)
 
 ---
