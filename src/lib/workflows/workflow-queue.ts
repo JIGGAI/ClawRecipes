@@ -84,6 +84,19 @@ export async function enqueueTask(teamDir: string, agentId: string, task: Omit<Q
     ...task,
   };
   const p = queuePathFor(teamDir, agentId);
+
+  // If the cursor is at or beyond the current file size, the file was
+  // truncated/rotated since the cursor was written.  Reset to 0 so the
+  // worker will see this new task after it is appended.
+  const st = await loadState(teamDir, agentId);
+  let fileSize = 0;
+  try {
+    fileSize = (await fs.stat(p)).size;
+  } catch { /* file doesn't exist yet — fileSize stays 0 */ }
+  if (st.offsetBytes > 0 && st.offsetBytes >= fileSize) {
+    await writeState(teamDir, agentId, { offsetBytes: 0, updatedAt: new Date().toISOString() });
+  }
+
   await fs.appendFile(p, JSON.stringify(entry) + '\n', 'utf8');
   return { ok: true as const, path: p, task: entry };
 }
