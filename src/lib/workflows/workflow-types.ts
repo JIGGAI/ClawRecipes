@@ -1,8 +1,8 @@
 export type WorkflowLane = 'backlog' | 'in-progress' | 'testing' | 'done';
 
-export type WorkflowNodeKind = 'llm' | 'human_approval' | 'writeback' | 'tool' | 'handoff' | 'start' | 'end' | string;
+export type WorkflowNodeKind = 'llm' | 'human_approval' | 'writeback' | 'tool' | 'start' | 'end' | 'if' | 'delay' | 'handoff' | string;
 
-export type WorkflowEdgeOn = 'success' | 'error' | 'always';
+export type WorkflowEdgeOn = 'success' | 'error' | 'always' | 'true' | 'false';
 
 export type WorkflowNodeAssignment = {
   agentId: string;
@@ -87,6 +87,8 @@ export type RunLog = {
   trigger: { kind: string; at?: string };
   triggerInput?: Record<string, unknown>;
   status: string;
+  // Delay/pause support (v1)
+  resumeAt?: string | null;
   // Scheduler/runner fields
   priority?: number;
   claimedBy?: string | null;

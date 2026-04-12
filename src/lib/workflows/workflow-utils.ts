@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { Workflow, WorkflowEdge, WorkflowLane, WorkflowNode, RunLog } from './workflow-types';
 import { sanitizeOutboundPostText } from './outbound-sanitize';
 import { readTextFile } from './workflow-runner-io';
+import { lastIfValueFromRun } from './workflow-if';
 
 export function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v == 'object' && !Array.isArray(v);
@@ -238,6 +239,14 @@ export function pickNextRunnableNodeIndex(opts: { workflow: Workflow; run: RunLo
   const nodes = Array.isArray(workflow.nodes) ? workflow.nodes : [];
   if (!nodes.length) return null;
 
+  // Delay/pause semantics: when a run is paused, do not schedule further nodes
+  // until resumeAt has passed.
+  if (String(run.status ?? '') === 'paused') {
+    const resumeAtRaw = String(run.resumeAt ?? '').trim();
+    const resumeMs = resumeAtRaw ? Date.parse(resumeAtRaw) : NaN;
+    if (!Number.isFinite(resumeMs) || Date.now() < resumeMs) return null;
+  }
+
   const hasEdges = Array.isArray(workflow.edges) && workflow.edges.length > 0;
   if (!hasEdges) {
     // Sequential fallback for legacy/no-edge workflows.
@@ -282,6 +291,15 @@ export function pickNextRunnableNodeIndex(opts: { workflow: Workflow; run: RunLo
     const from = nodeStates[fromId]?.status;
     const on = (e.on ?? 'success') as string;
     if (!from) return false;
+
+    // Branching semantics (v1): allow edges on true/false for `if` nodes.
+    if (on === 'true' || on === 'false') {
+      if (from !== 'success') return false;
+      const v = lastIfValueFromRun(run, fromId);
+      if (v === null) return false;
+      return on === 'true' ? v === true : v === false;
+    }
+
     if (on === 'always') return from === 'success' || from === 'error';
     if (on === 'error') return from === 'error';
     return from === 'success';

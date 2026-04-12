@@ -54,7 +54,16 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
 
     try {
       const run = JSON.parse(await readTextFile(runPath)) as RunLog;
-      if (run.status !== 'queued') continue;
+      const st = String(run.status ?? '');
+      if (st !== 'queued' && st !== 'paused') continue;
+
+      // Paused runs (delay node): only resume once resumeAt has passed.
+      if (st === 'paused') {
+        const resumeAtRaw = String(run.resumeAt ?? '').trim();
+        const resumeMs = resumeAtRaw ? Date.parse(resumeAtRaw) : NaN;
+        if (!Number.isFinite(resumeMs) || Date.now() < resumeMs) continue;
+      }
+
       const exp = run.claimExpiresAt ? Date.parse(String(run.claimExpiresAt)) : 0;
       const claimed = !!run.claimedBy && exp > now;
       if (claimed) continue;
@@ -80,7 +89,13 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
   async function tryClaim(runPath: string): Promise<RunLog | null> {
     const raw = await readTextFile(runPath);
     const cur = JSON.parse(raw) as RunLog;
-    if (cur.status !== 'queued') return null;
+    const st = String(cur.status ?? '');
+    if (st !== 'queued' && st !== 'paused') return null;
+    if (st === 'paused') {
+      const resumeAtRaw = String(cur.resumeAt ?? '').trim();
+      const resumeMs = resumeAtRaw ? Date.parse(resumeAtRaw) : NaN;
+      if (!Number.isFinite(resumeMs) || Date.now() < resumeMs) return null;
+    }
     const exp = cur.claimExpiresAt ? Date.parse(String(cur.claimExpiresAt)) : 0;
     const claimed = !!cur.claimedBy && exp > Date.now();
     if (claimed) return null;
@@ -92,6 +107,7 @@ export async function runWorkflowRunnerTick(api: OpenClawPluginApi, opts: {
       ...cur,
       updatedAt: new Date().toISOString(),
       status: 'running',
+      resumeAt: null,
       claimedBy,
       claimExpiresAt,
       events: [...(cur.events ?? []), { ts: new Date().toISOString(), type: 'run.claimed', claimedBy, claimExpiresAt }],

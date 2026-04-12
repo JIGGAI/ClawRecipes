@@ -13,6 +13,7 @@ import { dequeueNextTask, enqueueTask, hasPendingTaskFor, releaseTaskClaim, comp
 import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow-node-output-readers';
 import { readTextFile } from './workflow-runner-io';
 import { resolveApprovalBindingTarget } from './workflow-node-executor';
+import { evalIfCondition } from './workflow-if';
 import {
   asRecord, asString, isRecord,
   normalizeWorkflow,
@@ -754,6 +755,63 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, noop: true }],
         nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, noop: true }],
       }));
+    } else if (kind === 'if') {
+      const action = asRecord(node.action);
+      const lhs = asString(action['lhs']).trim();
+      const op = asString(action['op']).trim();
+      const rhs = action['rhs'];
+      if (!lhs) throw new Error(`Node ${nodeLabel(node)} missing action.lhs`);
+      if (!op) throw new Error(`Node ${nodeLabel(node)} missing action.op`);
+
+      const evalRes = await evalIfCondition({ runDir, condition: { lhs, op: op as 'truthy', rhs } });
+
+      const defaultNodeOutputRel = path.join('node-outputs', `${String(nodeIdx).padStart(3, '0')}-${node.id}.json`);
+      const nodeOutputRel = String(node?.output?.path ?? '').trim() || defaultNodeOutputRel;
+      const nodeOutputAbs = path.resolve(runDir, nodeOutputRel);
+      await ensureDir(path.dirname(nodeOutputAbs));
+      await fs.writeFile(nodeOutputAbs, JSON.stringify({
+        runId: task.runId, teamId, nodeId: node.id, kind: node.kind,
+        completedAt: new Date().toISOString(), value: evalRes.value, detail: evalRes.detail,
+      }, null, 2) + '\n', 'utf8');
+
+      const completedTs = new Date().toISOString();
+      await appendRunLog(runPath, (cur) => ({
+        ...cur,
+        nextNodeIndex: nodeIdx + 1,
+        nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
+        events: [...cur.events, { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, value: evalRes.value, nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, value: evalRes.value, nodeOutputPath: path.relative(teamDir, nodeOutputAbs) }],
+      }));
+    } else if (kind === 'delay') {
+      const action = asRecord(node.action);
+      const secondsRaw = action['seconds'] ?? action['delaySeconds'] ?? action['durationSeconds'];
+      const msRaw = action['ms'] ?? action['delayMs'] ?? action['durationMs'];
+      const sec = typeof secondsRaw === 'number' ? secondsRaw : Number(secondsRaw);
+      const ms = typeof msRaw === 'number' ? msRaw : Number(msRaw);
+      const delayMs = Number.isFinite(ms) && ms > 0 ? ms : Number.isFinite(sec) && sec > 0 ? sec * 1000 : 0;
+      if (!delayMs) throw new Error(`Node ${nodeLabel(node)} missing delay duration (action.delaySeconds or action.delayMs)`);
+
+      const maxDelayMs = 7 * 24 * 60 * 60 * 1000;
+      const effectiveDelayMs = Math.min(delayMs, maxDelayMs);
+      const resumeAt = new Date(Date.now() + effectiveDelayMs).toISOString();
+
+      const completedTs = new Date().toISOString();
+      await appendRunLog(runPath, (cur) => ({
+        ...cur,
+        status: 'paused',
+        resumeAt,
+        nextNodeIndex: nodeIdx + 1,
+        nodeStates: { ...(cur.nodeStates ?? {}), [node.id]: { status: 'success', ts: completedTs } },
+        events: [
+          ...cur.events,
+          { ts: completedTs, type: 'node.completed', nodeId: node.id, kind, delayMs: effectiveDelayMs, resumeAt },
+          { ts: completedTs, type: 'run.paused', nodeId: node.id, resumeAt },
+        ],
+        nodeResults: [...(cur.nodeResults ?? []), { nodeId: node.id, kind, delayMs: effectiveDelayMs, resumeAt }],
+      }));
+
+      results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'paused' });
+      continue;
     } else if (kind === 'llm') {
       // Reuse the existing runner logic by executing just this node (sequential model).
       // This keeps the worker deterministic and file-first.
