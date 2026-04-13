@@ -2,7 +2,7 @@
   "id": "recipes",
   "name": "Recipes",
   "description": "Markdown recipes that scaffold agents and teams (workspace-local).",
-  "version": "0.4.32",
+  "version": "0.4.50",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -72,5 +72,12 @@
       "help": "Controls whether recipe-defined cron jobs are installed during scaffold. off=never, prompt=ask, on=auto-install."
     }
   },
-  "main": "index.ts"
+  "main": "index.ts",
+  "compat": {
+    "pluginApi": "2026.4.12",
+    "pluginApiRange": ">=2026.3"
+  },
+  "build": {
+    "openclawVersion": "2026.3.28"
+  }
 }
