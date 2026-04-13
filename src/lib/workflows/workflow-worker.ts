@@ -13,6 +13,7 @@ import { dequeueNextTask, enqueueTask, hasPendingTaskFor, releaseTaskClaim, comp
 import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow-node-output-readers';
 import { readTextFile } from './workflow-runner-io';
 import { resolveApprovalBindingTarget } from './workflow-node-executor';
+import { buildKitchenWorkflowReviewUrl } from './kitchen-review-url';
 import {
   asRecord, asString, isRecord,
   normalizeWorkflow,
@@ -1032,6 +1033,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       }
       proposed = sanitizeDraftOnlyText(proposed);
 
+      const kitchenReviewUrl = buildKitchenWorkflowReviewUrl(api, teamId, String(workflow.id ?? ''));
       const msg = [
         `Approval requested: ${workflow.name ?? workflow.id ?? workflowFile}`,
         `Ticket: ${path.relative(teamDir, curTicketPath)}`,
@@ -1040,7 +1042,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         `\nReply with:`,
         `- approve ${code}`,
         `- decline ${code} <what to change>`,
-        `\n(You can also review in Kitchen: ${process.env['CK_BASE_URL'] || 'http://localhost:7777'}/teams/${teamId}/workflows/${workflow.id ?? ''})`,
+        `\n(You can also review in Kitchen: ${kitchenReviewUrl})`,
       ].join('\n');
 
       await toolsInvoke<ToolTextResult>(api, {
