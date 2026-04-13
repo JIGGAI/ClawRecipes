@@ -72,12 +72,5 @@
       "help": "Controls whether recipe-defined cron jobs are installed during scaffold. off=never, prompt=ask, on=auto-install."
     }
   },
-  "main": "index.ts",
-  "compat": {
-    "pluginApi": ">=1.0.0",
-    "pluginApiRange": ">=2026.3"
-  },
-  "build": {
-    "openclawVersion": "2026.3.28"
-  }
+  "main": "index.ts"
 }
