@@ -57,32 +57,30 @@ describe("kitchen-manifest", () => {
     await fs.rm(dir, { recursive: true, force: true });
   });
 
-  test("generates manifest with agents and recipes from CLI", async () => {
+  test("generates manifest with agents from config", async () => {
     const dir = await tmpDir();
     const outputPath = path.join(dir, "manifest.json");
 
-    const agents = [{ id: "agent-1", identityName: "Agent 1" }];
-    const recipes = [{ id: "my-team", name: "My Team", kind: "team", source: "builtin" }];
-
-    // First call returns agents, second returns recipes
-    let callCount = 0;
     const api = {
-      config: {},
+      config: {
+        agents: {
+          list: [
+            { id: "agent-1", identity: { name: "Agent 1" }, default: true },
+          ],
+        },
+      },
       runtime: {
         system: {
-          runCommandWithTimeout: async () => {
-            callCount++;
-            if (callCount === 1) return { code: 0, stdout: JSON.stringify(agents), stderr: "" };
-            return { code: 0, stdout: JSON.stringify(recipes), stderr: "" };
-          },
+          runCommandWithTimeout: async () => ({ code: 1, stdout: "", stderr: "" }),
         },
       },
     } as any;
 
     const manifest = await generateKitchenManifest({ api, outputPath });
 
-    expect(manifest.agents).toEqual(agents);
-    expect(manifest.recipes).toEqual(recipes);
+    expect(manifest.agents).toEqual([
+      { id: "agent-1", identityName: "Agent 1", workspace: undefined, model: undefined, isDefault: true },
+    ]);
 
     await fs.rm(dir, { recursive: true, force: true });
   });

@@ -161,26 +161,42 @@ export async function generateKitchenManifest(opts: GenerateManifestOptions): Pr
     };
   }
 
-  // Fetch agents and recipes via CLI (reuses existing OpenClaw infrastructure)
+  // Read agents directly from config (avoids subprocess which can silently fail)
   let agents: AgentManifestEntry[] = [];
   try {
-    const res = await api.runtime.system.runCommandWithTimeout(
-      ['openclaw', 'agents', 'list', '--json'],
-      { timeoutMs: 15_000 },
-    );
-    if (res.code === 0 && res.stdout) {
-      agents = JSON.parse(res.stdout) as AgentManifestEntry[];
+    const list = (api.config as { agents?: { list?: Array<Record<string, unknown>> } }).agents?.list;
+    if (Array.isArray(list)) {
+      agents = list.map((a) => ({
+        id: String(a.id ?? ''),
+        identityName: typeof (a.identity as Record<string, unknown> | undefined)?.name === 'string'
+          ? (a.identity as { name: string }).name
+          : undefined,
+        workspace: typeof a.workspace === 'string' ? a.workspace : undefined,
+        model: typeof a.model === 'string' ? a.model : undefined,
+        isDefault: a.default === true,
+      })).filter((a) => a.id);
     }
   } catch { /* best-effort */ }
 
-  let recipes: RecipeManifestEntry[] = [];
+  // Read recipes from filesystem (avoids subprocess which can silently fail)
+  const recipes: RecipeManifestEntry[] = [];
   try {
-    const res = await api.runtime.system.runCommandWithTimeout(
-      ['openclaw', 'recipes', 'list'],
-      { timeoutMs: 15_000 },
-    );
-    if (res.code === 0 && res.stdout) {
-      recipes = JSON.parse(res.stdout) as RecipeManifestEntry[];
+    const { listRecipeFiles } = await import('./recipes');
+    const { getRecipesConfig } = await import('./config');
+    const { parseFrontmatter } = await import('./recipe-frontmatter');
+    const cfg = getRecipesConfig(api.config);
+    const files = await listRecipeFiles(api, cfg);
+    for (const f of files) {
+      const md = await fs.readFile(f.path, 'utf8');
+      const { frontmatter } = parseFrontmatter(md);
+      if (frontmatter.id && frontmatter.name) {
+        recipes.push({
+          id: frontmatter.id,
+          name: frontmatter.name,
+          kind: frontmatter.kind === 'team' ? 'team' : 'agent',
+          source: f.source,
+        });
+      }
     }
   } catch { /* best-effort */ }
 
