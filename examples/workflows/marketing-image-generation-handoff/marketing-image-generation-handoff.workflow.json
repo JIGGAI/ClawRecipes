@@ -135,7 +135,7 @@
       "y": 306.75958251953125,
       "config": {
         "agentId": "marketing-team-lead",
-        "promptTemplate": "You are preparing a handoff packet for the Social team to publish to Instagram.\n\nInputs:\n- QC/Brand JSON: {{qc_brand.platforms_json}}\n- Image generation output: {{generate_image.output}}\n  (Look for 'image_field' or 'file_path' field \u2014 this is a local file path to the generated image)\n\nExtract the final Instagram caption text from the QC/Brand JSON (platforms.instagram key). If the QC output includes hook/body, combine into a single caption (hook first, then blank line, then body). Ensure it mentions @hairmx and contains NO hashtags.\n\nFor mediaUrl:\n- If the image output has a file_path or image_field, return it as-is (the social workflow will handle upload).\n- If you find an https URL, use that instead.\n- Otherwise return empty string.\n\nOutput STRICT JSON: {\"content\":string,\"mediaUrl\":string,\"scheduledAt\":string}. scheduledAt should be an ISO timestamp if scheduling, otherwise empty string.",
+        "promptTemplate": "You are preparing a handoff packet for the Social team to publish to Instagram.\n\nInputs:\n- QC/Brand JSON: {{qc_brand.platforms}}\n- Image generation output: {{generate_image.output}}\n  (Look for 'image_field' or 'file_path' field \u2014 this is a local file path to the generated image)\n\nExtract the final Instagram caption text from the QC/Brand JSON (platforms.instagram key). If the QC output includes hook/body, combine into a single caption (hook first, then blank line, then body). Ensure it mentions @hairmx and contains NO hashtags.\n\nFor mediaUrl:\n- If the image output has a file_path or image_field, return it as-is (the social workflow will handle upload).\n- If you find an https URL, use that instead.\n- Otherwise return empty string.\n\nOutput STRICT JSON: {\"content\":string,\"mediaUrl\":string,\"scheduledAt\":string}. scheduledAt should be an ISO timestamp if scheduling, otherwise empty string.",
         "outputFields": [
           {
             "name": "content",
@@ -210,7 +210,7 @@
         "tool": "fs.append",
         "args": {
           "path": "shared-context/memory/marketing_learnings.jsonl",
-          "content": "{\"ts\":\"{{date}}\",\"runId\":\"{{run.id}}\",\"notes\":{{qc_brand.notes_json}}}\\n"
+          "content": "{\"ts\":\"{{date}}\",\"runId\":\"{{run.id}}\",\"notes\":{{qc_brand.notes}}}\\n"
         },
         "agentId": "marketing-team-analyst"
       }

@@ -56,7 +56,7 @@ When a node's `text` field contains JSON, ClawRecipes automatically extracts nes
 ### Available Template Variables
 - `{{nodeId.text}}` — Raw JSON string
 - `{{nodeId.title}}` — Extracted: "Product Launch"  
-- `{{nodeId.approved_json}}` — For non-string values: "true"
+- `{{nodeId.approved}}` — For non-string values: "true"
 
 ### Deeply Nested Extraction
 If the JSON contains nested objects, fields are flattened:
@@ -68,7 +68,7 @@ If the JSON contains nested objects, fields are flattened:
 ```
 
 Available as:
-- `{{nodeId.meta_json}}` — Full meta object as JSON string
+- `{{nodeId.meta}}` — Full meta object as JSON string
 - `{{nodeId.author}}` — "John" (if meta.author is a string)
 
 ## LLM Node Structured Output
@@ -92,7 +92,7 @@ LLM nodes with `outputFields` configuration produce predictable JSON structures:
 ```
 Title: {{nodeId.title}}
 Tags: {{nodeId.tags}}  
-Metadata: {{nodeId.metadata_json}}
+Metadata: {{nodeId.metadata}}
 ```
 
 ## Usage Examples
@@ -144,7 +144,7 @@ Template substitution happens in the workflow worker during node execution. The 
 1. **Global vars** are built from run metadata and timestamps
 2. **Node outputs** are loaded from each completed node's output file
 3. **JSON parsing** attempts to extract fields from the `text` field
-4. **Nested extraction** flattens nested objects with `_json` suffixes for non-strings
+4. **Nested extraction** flattens nested objects, stringifying non-string values under their declared field name
 5. **Template replacement** applies all variables using simple string substitution
 
 ### Performance Notes

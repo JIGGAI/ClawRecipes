@@ -167,14 +167,14 @@ async function buildTemplateVars(
                         if (typeof nestedValue === 'string') {
                           vars[`${nid}.${nestedKey}`] = nestedValue;
                         } else if (nestedValue !== null && nestedValue !== undefined) {
-                          vars[`${nid}.${nestedKey}_json`] = JSON.stringify(nestedValue);
+                          vars[`${nid}.${nestedKey}`] = JSON.stringify(nestedValue);
                         }
                       }
                     }
                   } catch { /* nested parse fail is fine */ }
                 }
               } else if (value !== null && value !== undefined) {
-                vars[`${nid}.${key}_json`] = JSON.stringify(value);
+                vars[`${nid}.${key}`] = JSON.stringify(value);
               }
             }
           }

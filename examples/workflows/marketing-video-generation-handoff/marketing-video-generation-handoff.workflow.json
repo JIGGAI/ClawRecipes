@@ -225,7 +225,7 @@
         "tool": "fs.append",
         "args": {
           "path": "shared-context/memory/marketing_learnings.jsonl",
-          "content": "{\"ts\":\"{{date}}\",\"runId\":\"{{run.id}}\",\"type\":\"video\",\"notes\":{{qc_brand.notes_json}}}\\n"
+          "content": "{\"ts\":\"{{date}}\",\"runId\":\"{{run.id}}\",\"type\":\"video\",\"notes\":{{qc_brand.notes}}}\\n"
         },
         "agentId": "marketing-team-analyst"
       }
