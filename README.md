@@ -52,7 +52,7 @@ It is built for people who want durable artifacts on disk, not hidden app state.
 **OpenClaw plugin install (recommended)**
 
 ```bash
-openclaw plugins install @jiggai/recipes
+openclaw plugins install clawrecipes
 openclaw plugins enable recipes
 openclaw gateway restart
 openclaw plugins list
@@ -67,7 +67,7 @@ openclaw plugins list
 **npm install**
 
 ```bash
-npm install @jiggai/recipes --prefix ~/.openclaw/plugins
+npm install clawrecipes --prefix ~/.openclaw/plugins
 openclaw gateway restart
 openclaw plugins list
 ```
