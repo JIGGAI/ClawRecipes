@@ -69,7 +69,7 @@ jobs:
           script: |
             const pr = context.payload.pull_request;
             const tag = `canary-${pr.number}`;
-            const pkg = '@jiggai/recipes';
+            const pkg = 'clawrecipes';
             const body = [
               '✅ Published npm canary build for this PR.',
               '',
