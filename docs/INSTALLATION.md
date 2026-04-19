@@ -28,7 +28,7 @@ You should also know which install path you want:
 ## Option A — install from npm
 
 ```bash
-openclaw plugins install @jiggai/recipes
+openclaw plugins install clawrecipes
 openclaw gateway restart
 openclaw plugins list
 ```
@@ -195,7 +195,7 @@ npx clawhub@latest login
 
 ```bash
 # install
-openclaw plugins install @jiggai/recipes
+openclaw plugins install clawrecipes
 openclaw gateway restart
 
 # verify

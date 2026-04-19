@@ -1,9 +1,9 @@
-# Releasing `@jiggai/recipes`
+# Releasing `clawrecipes`
 
 This repo publishes to npm as:
 
 ```text
-@jiggai/recipes
+clawrecipes
 ```
 
 This is the practical release guide.
@@ -22,7 +22,7 @@ Useful checks:
 
 ```bash
 npm test
-npm view @jiggai/recipes version
+npm view clawrecipes version
 node -p "require('./package.json').version"
 cat openclaw.plugin.json
 ```
@@ -80,13 +80,13 @@ npm whoami
 Check the published version:
 
 ```bash
-npm view @jiggai/recipes version
+npm view clawrecipes version
 ```
 
 Then test a fresh install or upgrade path:
 
 ```bash
-openclaw plugins install @jiggai/recipes
+openclaw plugins install clawrecipes
 openclaw gateway restart
 openclaw recipes list
 ```
@@ -131,5 +131,5 @@ npm version patch
 git push origin main --follow-tags
 
 # verify published version
-npm view @jiggai/recipes version
+npm view clawrecipes version
 ```
