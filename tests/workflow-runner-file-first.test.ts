@@ -6,12 +6,18 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
 const toolCalls: Array<{ tool: string; args?: any; action?: string }> = [];
 
+// Per-test override for what the mocked llm-task should return. Reset between tests.
+const llmResponseOverride: { value: unknown | undefined } = { value: undefined };
+
 // The workflow runner/worker uses toolsInvoke for message sends (human approval) and llm-task.
 // For unit tests, mock it so we can exercise approval + revision flows without a gateway.
 vi.mock("../src/toolsInvoke", () => {
   return {
     toolsInvoke: async (api: any, req: any) => {
       toolCalls.push({ tool: String(req?.tool ?? ""), args: req?.args, action: req?.action });
+      if (String(req?.tool ?? "") === "llm-task" && llmResponseOverride.value !== undefined) {
+        return llmResponseOverride.value;
+      }
       return { ok: true, mocked: true };
     },
   };
@@ -932,6 +938,167 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       const growthRatio = queueBytesAfter / Math.max(queueBytesBefore, 1);
       expect(growthRatio).toBeLessThan(10); // 10× is generous; real growth is ~5×
     } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  // Regression: when an LLM node has no outputFields schema, the model returns a
+  // plain string (e.g. markdown). Prior to the fix, the worker stored
+  // JSON.stringify(string) — which wraps the value in quotes and escapes
+  // newlines — so `{{node.text}}` substitution produced `"# ...\n..."` instead
+  // of raw markdown, breaking downstream fs.write consumers.
+  test("llm node preserves raw string payload in .text (no JSON wrapping)", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-llm-string";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    const markdown = "# Weekly Content Packet\n\n## 1. Executive summary\n- First post\n- Second post\n";
+
+    try {
+      toolCalls.length = 0;
+      llmResponseOverride.value = markdown;
+
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "llm-string.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+
+      const workflow = {
+        id: "llm-string",
+        name: "Demo: LLM returns raw markdown",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "draft_packet",
+            kind: "llm",
+            assignedTo: { agentId: "agent-writer" },
+            action: { promptTemplate: "Return the weekly packet as markdown." },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "draft_packet", on: "success" },
+          { from: "draft_packet", to: "end", on: "success" },
+        ],
+      };
+
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi();
+      const enq = await enqueueWorkflowRun(api, { teamId, workflowFile });
+      expect(enq.ok).toBe(true);
+
+      const r1 = await runWorkflowRunnerOnce(api, { teamId });
+      expect(r1.ok).toBe(true);
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-writer", limit: 5, workerId: "w-writer" });
+      expect(w1.ok).toBe(true);
+
+      // Locate the node output file for draft_packet under the run directory.
+      const runsDir = path.join(shared, "workflow-runs");
+      const runDirs = await fs.readdir(runsDir);
+      expect(runDirs.length).toBe(1);
+      const runDir = path.join(runsDir, runDirs[0]!);
+      const nodeOutputsDir = path.join(runDir, "node-outputs");
+      const files = await fs.readdir(nodeOutputsDir);
+      const outputFile = files.find((f) => f.endsWith("-draft_packet.json"));
+      expect(outputFile).toBeDefined();
+
+      const raw = await fs.readFile(path.join(nodeOutputsDir, outputFile!), "utf8");
+      const parsed = JSON.parse(raw) as { text: string };
+
+      // The stored text should equal the raw markdown — NOT a JSON-encoded
+      // string literal. Before the fix this would have been
+      //   "\"# Weekly Content Packet\\n\\n..." (first char = `"`, newlines = `\\n`).
+      expect(parsed.text).toBe(markdown);
+      expect(parsed.text.startsWith("#")).toBe(true);
+      expect(parsed.text.startsWith('"')).toBe(false);
+      expect(parsed.text).not.toContain("\\n");
+    } finally {
+      llmResponseOverride.value = undefined;
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  // Companion: object payloads (structured outputs) still get pretty-printed JSON,
+  // so downstream parsers that rely on JSON.parse(.text) continue to work.
+  test("llm node still JSON-stringifies object payloads", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-llm-object";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      toolCalls.length = 0;
+      // Default mock returns { ok: true, mocked: true } — an object payload.
+      llmResponseOverride.value = undefined;
+
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "llm-object.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+
+      const workflow = {
+        id: "llm-object",
+        name: "Demo: LLM returns structured object",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "qc_brand",
+            kind: "llm",
+            assignedTo: { agentId: "agent-qc" },
+            action: { promptTemplate: "Return JSON." },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "qc_brand", on: "success" },
+          { from: "qc_brand", to: "end", on: "success" },
+        ],
+      };
+
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi();
+      const enq = await enqueueWorkflowRun(api, { teamId, workflowFile });
+      expect(enq.ok).toBe(true);
+
+      const r1 = await runWorkflowRunnerOnce(api, { teamId });
+      expect(r1.ok).toBe(true);
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-qc", limit: 5, workerId: "w-qc" });
+      expect(w1.ok).toBe(true);
+
+      const runsDir = path.join(shared, "workflow-runs");
+      const runDirs = await fs.readdir(runsDir);
+      const runDir = path.join(runsDir, runDirs[0]!);
+      const nodeOutputsDir = path.join(runDir, "node-outputs");
+      const files = await fs.readdir(nodeOutputsDir);
+      const outputFile = files.find((f) => f.endsWith("-qc_brand.json"));
+      expect(outputFile).toBeDefined();
+
+      const raw = await fs.readFile(path.join(nodeOutputsDir, outputFile!), "utf8");
+      const parsed = JSON.parse(raw) as { text: string };
+
+      // Object payload round-trips as valid JSON in .text.
+      const reparsed = JSON.parse(parsed.text) as { ok: boolean; mocked: boolean };
+      expect(reparsed.ok).toBe(true);
+      expect(reparsed.mocked).toBe(true);
+    } finally {
+      llmResponseOverride.value = undefined;
       process.env.OPENCLAW_WORKSPACE = prevWorkspace;
       await fs.rm(base, { recursive: true, force: true });
     }
