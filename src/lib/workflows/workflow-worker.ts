@@ -889,7 +889,11 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         const llmRec = asRecord(llmRes);
         const details = asRecord(llmRec['details']);
         const payload = details['json'] ?? (Object.keys(details).length ? details : llmRes) ?? null;
-        text = JSON.stringify(payload, null, 2);
+        // Store string payloads (e.g. markdown) as-is so `{{node.text}}` substitutes
+        // the original content. JSON.stringify(string) would wrap it in quotes and
+        // escape newlines, which breaks downstream fs.write consumers that expect
+        // plain text. Object/array payloads still get pretty-printed.
+        text = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
       } catch (e) {
         const eRec = asRecord(e);
         const errorCategory = classifyError(e);

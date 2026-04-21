@@ -213,7 +213,8 @@ export async function executeWorkflowNodes(opts: {
         const llmRec = asRecord(llmRes);
         const details = asRecord(llmRec['details']);
         const payload = details['json'] ?? (Object.keys(details).length ? details : llmRes) ?? null;
-        text = JSON.stringify(payload, null, 2);
+        // Store string payloads (e.g. markdown) as-is — see workflow-worker.ts for rationale.
+        text = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
       } catch (e) {
         throw new Error(`LLM execution failed for node ${nodeLabel(node)}: ${e instanceof Error ? e.message : String(e)}`);
       }
