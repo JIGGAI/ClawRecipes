@@ -542,6 +542,10 @@ templates:
       [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]
     }
 
+    safe_ref() {
+      [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$ ]]
+    }
+
     cmd="${1:-}"
     shift || true
 
@@ -633,6 +637,14 @@ templates:
         fi
         if [[ -d "$worktree_dir" ]]; then
           echo "Worktree directory already exists: $worktree_dir" >&2
+          exit 2
+        fi
+        if ! safe_ref "$base_ref"; then
+          echo "invalid --base-ref: must match ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$" >&2
+          exit 2
+        fi
+        if ! safe_ref "$branch"; then
+          echo "invalid --branch: must match ^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$" >&2
           exit 2
         fi
         git worktree add "$worktree_dir" -b "$branch" "$base_ref"
