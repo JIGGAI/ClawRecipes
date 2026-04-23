@@ -563,7 +563,7 @@ templates:
         task_id=""
         spec_text=""
         spec_file_in=""
-        base_ref="${SWARM_BASE_REF}"
+        base_ref="${SWARM_BASE_REF:-}"
         branch=""
         tmux_session=""
         agent_kind="codex"
