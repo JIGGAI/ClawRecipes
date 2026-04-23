@@ -22,7 +22,7 @@ import {
   moveRunTicket, appendRunLog, writeRunFile, loadRunFile,
   runFilePathFor, nodeLabel,
   loadNodeStatesFromRun, pickNextRunnableNodeIndex,
-  sanitizeDraftOnlyText, templateReplace,
+  sanitizeDraftOnlyText, templateReplace, expandFileIncludes,
 } from './workflow-utils';
 
 /**
@@ -780,7 +780,10 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       const promptRaw = promptTemplateInline ? promptTemplateInline : await readTextFile(promptPathAbs);
 
       const vars = await buildTemplateVars(teamDir, runsDir, runId, workflowFile, workflow);
-      const prompt = templateReplace(promptRaw, vars);
+      const promptVarsResolved = templateReplace(promptRaw, vars);
+      // Inline `{{file:<relative-path>}}` contents so LLM nodes can see workspace files
+      // they cannot fetch themselves (llm-task is one-shot, no tool loop).
+      const prompt = await expandFileIncludes(promptVarsResolved, teamDir);
 
       // Build output format instructions from outputFields when defined
       const nodeConfig = asRecord((node as unknown as Record<string, unknown>)['config']);
@@ -1240,7 +1243,8 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       const vars = await buildTemplateVars(teamDir, runsDir, task.runId, workflowFile, workflow);
       // Add node-level vars that templateReplace doesn't normally include
       vars['node.id'] = node.id;
-      const prompt = templateReplace(promptTemplateRaw, vars);
+      const promptVarsResolved = templateReplace(promptTemplateRaw, vars);
+      const prompt = await expandFileIncludes(promptVarsResolved, teamDir);
       const outputRelPath = templateReplace(outputPathRaw, vars);
 
       const defaultNodeOutputRel = path.join('node-outputs', `${String(nodeIdx).padStart(3, '0')}-${node.id}.json`);

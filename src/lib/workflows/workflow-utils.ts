@@ -158,6 +158,81 @@ export function templateReplace(input: string, vars: Record<string, string>) {
   return out;
 }
 
+export const FILE_INCLUDE_MAX_BYTES_DEFAULT = 256 * 1024;
+
+/**
+ * Expand `{{file:<relative-path>}}` markers by inlining the contents of files
+ * under the team workspace. Intended for LLM prompts where the model cannot
+ * call a read_file tool itself (workflow llm-task is one-shot, no tool loop).
+ *
+ * Safety:
+ *  - paths are treated as RELATIVE TO teamDir
+ *  - rejects absolute paths, paths with `..`, and paths that escape teamDir (incl. via symlink)
+ *  - enforces a per-include byte cap (default 256KB)
+ *
+ * On any rejection the marker is replaced with a short `[[file-include …]]`
+ * note so the LLM sees the failure context instead of the pipeline blowing up.
+ */
+export async function expandFileIncludes(
+  input: string,
+  teamDir: string,
+  opts: { maxBytes?: number } = {},
+): Promise<string> {
+  const text = String(input ?? '');
+  const pattern = /\{\{\s*file:([^}]+?)\s*\}\}/g;
+  const matches = Array.from(text.matchAll(pattern));
+  if (!matches.length) return text;
+
+  const maxBytes = opts.maxBytes ?? FILE_INCLUDE_MAX_BYTES_DEFAULT;
+  const teamDirResolvedRaw = path.resolve(teamDir);
+  // Resolve symlinks on teamDir too so comparisons below are apples-to-apples.
+  // On macOS, os.tmpdir() returns /var/... but realpath yields /private/var/... .
+  let teamDirResolved = teamDirResolvedRaw;
+  try { teamDirResolved = await fs.realpath(teamDirResolvedRaw); } catch { /* fall back to resolved */ }
+  const teamDirPrefix = teamDirResolved + path.sep;
+
+  const resolved = new Map<string, string>();
+  for (const m of matches) {
+    const rawPath = m[1].trim();
+    if (resolved.has(rawPath)) continue;
+
+    if (!rawPath || path.isAbsolute(rawPath) || rawPath.split('/').includes('..')) {
+      resolved.set(rawPath, `[[file-include rejected: unsafe path "${rawPath}"]]`);
+      continue;
+    }
+
+    const candidate = path.resolve(teamDirResolved, rawPath);
+    if (candidate !== teamDirResolved && !candidate.startsWith(teamDirPrefix)) {
+      resolved.set(rawPath, `[[file-include rejected: outside team workspace "${rawPath}"]]`);
+      continue;
+    }
+
+    try {
+      const real = await fs.realpath(candidate);
+      if (real !== teamDirResolved && !real.startsWith(teamDirPrefix)) {
+        resolved.set(rawPath, `[[file-include rejected: symlink escapes team workspace "${rawPath}"]]`);
+        continue;
+      }
+      const stat = await fs.stat(real);
+      if (!stat.isFile()) {
+        resolved.set(rawPath, `[[file-include rejected: not a regular file "${rawPath}"]]`);
+        continue;
+      }
+      if (stat.size > maxBytes) {
+        resolved.set(rawPath, `[[file-include rejected: "${rawPath}" size ${stat.size}B exceeds ${maxBytes}B cap]]`);
+        continue;
+      }
+      const content = await fs.readFile(real, 'utf8');
+      resolved.set(rawPath, content);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      resolved.set(rawPath, `[[file-include failed: "${rawPath}" — ${msg}]]`);
+    }
+  }
+
+  return text.replace(pattern, (_full, raw) => resolved.get(String(raw).trim()) ?? '');
+}
+
 export function sanitizeDraftOnlyText(text: string): string {
   // Back-compat: older workflow nodes mention 'draft only'.
   // New canonical sanitizer also strips other internal-only disclaimer lines.

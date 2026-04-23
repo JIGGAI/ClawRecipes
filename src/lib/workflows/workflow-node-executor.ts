@@ -13,7 +13,7 @@ import {
   asRecord, asString,
   ensureDir, fileExists,
   moveRunTicket, appendRunLog, nodeLabel,
-  loadNodeStatesFromRun, sanitizeDraftOnlyText, templateReplace,
+  loadNodeStatesFromRun, sanitizeDraftOnlyText, templateReplace, expandFileIncludes,
 } from './workflow-utils';
 
 export async function resolveApprovalBindingTarget(api: OpenClawPluginApi, bindingId: string): Promise<{ channel: string; target: string; accountId?: string }> {
@@ -180,7 +180,10 @@ export async function executeWorkflowNodes(opts: {
       }
       await ensureDir(path.dirname(nodeOutputAbs));
 
-      const prompt = promptTemplateInline ? promptTemplateInline : await readTextFile(promptPathAbs);
+      const promptRaw = promptTemplateInline ? promptTemplateInline : await readTextFile(promptPathAbs);
+      // Inline `{{file:<relative-path>}}` contents so LLM nodes can see workspace files
+      // they cannot fetch themselves (llm-task is one-shot, no tool loop).
+      const prompt = await expandFileIncludes(promptRaw, teamDir);
       const task = [
         `You are executing a workflow run for teamId=${teamId}.`,
         `Workflow: ${workflow.name ?? workflow.id ?? workflowFile}`,
