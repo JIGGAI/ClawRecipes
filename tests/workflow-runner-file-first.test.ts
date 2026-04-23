@@ -304,7 +304,19 @@ describe("workflow-runner (file-first + runner/worker)", () => {
         kind: "execute_node",
       });
 
-      const lockDir = path.join(teamDir, "shared-context", "workflow-runs", "run-lock", "locks");
+      // Seed a minimal run.json so the worker reaches the lock-contention
+      // branch. Without this, the "run.json missing" skip (added to guard
+      // against deleted runs) would short-circuit before we exercise the
+      // lock path this test cares about.
+      const runDir = path.join(teamDir, "shared-context", "workflow-runs", "run-lock");
+      await fs.mkdir(runDir, { recursive: true });
+      await fs.writeFile(
+        path.join(runDir, "run.json"),
+        JSON.stringify({ runId: "run-lock", ticket: { file: "", lane: "backlog" }, workflow: { file: "" }, status: "waiting_workers", events: [], nodeResults: [], nodeStates: {} }),
+        "utf8"
+      );
+
+      const lockDir = path.join(runDir, "locks");
       await fs.mkdir(lockDir, { recursive: true });
       const lockPath = path.join(lockDir, "node-lock.lock");
       await fs.writeFile(
@@ -1099,6 +1111,188 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       expect(reparsed.mocked).toBe(true);
     } finally {
       llmResponseOverride.value = undefined;
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  // Regression: when a run's run.json has been deleted (e.g., operator ran
+  // rm on the run dir, or the workspace got cleaned) but stale tasks for
+  // that run still sit in an agent queue, the worker used to throw from
+  // loadRunFile. That exception escaped the outer try (which only has a
+  // finally) and crashed the CLI. The next launchd tick would claim the
+  // next task and crash again. Fix: treat "run.json missing" as
+  // `skipped_stale`, NOT an error — so the tick drains the zombies and
+  // reaches real work behind them.
+  test("worker skips tasks for runs whose run.json was deleted (no crash)", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-deleted-run";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "deleted-run.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+      const workflow = {
+        id: "deleted-run",
+        name: "Tasks for deleted runs must not crash the worker",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "do-work",
+            kind: "tool",
+            assignedTo: { agentId: "agent-shared" },
+            action: {
+              tool: "fs.append",
+              args: { path: "shared-context/REAL.log", content: "did real work\n" },
+            },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "do-work", on: "success" },
+          { from: "do-work", to: "end", on: "success" },
+        ],
+      };
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi();
+
+      // Plant stale queue entries for a run whose run.json does NOT exist.
+      // This mimics what we see in prod after deleting a run dir while
+      // stale tasks sit in the agent queue.
+      for (let i = 0; i < 3; i++) {
+        await enqueueTask(teamDir, "agent-shared", {
+          teamId,
+          runId: "ghost-run-that-was-deleted",
+          nodeId: "do-work",
+          kind: "execute_node",
+        });
+      }
+
+      // Tick the worker. Old behavior: first ghost task crashes at
+      // loadRunFile; the exception escapes (outer try has only a finally)
+      // and the tick rejects. New behavior: loadRunFile's throw is
+      // caught, the task is recorded as skipped_stale, and the loop
+      // moves on to the next task.
+      const w = await runWorkflowWorkerTick(api, {
+        teamId,
+        agentId: "agent-shared",
+        limit: 10,
+        workerId: "w-ghost",
+      });
+      expect(w.ok).toBe(true);
+
+      const results = (w as { results: Array<{ status: string; runId: string; nodeId: string }> }).results;
+      const ghostSkipped = results.filter(
+        (r) => r.runId === "ghost-run-that-was-deleted" && r.status === "skipped_stale"
+      ).length;
+      expect(ghostSkipped).toBe(3);
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  // Regression: when a task is dequeued for a deleted run AND another worker
+  // holds the node lock (lock contention path), the worker used to re-enqueue
+  // the task — creating a permanent zombie. Fix: before re-enqueueing on
+  // lock contention, check that the run still exists. If not, drop it.
+  test("worker does not re-enqueue tasks for deleted runs on lock contention", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-zombie";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "zombie.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+      const workflow = {
+        id: "zombie",
+        name: "Zombie tasks for deleted runs must not be re-enqueued",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "work",
+            kind: "tool",
+            assignedTo: { agentId: "agent-z" },
+            action: { tool: "fs.append", args: { path: "shared-context/Z.log", content: "z\n" } },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "work", on: "success" },
+          { from: "work", to: "end", on: "success" },
+        ],
+      };
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      const api = stubApi();
+
+      // Plant a queue task for a run that never existed.
+      await enqueueTask(teamDir, "agent-z", {
+        teamId,
+        runId: "never-existed-run",
+        nodeId: "work",
+        kind: "execute_node",
+      });
+
+      // Plant a fresh live lock for the deleted run's node so the worker
+      // takes the lock-contention branch (which is the original re-enqueue
+      // site).
+      const lockDir = path.join(shared, "workflow-runs", "never-existed-run", "locks");
+      await fs.mkdir(lockDir, { recursive: true });
+      await fs.writeFile(
+        path.join(lockDir, "work.lock"),
+        JSON.stringify({
+          workerId: "other-worker",
+          pid: 999999,
+          taskId: "other-task",
+          claimedAt: new Date().toISOString(),
+          ttlMs: 30 * 60 * 1000,
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        }),
+        "utf8"
+      );
+
+      const queuePath = path.join(shared, "workflow-queues", "agent-z.jsonl");
+      const queueBytesBefore = (await fs.readFile(queuePath, "utf8")).length;
+
+      const w = await runWorkflowWorkerTick(api, {
+        teamId,
+        agentId: "agent-z",
+        limit: 5,
+        workerId: "w-zombie",
+      });
+      expect(w.ok).toBe(true);
+
+      // The queue MUST NOT have grown — the task for the deleted run should
+      // have been dropped (status=skipped_stale), not re-enqueued.
+      const queueBytesAfter = (await fs.readFile(queuePath, "utf8")).length;
+      expect(queueBytesAfter).toBe(queueBytesBefore);
+
+      const results = (w as { results: Array<{ status: string; runId: string }> }).results;
+      const stale = results.filter(
+        (r) => r.runId === "never-existed-run" && r.status === "skipped_stale"
+      );
+      expect(stale.length).toBeGreaterThanOrEqual(1);
+    } finally {
       process.env.OPENCLAW_WORKSPACE = prevWorkspace;
       await fs.rm(base, { recursive: true, force: true });
     }
