@@ -655,9 +655,16 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         } else {
           // The lock is still live and held by another worker. The cursor has
           // already advanced past this task, so under naive logic we'd lose it.
-          // Re-enqueue — but ONLY if no equivalent task is already pending.
-          // Otherwise repeated ticks against a stuck lock would pile up dozens
-          // of duplicates for the same {runId, nodeId}.
+          // Re-enqueue — but ONLY if no equivalent task is already pending
+          // AND the run still exists. Without the run.json check, a lock-held
+          // task for a deleted run gets endlessly re-enqueued, crash-looping
+          // every tick that dequeues it.
+          const runStillExists = await fileExists(runFilePathFor(runsDir, task.runId));
+          if (!runStillExists) {
+            countedTowardLimit = false;
+            results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_stale' });
+            continue;
+          }
           const alreadyPending = await hasPendingTaskFor(teamDir, agentId, {
             runId: task.runId,
             nodeId: task.nodeId,
@@ -678,14 +685,35 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
       const runId = task.runId;
 
-      const { run } = await loadRunFile(teamDir, runsDir, runId);
-      const workflowFile = String(run.workflow.file);
-      const workflowPath = path.join(workflowsDir, workflowFile);
-      const workflowRaw = await readTextFile(workflowPath);
-      const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
-
-      const nodeIdx = workflow.nodes.findIndex((n) => String(n.id) === String(task.nodeId));
-      if (nodeIdx < 0) throw new Error(`Node not found in workflow: ${task.nodeId}`);
+      // loadRunFile + workflow/node lookup can throw if the run dir was
+      // removed out from under us (manual cleanup, workspace reset) or if
+      // the workflow JSON renamed/removed this node between enqueue and
+      // dequeue. The outer try has only a finally, so a throw here would
+      // escape the tick and crash the CLI — which in a 1-minute cron loop
+      // means every subsequent tick dies the same way until an operator
+      // manually drains the queue. Skip stale instead.
+      let run: RunLog;
+      let workflow: ReturnType<typeof normalizeWorkflow>;
+      let workflowFile: string;
+      let nodeIdx: number;
+      try {
+        ({ run } = await loadRunFile(teamDir, runsDir, runId));
+        workflowFile = String(run.workflow.file);
+        const workflowPath = path.join(workflowsDir, workflowFile);
+        const workflowRaw = await readTextFile(workflowPath);
+        workflow = normalizeWorkflow(JSON.parse(workflowRaw));
+        nodeIdx = workflow.nodes.findIndex((n) => String(n.id) === String(task.nodeId));
+        if (nodeIdx < 0) throw new Error(`Node not found in workflow: ${task.nodeId}`);
+      } catch (err) {
+        countedTowardLimit = false;
+        // Log the reason so operators can diagnose; don't add it to the
+        // result shape (kept narrow for downstream consumers).
+        try {
+          console.warn(`[workflow-worker] skip_stale taskId=${task.id} runId=${task.runId} nodeId=${task.nodeId} reason=${(err as Error)?.message ?? String(err)}`);
+        } catch { /* log best-effort */ }
+        results.push({ taskId: task.id, runId: task.runId, nodeId: task.nodeId, status: 'skipped_stale' });
+        continue;
+      }
       const node = workflow.nodes[nodeIdx]!;
 
       // Now that we know the node, tighten the lock TTL based on node.config.timeoutMs.
