@@ -1297,4 +1297,102 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       await fs.rm(base, { recursive: true, force: true });
     }
   });
+
+  // Regression: exec tool nodes must surface their stdout as `.text` in the
+  // node-output so downstream `{{nodeId.field}}` templating resolves. Prior
+  // bug left exec stdout only in the artifact file; downstream exec commands
+  // like `curl "...?team={{select_account.kitchenTeamId}}"` received the
+  // literal `{{…}}` placeholder and failed.
+  test("exec tool stdout becomes node .text, enabling downstream template vars", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-exec-text";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+    const shared = path.join(teamDir, "shared-context");
+    const workflowsDir = path.join(shared, "workflows");
+
+    try {
+      await fs.mkdir(workflowsDir, { recursive: true });
+      await fs.mkdir(path.join(teamDir, "work", "backlog"), { recursive: true });
+
+      const workflowFile = "exec-text.workflow.json";
+      const workflowPath = path.join(workflowsDir, workflowFile);
+      const workflow = {
+        id: "exec-text",
+        name: "exec stdout → .text → downstream template var",
+        nodes: [
+          { id: "start", kind: "start" },
+          {
+            id: "producer",
+            kind: "tool",
+            assignedTo: { agentId: "agent-a" },
+            action: {
+              tool: "exec",
+              args: { command: `echo '{"kitchenTeamId":"hmx-marketing-team","mediaUrl":"/m/42.png"}'` },
+            },
+          },
+          {
+            id: "consumer",
+            kind: "tool",
+            assignedTo: { agentId: "agent-a" },
+            action: {
+              tool: "fs.append",
+              args: {
+                path: "shared-context/consumer.log",
+                content: "team={{producer.kitchenTeamId}} media={{producer.mediaUrl}}\n",
+              },
+            },
+          },
+          { id: "end", kind: "end" },
+        ],
+        edges: [
+          { from: "start", to: "producer", on: "success" },
+          { from: "producer", to: "consumer", on: "success" },
+          { from: "consumer", to: "end", on: "success" },
+        ],
+      };
+      await fs.writeFile(workflowPath, JSON.stringify(workflow, null, 2), "utf8");
+
+      // Stub api.runtime.system.runCommandWithTimeout so the exec path works
+      // in-test without spawning a real process.
+      const api = stubApi() as unknown as { runtime?: Record<string, unknown>; config: Record<string, unknown> };
+      api.runtime = {
+        system: {
+          runCommandWithTimeout: async () => ({
+            stdout: '{"kitchenTeamId":"hmx-marketing-team","mediaUrl":"/m/42.png"}\n',
+            stderr: "",
+            code: 0,
+          }),
+        },
+      };
+
+      const enq = await enqueueWorkflowRun(api as unknown as OpenClawPluginApi, { teamId, workflowFile });
+      expect(enq.ok).toBe(true);
+      await runWorkflowRunnerOnce(api as unknown as OpenClawPluginApi, { teamId });
+      await runWorkflowWorkerTick(api as unknown as OpenClawPluginApi, { teamId, agentId: "agent-a", limit: 5, workerId: "w" });
+
+      // Node-output for the exec node should contain .text = the stdout
+      const runDir = path.join(shared, "workflow-runs");
+      const runs = await fs.readdir(runDir);
+      const producerOut = JSON.parse(
+        await fs.readFile(path.join(runDir, runs[0]!, "node-outputs", "001-producer.json"), "utf8")
+      ) as { text?: string };
+      expect(producerOut.text).toBeDefined();
+      expect(producerOut.text).toContain("kitchenTeamId");
+      expect(JSON.parse(producerOut.text!)).toEqual({
+        kitchenTeamId: "hmx-marketing-team",
+        mediaUrl: "/m/42.png",
+      });
+
+      // Downstream fs.append should have resolved {{producer.kitchenTeamId}}
+      // and {{producer.mediaUrl}} from the parsed .text JSON.
+      const appended = await fs.readFile(path.join(shared, "consumer.log"), "utf8");
+      expect(appended.trim()).toBe("team=hmx-marketing-team media=/m/42.png");
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
 });

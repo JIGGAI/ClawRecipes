@@ -1112,6 +1112,10 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       const artifactsDir = path.join(runDir, 'artifacts');
       await ensureDir(artifactsDir);
       const artifactPath = path.join(artifactsDir, `${String(nodeIdx).padStart(3, '0')}-${node.id}.tool.json`);
+      // Captures the "human-readable output" each tool produced so the post-
+      // branch code can surface it as `.text` in the node-output file for
+      // downstream `{{nodeId.field}}` templating. Each branch sets this.
+      let toolOutputText = '';
       try {
         // Runner-native tools (preferred): do NOT depend on gateway tool exposure.
         if (toolName === 'fs.append') {
@@ -1135,6 +1139,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
           const result = { appendedTo: path.relative(teamDir, abs), bytes: Buffer.byteLength(content, 'utf8') };
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
+          toolOutputText = JSON.stringify(result);
 
         } else if (toolName === 'fs.write') {
           const relPathRaw = String(toolArgs.path ?? '').trim();
@@ -1155,6 +1160,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
 
           const result = { writtenTo: path.relative(teamDir, abs), bytes: Buffer.byteLength(content, 'utf8') };
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + '\n', 'utf8');
+          toolOutputText = JSON.stringify(result);
 
         } else {
           const vars = await buildTemplateVars(teamDir, runsDir, runId, workflowFile, workflow);
@@ -1211,6 +1217,18 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           }
 
           await fs.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: processedToolArgs, result: toolRes }, null, 2) + '\n', 'utf8');
+
+          // Surface tool output as `.text` so downstream `{{nodeId.field}}`
+          // templating resolves. For `exec`, use stdout (commonly JSON emitted
+          // by a script, which buildTemplateVars parses into per-field vars).
+          // For other tools, use the raw string or stringified object.
+          if (toolName === 'exec' && toolRes && typeof toolRes === 'object' && 'stdout' in (toolRes as Record<string, unknown>)) {
+            toolOutputText = String((toolRes as { stdout?: unknown }).stdout ?? '').trim();
+          } else if (typeof toolRes === 'string') {
+            toolOutputText = toolRes;
+          } else {
+            toolOutputText = JSON.stringify(toolRes, null, 2);
+          }
         }
 
         const defaultNodeOutputRel = path.join('node-outputs', `${String(nodeIdx).padStart(3, '0')}-${node.id}.json`);
@@ -1224,6 +1242,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
           kind: node.kind,
           completedAt: new Date().toISOString(),
           tool: toolName,
+          text: toolOutputText,
           artifactPath: path.relative(teamDir, artifactPath),
         }, null, 2) + '\n', 'utf8');
 
