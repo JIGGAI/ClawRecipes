@@ -58,4 +58,50 @@ describe("toolsInvoke", () => {
     expect(result).toEqual({ success: true });
     expect(mockFetch).toHaveBeenCalledTimes(3);
   });
+
+  test("uses args.timeoutMs + 30s buffer for fetch abort timer when provided", async () => {
+    // Workflow LLM nodes pass timeoutMs in args (e.g. 900_000 for the weekly
+    // packet draft). Before this fix, the fetch was hardcoded at 120s and
+    // aborted long-running LLM calls even though the node config said 15 min.
+    const delays: number[] = [];
+    const realSetTimeout = globalThis.setTimeout;
+    vi.stubGlobal("setTimeout", (fn: () => void, delay: number) => {
+      delays.push(delay);
+      return realSetTimeout(fn, delay);
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ ok: true, result: { ok: true } }),
+      })
+    );
+    const api = { config: { gateway: { port: 18789, auth: { token: "secret" } } } };
+    await toolsInvoke(api, {
+      tool: "llm-task",
+      action: "json",
+      args: { prompt: "x", timeoutMs: 900_000 },
+    });
+    // 900_000 + 30_000 buffer for HTTP roundtrip/gateway overhead
+    expect(delays).toContain(930_000);
+  });
+
+  test("falls back to default TOOLS_INVOKE_TIMEOUT_MS when args.timeoutMs missing", async () => {
+    const delays: number[] = [];
+    const realSetTimeout = globalThis.setTimeout;
+    vi.stubGlobal("setTimeout", (fn: () => void, delay: number) => {
+      delays.push(delay);
+      return realSetTimeout(fn, delay);
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ ok: true, result: { ok: true } }),
+      })
+    );
+    const api = { config: { gateway: { port: 18789, auth: { token: "secret" } } } };
+    await toolsInvoke(api, { tool: "cron", args: { action: "list" } });
+    expect(delays).toContain(TOOLS_INVOKE_TIMEOUT_MS);
+  });
 });

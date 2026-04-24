@@ -47,7 +47,15 @@ function parseToolsInvokeError(json: ToolsInvokeResponse, status: number): strin
 
 async function doSingleToolsInvoke<T>(url: string, token: string, req: ToolsInvokeRequest): Promise<T> {
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), TOOLS_INVOKE_TIMEOUT_MS);
+  // Honor per-call timeoutMs (e.g. LLM nodes often pass 300000-900000 ms).
+  // Add a 30s HTTP/gateway overhead buffer so the LLM has the full node-
+  // configured window to produce its response before the fetch aborts.
+  // Fall back to the module default when no timeout was passed.
+  const argsTimeout = typeof (req.args as Record<string, unknown> | undefined)?.['timeoutMs'] === 'number'
+    ? (req.args as { timeoutMs: number }).timeoutMs
+    : 0;
+  const fetchTimeoutMs = argsTimeout > 0 ? argsTimeout + 30_000 : TOOLS_INVOKE_TIMEOUT_MS;
+  const t = setTimeout(() => ac.abort(), fetchTimeoutMs);
   const res = await fetch(url, {
     method: "POST",
     signal: ac.signal,
