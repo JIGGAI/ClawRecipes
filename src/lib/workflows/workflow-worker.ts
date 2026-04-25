@@ -1073,7 +1073,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         `Approval requested: ${workflow.name ?? workflow.id ?? workflowFile}`,
         `Ticket: ${path.relative(teamDir, curTicketPath)}`,
         `Code: ${code}`,
-        proposed ? `\n---\nPROPOSED POST (X)\n---\n${proposed}` : `\n(Warning: no proposed text found to preview)`,
+        proposed ? `\n---\nPROPOSED POST [X]\n---\n${proposed}` : `\n(Warning: no proposed text found to preview)`,
         `\nReply with:`,
         `- approve ${code}`,
         `- decline ${code} <what to change>`,
