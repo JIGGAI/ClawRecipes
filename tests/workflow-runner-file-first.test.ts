@@ -4,6 +4,15 @@ import os from "node:os";
 import path from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
+// PID well above kern.pidmax on macOS (~99999) and the default
+// kernel.pid_max on modern Linux (~4194304). process.kill(pid, 0) returns
+// ESRCH for unallocated pids, so this sentinel reliably simulates "lock
+// holder is gone" without spawning a real child (which would trip the
+// install-time skill-scanner's child_process rule). A custom kernel with
+// PID_MAX_LIMIT raised closer to INT32_MAX could in theory invalidate
+// this; if CI ever runs on such a kernel, switch to a runtime probe.
+const DEAD_PID_SENTINEL = 2_147_483_646;
+
 const toolCalls: Array<{ tool: string; args?: any; action?: string }> = [];
 
 // Per-test override for what the mocked llm-task should return. Reset between tests.
@@ -333,6 +342,229 @@ describe("workflow-runner (file-first + runner/worker)", () => {
       const claimsDir = path.join(teamDir, "shared-context", "workflow-queues", "claims");
       const claimFiles = await fs.readdir(claimsDir).catch(() => []);
       expect(claimFiles.length).toBe(0);
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("worker reclaims lock when same-host PID is dead even within TTL window", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-lock-deadpid";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+
+    try {
+      await enqueueTask(teamDir, "agent-a", {
+        teamId,
+        runId: "run-deadpid",
+        nodeId: "node-x",
+        kind: "execute_node",
+      });
+
+      // Minimal run.json so we get past the run-existence guard. workflow.file
+      // is empty so that AFTER lock reclaim, the workflow load throws and the
+      // tick reports skipped_stale — distinguishing reclaim-and-fail from
+      // skipped_locked.
+      const runDir = path.join(teamDir, "shared-context", "workflow-runs", "run-deadpid");
+      await fs.mkdir(runDir, { recursive: true });
+      await fs.writeFile(
+        path.join(runDir, "run.json"),
+        JSON.stringify({ runId: "run-deadpid", ticket: { file: "", lane: "backlog" }, workflow: { file: "" }, status: "waiting_workers", events: [], nodeResults: [], nodeStates: {} }),
+        "utf8"
+      );
+
+      const lockDir = path.join(runDir, "locks");
+      await fs.mkdir(lockDir, { recursive: true });
+      const lockPath = path.join(lockDir, "node-x.lock");
+
+      const deadPid = DEAD_PID_SENTINEL;
+      const claimedAt = new Date();
+      const expiresAt = new Date(Date.now() + 17 * 60 * 1000); // TTL not expired
+      await fs.writeFile(
+        lockPath,
+        JSON.stringify({
+          workerId: "kitchen-run-now",
+          pid: deadPid,
+          host: os.hostname(),
+          taskId: "previous-task",
+          claimedAt: claimedAt.toISOString(),
+          ttlMs: 17 * 60 * 1000,
+          expiresAt: expiresAt.toISOString(),
+        }, null, 2),
+        "utf8"
+      );
+
+      const api = stubApi();
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 1, workerId: "worker-a" });
+      expect(w1.ok).toBe(true);
+      // Reclaim succeeds, then workflow load fails because workflow.file is "".
+      // skipped_stale (not skipped_locked) proves the lock was reclaimed.
+      expect(w1.results[0]?.status).toBe("skipped_stale");
+      // Lock is released by the finally block after execution falls through.
+      const lockExists = await fs.stat(lockPath).then(() => true).catch(() => false);
+      expect(lockExists).toBe(false);
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("worker respects lock when same-host PID is alive within TTL window", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-lock-alivepid";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+
+    try {
+      await enqueueTask(teamDir, "agent-a", {
+        teamId,
+        runId: "run-alivepid",
+        nodeId: "node-x",
+        kind: "execute_node",
+      });
+
+      const runDir = path.join(teamDir, "shared-context", "workflow-runs", "run-alivepid");
+      await fs.mkdir(runDir, { recursive: true });
+      await fs.writeFile(
+        path.join(runDir, "run.json"),
+        JSON.stringify({ runId: "run-alivepid", ticket: { file: "", lane: "backlog" }, workflow: { file: "" }, status: "waiting_workers", events: [], nodeResults: [], nodeStates: {} }),
+        "utf8"
+      );
+
+      const lockDir = path.join(runDir, "locks");
+      await fs.mkdir(lockDir, { recursive: true });
+      const lockPath = path.join(lockDir, "node-x.lock");
+
+      // The current test process is guaranteed alive — use it as the lock holder.
+      const lockBody = JSON.stringify({
+        workerId: "kitchen-run-now",
+        pid: process.pid,
+        host: os.hostname(),
+        taskId: "previous-task",
+        claimedAt: new Date().toISOString(),
+        ttlMs: 17 * 60 * 1000,
+        expiresAt: new Date(Date.now() + 17 * 60 * 1000).toISOString(),
+      }, null, 2);
+      await fs.writeFile(lockPath, lockBody, "utf8");
+
+      const api = stubApi();
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 1, workerId: "worker-a" });
+      expect(w1.ok).toBe(true);
+      expect(w1.results[0]?.status).toBe("skipped_locked");
+      // Original lock content is preserved.
+      const after = await fs.readFile(lockPath, "utf8");
+      expect(after).toBe(lockBody);
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("worker does not check PID liveness when lock host differs", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-lock-otherhost";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+
+    try {
+      await enqueueTask(teamDir, "agent-a", {
+        teamId,
+        runId: "run-otherhost",
+        nodeId: "node-x",
+        kind: "execute_node",
+      });
+
+      const runDir = path.join(teamDir, "shared-context", "workflow-runs", "run-otherhost");
+      await fs.mkdir(runDir, { recursive: true });
+      await fs.writeFile(
+        path.join(runDir, "run.json"),
+        JSON.stringify({ runId: "run-otherhost", ticket: { file: "", lane: "backlog" }, workflow: { file: "" }, status: "waiting_workers", events: [], nodeResults: [], nodeStates: {} }),
+        "utf8"
+      );
+
+      const lockDir = path.join(runDir, "locks");
+      await fs.mkdir(lockDir, { recursive: true });
+      const lockPath = path.join(lockDir, "node-x.lock");
+
+      const deadPid = DEAD_PID_SENTINEL;
+      const lockBody = JSON.stringify({
+        workerId: "kitchen-run-now",
+        pid: deadPid,
+        host: `${os.hostname()}-not`,
+        taskId: "previous-task",
+        claimedAt: new Date().toISOString(),
+        ttlMs: 17 * 60 * 1000,
+        expiresAt: new Date(Date.now() + 17 * 60 * 1000).toISOString(),
+      }, null, 2);
+      await fs.writeFile(lockPath, lockBody, "utf8");
+
+      const api = stubApi();
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 1, workerId: "worker-a" });
+      expect(w1.ok).toBe(true);
+      expect(w1.results[0]?.status).toBe("skipped_locked");
+      const after = await fs.readFile(lockPath, "utf8");
+      expect(after).toBe(lockBody);
+    } finally {
+      process.env.OPENCLAW_WORKSPACE = prevWorkspace;
+      await fs.rm(base, { recursive: true, force: true });
+    }
+  });
+
+  test("worker falls back to TTL-only when lock has no host/pid (older format)", async () => {
+    const prevWorkspace = process.env.OPENCLAW_WORKSPACE;
+
+    const { base, workspaceRoot } = await mkTmpWorkspace();
+    process.env.OPENCLAW_WORKSPACE = workspaceRoot;
+
+    const teamId = "t-lock-legacy";
+    const teamDir = path.join(base, `workspace-${teamId}`);
+
+    try {
+      await enqueueTask(teamDir, "agent-a", {
+        teamId,
+        runId: "run-legacy",
+        nodeId: "node-x",
+        kind: "execute_node",
+      });
+
+      const runDir = path.join(teamDir, "shared-context", "workflow-runs", "run-legacy");
+      await fs.mkdir(runDir, { recursive: true });
+      await fs.writeFile(
+        path.join(runDir, "run.json"),
+        JSON.stringify({ runId: "run-legacy", ticket: { file: "", lane: "backlog" }, workflow: { file: "" }, status: "waiting_workers", events: [], nodeResults: [], nodeStates: {} }),
+        "utf8"
+      );
+
+      const lockDir = path.join(runDir, "locks");
+      await fs.mkdir(lockDir, { recursive: true });
+      const lockPath = path.join(lockDir, "node-x.lock");
+
+      // Older-format lock: no host, no pid, TTL not expired.
+      const lockBody = JSON.stringify({
+        workerId: "older-worker",
+        taskId: "previous-task",
+        claimedAt: new Date().toISOString(),
+        ttlMs: 17 * 60 * 1000,
+        expiresAt: new Date(Date.now() + 17 * 60 * 1000).toISOString(),
+      }, null, 2);
+      await fs.writeFile(lockPath, lockBody, "utf8");
+
+      const api = stubApi();
+      const w1 = await runWorkflowWorkerTick(api, { teamId, agentId: "agent-a", limit: 1, workerId: "worker-a" });
+      expect(w1.ok).toBe(true);
+      expect(w1.results[0]?.status).toBe("skipped_locked");
+      const after = await fs.readFile(lockPath, "utf8");
+      expect(after).toBe(lockBody);
     } finally {
       process.env.OPENCLAW_WORKSPACE = prevWorkspace;
       await fs.rm(base, { recursive: true, force: true });
