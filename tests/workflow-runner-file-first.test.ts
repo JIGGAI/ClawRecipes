@@ -4,10 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 
-// PID well above kern.pidmax on macOS (~99999) and Linux pid_max (~4194304).
-// process.kill(DEAD_PID_SENTINEL, 0) returns ESRCH on every supported host,
-// so we can use it to simulate "lock holder is gone" without spawning a real
-// child (which would trip the install-time skill-scanner's child_process rule).
+// PID well above kern.pidmax on macOS (~99999) and the default
+// kernel.pid_max on modern Linux (~4194304). process.kill(pid, 0) returns
+// ESRCH for unallocated pids, so this sentinel reliably simulates "lock
+// holder is gone" without spawning a real child (which would trip the
+// install-time skill-scanner's child_process rule). A custom kernel with
+// PID_MAX_LIMIT raised closer to INT32_MAX could in theory invalidate
+// this; if CI ever runs on such a kernel, switch to a runtime probe.
 const DEAD_PID_SENTINEL = 2_147_483_646;
 
 const toolCalls: Array<{ tool: string; args?: any; action?: string }> = [];
