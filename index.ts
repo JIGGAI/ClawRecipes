@@ -243,7 +243,6 @@ const recipesPlugin = {
     };
 
     api.on("message_received" as never, approvalReplyHandler as never, { priority: 50 } as unknown as { priority: number });
-    api.on("message:received" as never, approvalReplyHandler as never, { priority: 50 } as unknown as { priority: number });
 
 
     // On plugin load, ensure multi-agent config has an explicit agents.list with main at top.
