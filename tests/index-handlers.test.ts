@@ -97,8 +97,8 @@ describe("index.ts handlers (remove-team)", () => {
         config: { agents: { defaults: { workspace: workspaceRoot } } },
         runtime: {
           config: {
-            loadConfig: () => ({ cfg: cfgObj }),
-            writeConfigFile: async () => {},
+            current: () => cfgObj,
+            replaceConfigFile: async () => {},
           },
         },
       } as any;
@@ -120,7 +120,7 @@ describe("index.ts handlers (remove-team)", () => {
       const cfgObj = { agents: { list: [] } };
       const api = {
         config: { agents: { defaults: { workspace: workspaceRoot } } },
-        runtime: { config: { loadConfig: () => ({ cfg: cfgObj }), writeConfigFile: async () => {} } },
+        runtime: { config: { current: () => cfgObj, replaceConfigFile: async () => {} } },
       } as any;
       const origTTY = process.stdin.isTTY;
       Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
@@ -146,7 +146,7 @@ describe("index.ts handlers (remove-team)", () => {
       const cfgObj = { agents: { list: [] } };
       const api = {
         config: { agents: { defaults: { workspace: workspaceRoot } } },
-        runtime: { config: { loadConfig: () => ({ cfg: cfgObj }), writeConfigFile: async () => {} } },
+        runtime: { config: { current: () => cfgObj, replaceConfigFile: async () => {} } },
       } as any;
       const orig = process.stdin.isTTY;
       Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
@@ -173,9 +173,9 @@ describe("index.ts handlers (remove-team)", () => {
         config: { agents: { defaults: { workspace: workspaceRoot } } },
         runtime: {
           config: {
-            loadConfig: () => ({ cfg: cfgObj }),
-            writeConfigFile: async (c: any) => {
-              Object.assign(cfgObj, c);
+            current: () => cfgObj,
+            replaceConfigFile: async ({ nextConfig }: { nextConfig: any }) => {
+              Object.assign(cfgObj, nextConfig);
             },
           },
         },
