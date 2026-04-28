@@ -1,5 +1,4 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
@@ -11,6 +10,7 @@ import { getDriver } from './media-drivers/registry';
 import { GenericDriver } from './media-drivers/generic.driver';
 import type { WorkflowLane, WorkflowNode, RunLog } from './workflow-types';
 import { dequeueNextTask, enqueueTask, hasPendingTaskFor, releaseTaskClaim, compactQueue } from './workflow-queue';
+import { currentLockOwner, isLockHolderDead } from './lock-liveness';
 import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow-node-output-readers';
 import { readTextFile } from './workflow-runner-io';
 import { resolveApprovalBindingTarget } from './workflow-node-executor';
@@ -598,8 +598,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       const claimedAtIso = new Date().toISOString();
       const lockInfo = {
         workerId,
-        pid: process.pid,
-        host: os.hostname(),
+        ...currentLockOwner(),
         taskId: task.id,
         claimedAt: claimedAtIso,
         ttlMs: DEFAULT_LOCK_TTL_MS,
@@ -637,32 +636,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
                 : NaN;
 
           const stale = Number.isFinite(effectiveExpiryMs) && Date.now() > effectiveExpiryMs;
-
-          // Same-host PID liveness check. If the lock recorded a host that
-          // matches ours and a pid that is no longer alive, the holder
-          // crashed or was killed; reclaim now instead of waiting out the
-          // full TTL (which can be tens of minutes for long LLM nodes).
-          //
-          // Cross-host locks are NEVER reclaimed via PID check — a remote
-          // PID may collide with a live local PID and produce a false
-          // "alive" reading, but we'd rather under-reclaim than steal a
-          // legitimately-held lock from another machine.
-          //
-          // Locks lacking host or pid (older format) skip this branch and
-          // fall through to TTL-only behavior.
-          let dead = false;
-          const sameHost = typeof parsed?.host === 'string' && parsed.host === os.hostname();
-          const lockPid = typeof parsed?.pid === 'number' && Number.isFinite(parsed.pid) ? parsed.pid : NaN;
-          if (sameHost && Number.isFinite(lockPid) && lockPid > 0) {
-            try {
-              process.kill(lockPid, 0);
-              // Process exists; treat lock as held.
-            } catch (err) {
-              if ((err as NodeJS.ErrnoException)?.code === 'ESRCH') dead = true;
-              // EPERM means the process exists but we can't signal it (e.g.,
-              // owned by another user); fall through to TTL-only behavior.
-            }
-          }
+          const dead = isLockHolderDead(parsed);
 
           if (stale || dead) {
             await fs.unlink(lockPath);
