@@ -94,8 +94,8 @@ files: []
         ...mockApi(workspaceRoot),
         runtime: {
           config: {
-            loadConfig: () => ({ cfg: cfgObj }),
-            writeConfigFile: async (c: any) => Object.assign(cfgObj, c),
+            current: () => cfgObj,
+            replaceConfigFile: async ({ nextConfig }: { nextConfig: any }) => Object.assign(cfgObj, nextConfig),
           },
         },
       } as any;
@@ -546,8 +546,8 @@ describe("migrate-team integration", () => {
         config: { agents: { defaults: { workspace: workspaceRoot } } },
         runtime: {
           config: {
-            loadConfig: () => ({ cfg: cfgObj }),
-            writeConfigFile: async (c: any) => Object.assign(cfgObj, c),
+            current: () => cfgObj,
+            replaceConfigFile: async ({ nextConfig }: { nextConfig: any }) => Object.assign(cfgObj, nextConfig),
           },
         },
       } as any;
@@ -580,8 +580,8 @@ describe("migrate-team integration", () => {
         config: { agents: { defaults: { workspace: workspaceRoot } } },
         runtime: {
           config: {
-            loadConfig: () => ({ cfg: cfgObj }),
-            writeConfigFile: async (c: any) => Object.assign(cfgObj, c),
+            current: () => cfgObj,
+            replaceConfigFile: async ({ nextConfig }: { nextConfig: any }) => Object.assign(cfgObj, nextConfig),
           },
         },
       } as any;

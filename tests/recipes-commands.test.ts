@@ -15,9 +15,9 @@ function mockApi(overrides: { workspace?: string; cfgObj?: any } = {}) {
     },
     runtime: {
       config: {
-        loadConfig: () => ({ cfg: cfgObj }),
-        writeConfigFile: async (c: any) => {
-          Object.assign(cfgObj, c);
+        current: () => cfgObj,
+        replaceConfigFile: async ({ nextConfig }: { nextConfig: any }) => {
+          Object.assign(cfgObj, nextConfig);
         },
       },
     },

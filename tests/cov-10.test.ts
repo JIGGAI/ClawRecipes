@@ -54,9 +54,9 @@ describe("cov-10: reconcileRecipeCronJobs, promptYesNo, applyAgentSnippets", () 
         config: { agents: { defaults: { workspace: "/ws" } } },
         runtime: {
           config: {
-            loadConfig: () => ({ cfg: cfgObj }),
-            writeConfigFile: async (c: any) => {
-              Object.assign(cfgObj, c);
+            current: () => cfgObj,
+            replaceConfigFile: async ({ nextConfig }: { nextConfig: any }) => {
+              Object.assign(cfgObj, nextConfig);
             },
           },
         },
@@ -83,9 +83,9 @@ describe("cov-10: reconcileRecipeCronJobs, promptYesNo, applyAgentSnippets", () 
         config: { agents: { defaults: { workspace: "/ws" } } },
         runtime: {
           config: {
-            loadConfig: () => ({ cfg: cfgObj }),
-            writeConfigFile: async (c: unknown) => {
-              Object.assign(cfgObj, c);
+            current: () => cfgObj,
+            replaceConfigFile: async ({ nextConfig }: { nextConfig: unknown }) => {
+              Object.assign(cfgObj, nextConfig);
             },
           },
         },
@@ -106,9 +106,9 @@ describe("cov-10: reconcileRecipeCronJobs, promptYesNo, applyAgentSnippets", () 
         config: { agents: { defaults: { workspace: "/ws" } } },
         runtime: {
           config: {
-            loadConfig: () => ({ cfg: cfgObj }),
-            writeConfigFile: async (c: unknown) => {
-              Object.assign(cfgObj, c);
+            current: () => cfgObj,
+            replaceConfigFile: async ({ nextConfig }: { nextConfig: unknown }) => {
+              Object.assign(cfgObj, nextConfig);
             },
           },
         },

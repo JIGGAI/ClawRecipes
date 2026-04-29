@@ -2,34 +2,49 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { upsertAgentInConfig, type AgentConfigSnippet } from "./agent-config";
 import { stableStringify } from "./stable-stringify";
 
-/** Runtime API shape for config access (plugin SDK may not expose types). */
+/**
+ * Runtime API shape for config access. Mirrors the modern surface
+ * (`current` + `replaceConfigFile`) so we don't trigger the
+ * `runtime-config-load-write` deprecation warning that the legacy
+ * `loadConfig` / `writeConfigFile` helpers emit.
+ */
 interface OpenClawRuntimeConfig {
-  loadConfig?: () => { cfg?: unknown } | unknown;
-  writeConfigFile?: (cfg: unknown) => Promise<void>;
+  current?: () => unknown;
+  replaceConfigFile?: (params: {
+    nextConfig: unknown;
+    afterWrite: { mode: "auto" } | { mode: "restart"; reason: string } | { mode: "none"; reason: string };
+  }) => Promise<unknown>;
 }
 
 /**
  * Load OpenClaw config via runtime API.
+ * Returns a deep clone of the runtime snapshot so callers may mutate it
+ * before persisting via {@link writeOpenClawConfig}; the runtime's own
+ * snapshot from `current()` is `DeepReadonly` and must not be mutated.
  * @param api - OpenClaw plugin API
- * @returns Config object (mutable)
- * @throws If loadConfig fails
+ * @returns Config object (mutable copy)
+ * @throws If the runtime config API is unavailable
  */
 export async function loadOpenClawConfig(api: OpenClawPluginApi): Promise<Record<string, unknown>> {
   const runtime = api.runtime as { config?: OpenClawRuntimeConfig };
-  const current = runtime.config?.loadConfig?.();
-  if (!current) throw new Error("Failed to load config via api.runtime.config.loadConfig()");
-  const cfgObj = (current as { cfg?: unknown }).cfg ?? current;
-  return cfgObj as Record<string, unknown>;
+  const snapshot = runtime.config?.current?.();
+  if (!snapshot) throw new Error("Failed to load config via api.runtime.config.current()");
+  return JSON.parse(JSON.stringify(snapshot)) as Record<string, unknown>;
 }
 
 /**
- * Write OpenClaw config via runtime API.
+ * Persist a full OpenClaw config replacement via the runtime API.
+ * Uses `afterWrite: { mode: "auto" }` to let the gateway choose between
+ * hot-reload and restart, matching the legacy `writeConfigFile` default.
  * @param api - OpenClaw plugin API
  * @param cfgObj - Config object to write
  */
 export async function writeOpenClawConfig(api: OpenClawPluginApi, cfgObj: Record<string, unknown>): Promise<void> {
   const runtime = api.runtime as { config?: OpenClawRuntimeConfig };
-  await runtime.config?.writeConfigFile?.(cfgObj);
+  await runtime.config?.replaceConfigFile?.({
+    nextConfig: cfgObj,
+    afterWrite: { mode: "auto" },
+  });
 }
 
 export type BindingMatch = {
