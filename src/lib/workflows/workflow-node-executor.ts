@@ -305,16 +305,59 @@ export async function executeWorkflowNodes(opts: {
         `- openclaw recipes workflows resume --team-id ${teamId} --run-id ${runId}`,
       ].join('\n');
 
-      await toolsInvoke<ToolTextResult>(api, {
-        tool: 'message',
-        args: {
-          action: 'send',
-          channel,
-          target,
-          ...(accountId ? { accountId } : {}),
-          message: msg,
-        },
-      });
+      // Deliver the approval prompt. Wrap in try/catch + Telegram bot-API
+      // fallback because OpenClaw 2026.4.26's gateway has been observed to
+      // return "Tool not available: message" from /tools/invoke even though
+      // the channel itself is healthy. The approval.json file is durable
+      // either way, so we never fail the run on delivery error — operators
+      // can still approve via the kitchen UI or `openclaw recipes workflows
+      // approve` CLI when this falls through.
+      let approvalDelivered = false;
+      try {
+        await toolsInvoke<ToolTextResult>(api, {
+          tool: 'message',
+          args: {
+            action: 'send',
+            channel,
+            target,
+            ...(accountId ? { accountId } : {}),
+            message: msg,
+          },
+        });
+        approvalDelivered = true;
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        console.warn(`[workflow] tools.invoke('message') failed for run ${runId} on node ${node.id}: ${errMsg}`);
+        if (channel === 'telegram') {
+          try {
+            const cfg = await loadOpenClawConfig(api);
+            const tgToken = (cfg as { channels?: { telegram?: { botToken?: string } } })
+              .channels?.telegram?.botToken;
+            if (tgToken) {
+              const tgRes = await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({ chat_id: target, text: msg }),
+              });
+              if (tgRes.ok) {
+                approvalDelivered = true;
+                console.log(`[workflow] approval delivered via direct telegram bot API for run ${runId}`);
+              } else {
+                const tgBody = await tgRes.text().catch(() => '');
+                console.error(`[workflow] telegram fallback failed (${tgRes.status}) for run ${runId}: ${tgBody}`);
+              }
+            } else {
+              console.error(`[workflow] telegram fallback skipped for run ${runId}: missing channels.telegram.botToken in openclaw config`);
+            }
+          } catch (fbErr) {
+            const fbMsg = fbErr instanceof Error ? fbErr.message : String(fbErr);
+            console.error(`[workflow] telegram fallback threw for run ${runId}: ${fbMsg}`);
+          }
+        }
+        if (!approvalDelivered) {
+          console.warn(`[workflow] approval message not delivered for run ${runId}; approve via kitchen UI or CLI`);
+        }
+      }
 
       const waitingTs = new Date().toISOString();
       await appendRunLog(runLogPath, (cur) => ({
