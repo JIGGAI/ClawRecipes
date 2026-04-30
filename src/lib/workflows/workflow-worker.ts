@@ -12,7 +12,7 @@ import type { WorkflowLane, WorkflowNode, RunLog } from './workflow-types';
 import { dequeueNextTask, enqueueTask, hasPendingTaskFor, releaseTaskClaim, compactQueue } from './workflow-queue';
 import { currentLockOwner, isLockHolderDead } from './lock-liveness';
 import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow-node-output-readers';
-import { readTextFile } from './workflow-runner-io';
+import { readTextFile, readJsonFile } from './workflow-runner-io';
 import { resolveApprovalBindingTarget } from './workflow-node-executor';
 import { buildKitchenWorkflowReviewUrl } from './kitchen-review-url';
 import {
@@ -45,7 +45,7 @@ async function buildMemoryContext(teamDir: string): Promise<string> {
     // Read pinned items first (highest priority)
     const pinnedPath = path.join(memoryDir, 'pinned.jsonl');
     if (await fileExists(pinnedPath)) {
-      const pinnedContent = await fs.readFile(pinnedPath, 'utf8');
+      const pinnedContent = await readTextFile(pinnedPath);
       const pinnedItems = pinnedContent.trim().split('\n').filter(Boolean);
       
       if (pinnedItems.length > 0) {
@@ -75,7 +75,7 @@ async function buildMemoryContext(teamDir: string): Promise<string> {
       if (currentTokens > maxTokens * 0.8) break; // Leave room for recent items
       
       const filePath = path.join(memoryDir, filename);
-      const content = await fs.readFile(filePath, 'utf8');
+      const content = await readTextFile(filePath);
       const items = content.trim().split('\n').filter(Boolean);
       
       if (items.length > 0) {
@@ -151,7 +151,7 @@ async function buildTemplateVars(
     if (nid && nrOutPath) {
       try {
         const outAbs = path.resolve(teamDir, nrOutPath);
-        const outputContent = await fs.readFile(outAbs, 'utf8');
+        const outputContent = await readTextFile(outAbs);
         vars[`${nid}.output`] = outputContent;
 
         try {
@@ -314,7 +314,7 @@ async function checkWaitingHandoffs(api: OpenClawPluginApi, teamId: string, team
     const runPath = path.join(runDir, 'run.json');
     let run: RunLog;
     try {
-      const raw = await fs.readFile(runPath, 'utf8');
+      const raw = await readTextFile(runPath);
       run = JSON.parse(raw) as RunLog;
     } catch { continue; }
 
@@ -335,7 +335,7 @@ async function checkWaitingHandoffs(api: OpenClawPluginApi, teamId: string, team
         nodeOutputRel: string;
       };
       try {
-        marker = JSON.parse(await fs.readFile(waitPath, 'utf8'));
+        marker = await readJsonFile<typeof marker>(waitPath);
       } catch { continue; }
 
       // Check timeout
@@ -416,7 +416,7 @@ async function checkWaitingHandoffs(api: OpenClawPluginApi, teamId: string, team
         const workflowsDir = path.join(teamDir, 'shared-context', 'workflows');
         let workflow;
         try {
-          const wfRaw = await fs.readFile(path.join(workflowsDir, run.workflow.file), 'utf8');
+          const wfRaw = await readTextFile(path.join(workflowsDir, run.workflow.file));
           workflow = normalizeWorkflow(JSON.parse(wfRaw));
         } catch { workflow = null; }
 
@@ -1505,7 +1505,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
             if (!wf.endsWith('.json')) continue;
             try {
               const wfPath = path.join(targetWorkflowsDir, wf);
-              const wfRaw = await fs.readFile(wfPath, 'utf8');
+              const wfRaw = await readTextFile(wfPath);
               const wfParsed = JSON.parse(wfRaw);
               if (String(wfParsed.id ?? '') === targetWorkflowId || String(wfParsed.name ?? '') === targetWorkflowId) {
                 targetWorkflowFile = wf;
