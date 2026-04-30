@@ -9,6 +9,7 @@ import { outboundPublish, type OutboundApproval, type OutboundMedia, type Outbou
 import { sanitizeOutboundPostText } from './outbound-sanitize';
 import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow-node-output-readers';
 import { readTextFile } from './workflow-runner-io';
+import { sendTelegramMessage } from './telegram-direct';
 import {
   asRecord, asString,
   ensureDir, fileExists,
@@ -334,17 +335,12 @@ export async function executeWorkflowNodes(opts: {
             const tgToken = (cfg as { channels?: { telegram?: { botToken?: string } } })
               .channels?.telegram?.botToken;
             if (tgToken) {
-              const tgRes = await fetch(`https://api.telegram.org/bot${tgToken}/sendMessage`, {
-                method: 'POST',
-                headers: { 'content-type': 'application/json' },
-                body: JSON.stringify({ chat_id: target, text: msg }),
-              });
+              const tgRes = await sendTelegramMessage(tgToken, target, msg);
               if (tgRes.ok) {
                 approvalDelivered = true;
                 console.log(`[workflow] approval delivered via direct telegram bot API for run ${runId}`);
               } else {
-                const tgBody = await tgRes.text().catch(() => '');
-                console.error(`[workflow] telegram fallback failed (${tgRes.status}) for run ${runId}: ${tgBody}`);
+                console.error(`[workflow] telegram fallback failed (${tgRes.status}) for run ${runId}: ${tgRes.body}`);
               }
             } else {
               console.error(`[workflow] telegram fallback skipped for run ${runId}: missing channels.telegram.botToken in openclaw config`);
