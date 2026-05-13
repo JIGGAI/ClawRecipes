@@ -15023,7 +15023,7 @@ var recipesPlugin = {
       }
     };
     api.on("message_received", approvalReplyHandler, { priority: 50 });
-    (async () => {
+    api.on("gateway_start", async () => {
       try {
         const cfgObj = await loadOpenClawConfig(api);
         const before = JSON.stringify(cfgObj.agents?.list ?? null);
@@ -15036,7 +15036,7 @@ var recipesPlugin = {
       } catch (e) {
         console.error(`[recipes] note: failed to ensure main agent in agents.list: ${e.message}`);
       }
-    })();
+    });
     api.registerCli(
       ({ program }) => {
         const cmd = program.command("recipes").description("Manage markdown recipes (scaffold agents/teams)");

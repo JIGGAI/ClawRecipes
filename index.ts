@@ -244,9 +244,10 @@ const recipesPlugin = {
     api.on("message_received" as never, approvalReplyHandler as never, { priority: 50 } as unknown as { priority: number });
 
 
-    // On plugin load, ensure multi-agent config has an explicit agents.list with main at top.
-    // This is idempotent and only writes if a change is required.
-    (async () => {
+    // Ensure multi-agent config has an explicit agents.list with main at top.
+    // Deferred to gateway_start because api.runtime.config.current() is not
+    // available during register() in OpenClaw 2026.5.x.
+    api.on("gateway_start", async () => {
       try {
         const cfgObj = await loadOpenClawConfig(api);
         const before = JSON.stringify(cfgObj.agents?.list ?? null);
@@ -258,11 +259,9 @@ const recipesPlugin = {
           console.error("[recipes] ensured agents.list includes main as first/default");
         }
       } catch (e) {
-        // Keep install/scaffold warning-free; this is non-critical and can fail on locked-down configs.
-        // (If needed, diagnose via debug logs instead of emitting warnings.)
         console.error(`[recipes] note: failed to ensure main agent in agents.list: ${(e as Error).message}`);
       }
-    })();
+    });
 
     api.registerCli(
       ({ program }) => {
