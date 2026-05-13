@@ -18,7 +18,8 @@ export function workspacePath(api: OpenClawPluginApi, ...parts: string[]) {
  * @returns Array of { source, path }
  */
 export async function listRecipeFiles(api: OpenClawPluginApi, cfg: Required<RecipesConfig>) {
-  const builtinDir = path.resolve(__dirname, "..", "..", "recipes", "default");
+  const pluginRoot = api.rootDir ?? path.resolve(__dirname, "..", "..");
+  const builtinDir = path.resolve(pluginRoot, "recipes", "default");
   const workspaceDir = workspacePath(api, cfg.workspaceRecipesDir);
 
   const out: Array<{ source: "builtin" | "workspace"; path: string }> = [];

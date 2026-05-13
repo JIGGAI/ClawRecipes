@@ -8573,7 +8573,8 @@ function workspacePath(api, ...parts) {
   return import_node_path2.default.join(root, ...parts);
 }
 async function listRecipeFiles(api, cfg) {
-  const builtinDir = import_node_path2.default.resolve(__dirname, "..", "..", "recipes", "default");
+  const pluginRoot = api.rootDir ?? import_node_path2.default.resolve(__dirname, "..", "..");
+  const builtinDir = import_node_path2.default.resolve(pluginRoot, "recipes", "default");
   const workspaceDir = workspacePath(api, cfg.workspaceRecipesDir);
   const out = [];
   if (await fileExists(builtinDir)) {

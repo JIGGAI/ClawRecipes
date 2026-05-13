@@ -13,7 +13,7 @@
       "pluginApiRange": ">=2026.5"
     },
     "build": {
-      "openclawVersion": "2026.4.20"
+      "openclawVersion": "2026.5.7"
     },
     "runtimeExtensions": [
       "./dist/index.js"
