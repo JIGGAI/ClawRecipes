@@ -281,7 +281,6 @@ openclaw recipes assign --team-id development-team --ticket 0007 --owner dev
 openclaw recipes take --team-id development-team --ticket 0007 --owner dev
 openclaw recipes handoff --team-id development-team --ticket 0007 --tester test
 openclaw recipes complete --team-id development-team --ticket 0007
-openclaw recipes cleanup-closed-assignments --team-id development-team
 ```
 
 ### Bindings

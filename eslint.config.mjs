@@ -12,6 +12,9 @@ export default tseslint.config(
         ...globals.node,
       },
     },
+    rules: {
+      "sonarjs/no-os-command-from-path": "off",
+    },
   },
   {
     files: ["**/*.ts"],

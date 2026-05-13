@@ -72,5 +72,5 @@
       "help": "Controls whether recipe-defined cron jobs are installed during scaffold. off=never, prompt=ask, on=auto-install."
     }
   },
-  "main": "index.ts"
+  "main": "dist/index.js"
 }
