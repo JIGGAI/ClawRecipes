@@ -50,6 +50,9 @@ jobs:
           git push origin main
           git push origin "v$VERSION"
 
+      - name: Install dependencies
+        run: npm ci
+
       - name: Pack tarball
         run: npm pack
 
