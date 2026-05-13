@@ -24,6 +24,9 @@ jobs:
       - name: Check plugin version sync
         run: npm run check:plugin-version
 
+      - name: Build and verify OpenClaw runtime package
+        run: npm run build:plugin && npm run verify:runtime-package
+
       - name: Audit dependencies
         run: npm audit --audit-level=high
         continue-on-error: true

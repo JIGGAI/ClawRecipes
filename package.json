@@ -2,7 +2,7 @@
   "name": "@jiggai/recipes",
   "version": "0.4.72",
   "description": "ClawRecipes plugin for OpenClaw (markdown recipes -> scaffold agents/teams)",
-  "main": "index.ts",
+  "main": "dist/index.js",
   "type": "commonjs",
   "openclaw": {
     "extensions": [
@@ -10,16 +10,20 @@
     ],
     "compat": {
       "pluginApi": ">=1.0.0",
-      "pluginApiRange": ">=2026.3"
+      "pluginApiRange": ">=2026.5"
     },
     "build": {
-      "openclawVersion": "2026.4.20"
-    }
+      "openclawVersion": "2026.5.7"
+    },
+    "runtimeExtensions": [
+      "./dist/index.js"
+    ]
   },
   "publishConfig": {
     "access": "public"
   },
   "files": [
+    "dist/",
     "index.ts",
     "src/",
     "openclaw.plugin.json",
@@ -44,9 +48,11 @@
     "jscpd": "jscpd src/ index.ts --min-lines 8 --min-tokens 50",
     "prepare": "husky || true",
     "check:plugin-version": "node scripts/check-openclaw-plugin-version.mjs",
-    "prepack": "npm run -s sync:plugin-version && npm run -s check:plugin-version",
-    "prepublishOnly": "npm run -s sync:plugin-version && npm run -s check:plugin-version",
-    "sync:plugin-version": "node scripts/sync-openclaw-plugin-version.mjs"
+    "prepack": "npm run -s build:plugin && npm run -s sync:plugin-version && npm run -s check:plugin-version",
+    "prepublishOnly": "npm run -s build:plugin && npm run -s sync:plugin-version && npm run -s check:plugin-version",
+    "sync:plugin-version": "node scripts/sync-openclaw-plugin-version.mjs",
+    "build:plugin": "esbuild index.ts --bundle --platform=node --format=cjs --target=node20 --outfile=dist/index.js --external:openclaw/plugin-sdk",
+    "verify:runtime-package": "node scripts/verify-runtime-package.mjs"
   },
   "keywords": [
     "openclaw",
@@ -69,7 +75,8 @@
     "jscpd": "^4.0.5",
     "lint-staged": "^16.2.7",
     "typescript-eslint": "^8.18.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "esbuild": "^0.27.3"
   },
   "lint-staged": {
     "*.ts": [

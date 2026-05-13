@@ -157,11 +157,6 @@ openclaw recipes move-ticket --team-id development-team --ticket 0007 --to done 
 openclaw recipes assign --team-id development-team --ticket 0007 --owner devops
 ```
 
-### Clean up stale assignment stubs for closed work
-
-```bash
-openclaw recipes cleanup-closed-assignments --team-id development-team
-```
 
 ---
 

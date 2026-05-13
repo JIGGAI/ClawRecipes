@@ -221,12 +221,6 @@ openclaw recipes handoff --team-id development-team --ticket 0007 --tester test
 openclaw recipes complete --team-id development-team --ticket 0007
 ```
 
-### Clean up stale assignment stubs for done work
-
-```bash
-openclaw recipes cleanup-closed-assignments --team-id development-team
-openclaw recipes cleanup-closed-assignments --team-id development-team --ticket 0050 0064
-```
 
 ---
 
