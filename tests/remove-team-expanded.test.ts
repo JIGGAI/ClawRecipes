@@ -4,9 +4,12 @@ import path from "node:path";
 import os from "node:os";
 import {
   buildRemoveTeamPlan,
+  collectRemoveCronIds,
+  deleteCronJobsViaCli,
   executeRemoveTeamPlan,
   findAgentsToRemove,
   isProtectedTeamId,
+  loadCronJobsViaCli,
   loadCronStore,
   loadOpenClawConfig,
   planCronJobRemovals,
@@ -15,7 +18,28 @@ import {
   stampTeamId,
   type CronJob,
   type CronStore,
+  type RemoveTeamPlan,
 } from "../src/lib/remove-team";
+
+/** Builds a fake plugin api whose CLI stub records argv and returns canned results. */
+function makeApiStub(
+  handler: (argv: string[]) => { code: number; stdout: string; stderr: string },
+) {
+  const calls: string[][] = [];
+  return {
+    calls,
+    api: {
+      runtime: {
+        system: {
+          runCommandWithTimeout: async (argv: string[]) => {
+            calls.push(argv);
+            return handler(argv);
+          },
+        },
+      },
+    } as any,
+  };
+}
 
 describe("remove-team (expanded)", () => {
   describe("stampTeamId", () => {
@@ -106,6 +130,76 @@ describe("remove-team (expanded)", () => {
       } finally {
         await fs.rm(tmp, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe("loadCronJobsViaCli", () => {
+    test("maps `openclaw cron list` rows into a CronStore", async () => {
+      const rows = [
+        { id: "j1", name: "loop", enabled: true, agentId: "qa-team-lead", payload: { kind: "agentTurn", message: "recipes.teamId=qa-team" } },
+        { id: "j2", name: "other", payload: { kind: "agentTurn", message: "unrelated" } },
+      ];
+      const { api, calls } = makeApiStub(() => ({ code: 0, stdout: JSON.stringify({ jobs: rows }), stderr: "" }));
+      const store = await loadCronJobsViaCli(api);
+      expect(calls[0]).toEqual(["openclaw", "cron", "list", "--all", "--json"]);
+      expect(store.version).toBe(1);
+      expect(store.jobs.map((j) => j.id)).toEqual(["j1", "j2"]);
+      expect(store.jobs[0].payload?.message).toBe("recipes.teamId=qa-team");
+      expect(store.jobs[0].agentId).toBe("qa-team-lead");
+    });
+
+    test("throws when the CLI exits non-zero", async () => {
+      const { api } = makeApiStub(() => ({ code: 1, stdout: "", stderr: "gateway down" }));
+      await expect(loadCronJobsViaCli(api)).rejects.toThrow(/cron list failed.*gateway down/);
+    });
+
+    test("tolerates empty/absent jobs array", async () => {
+      const { api } = makeApiStub(() => ({ code: 0, stdout: "{}", stderr: "" }));
+      const store = await loadCronJobsViaCli(api);
+      expect(store.jobs).toEqual([]);
+    });
+  });
+
+  describe("collectRemoveCronIds", () => {
+    const plan: RemoveTeamPlan = {
+      teamId: "qa-team",
+      workspaceDir: "/tmp/workspace-qa-team",
+      openclawConfigPath: "(managed)",
+      cronJobsPath: "(openclaw cron subsystem)",
+      agentsToRemove: [],
+      cronJobsExact: [{ id: "exact1" }, { id: "exact2" }],
+      cronJobsAmbiguous: [{ id: "amb1", reason: "mentions-teamId" }],
+      notes: [],
+    };
+    test("returns only exact ids by default", () => {
+      expect(collectRemoveCronIds(plan)).toEqual(["exact1", "exact2"]);
+    });
+    test("includes ambiguous ids when requested", () => {
+      expect(collectRemoveCronIds(plan, true)).toEqual(["exact1", "exact2", "amb1"]);
+    });
+  });
+
+  describe("deleteCronJobsViaCli", () => {
+    test("issues `openclaw cron rm` per id and counts successes", async () => {
+      const { api, calls } = makeApiStub(() => ({ code: 0, stdout: "{}", stderr: "" }));
+      const res = await deleteCronJobsViaCli(api, ["a", "b"]);
+      expect(res.removed).toBe(2);
+      expect(res.failed).toEqual([]);
+      expect(calls).toEqual([
+        ["openclaw", "cron", "rm", "a", "--json"],
+        ["openclaw", "cron", "rm", "b", "--json"],
+      ]);
+    });
+
+    test("continues past failures and reports them", async () => {
+      const { api } = makeApiStub((argv) =>
+        argv[3] === "b"
+          ? { code: 1, stdout: "", stderr: "not found" }
+          : { code: 0, stdout: "{}", stderr: "" },
+      );
+      const res = await deleteCronJobsViaCli(api, ["a", "b", "c"]);
+      expect(res.removed).toBe(2);
+      expect(res.failed).toEqual([{ id: "b", reason: "not found" }]);
     });
   });
 

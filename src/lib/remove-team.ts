@@ -61,6 +61,89 @@ export async function saveCronStore(cronJobsPath: string, store: CronStore) {
   await fs.writeFile(cronJobsPath, JSON.stringify(store, null, 2) + "\n", "utf8");
 }
 
+/**
+ * Minimal shape of the OpenClaw plugin API bits we need to reach the cron
+ * subsystem. Cron jobs live in the gateway's SQLite state (since 2026.7.x),
+ * NOT in the legacy ~/.openclaw/cron/jobs.json file — so we go through the
+ * stable `openclaw cron` CLI (same approach as handlers/cron.ts).
+ */
+type CronCommandApi = {
+  runtime: {
+    system: {
+      runCommandWithTimeout: (
+        argv: string[],
+        opts?: { timeoutMs?: number },
+      ) => Promise<{ code: number; stdout: string; stderr: string }>;
+    };
+  };
+};
+
+/**
+ * Loads cron jobs from the live gateway-managed cron subsystem via the CLI.
+ * Returns a CronStore so the pure planning helpers can operate unchanged.
+ */
+export async function loadCronJobsViaCli(api: CronCommandApi): Promise<CronStore> {
+  const result = await api.runtime.system.runCommandWithTimeout(
+    ["openclaw", "cron", "list", "--all", "--json"],
+    { timeoutMs: 30_000 },
+  );
+  if (result.code !== 0) {
+    throw new Error(`openclaw cron list failed (code=${result.code}): ${result.stderr || result.stdout}`);
+  }
+  const parsed = JSON.parse(result.stdout || "{}") as { jobs?: unknown };
+  const rows = Array.isArray(parsed.jobs) ? (parsed.jobs as Array<Record<string, unknown>>) : [];
+  const jobs: CronJob[] = rows.map((row) => {
+    const payload = (row.payload ?? {}) as Record<string, unknown>;
+    return {
+      id: String(row.id ?? ""),
+      ...(row.name != null ? { name: String(row.name) } : {}),
+      ...(typeof row.enabled === "boolean" ? { enabled: row.enabled } : {}),
+      ...(row.agentId != null ? { agentId: String(row.agentId) } : {}),
+      payload: {
+        ...(payload.kind != null ? { kind: String(payload.kind) } : {}),
+        ...(payload.message != null ? { message: String(payload.message) } : {}),
+      },
+    };
+  });
+  return { version: 1, jobs };
+}
+
+/** Pure helper: the set of cron ids a plan will delete, honoring includeAmbiguous. */
+export function collectRemoveCronIds(plan: RemoveTeamPlan, includeAmbiguous?: boolean): string[] {
+  const ids = plan.cronJobsExact.map((j) => j.id);
+  if (includeAmbiguous) ids.push(...plan.cronJobsAmbiguous.map((j) => j.id));
+  return Array.from(new Set(ids.filter(Boolean)));
+}
+
+/**
+ * Deletes cron jobs from the live subsystem via `openclaw cron rm <id>`.
+ * Continues past individual failures and reports them (never aborts the
+ * wider team removal for a single flaky delete).
+ */
+export async function deleteCronJobsViaCli(
+  api: CronCommandApi,
+  ids: string[],
+): Promise<{ removed: number; failed: Array<{ id: string; reason: string }> }> {
+  let removed = 0;
+  const failed: Array<{ id: string; reason: string }> = [];
+  for (const id of ids) {
+    try {
+      const result = await api.runtime.system.runCommandWithTimeout(
+        ["openclaw", "cron", "rm", id, "--json"],
+        { timeoutMs: 30_000 },
+      );
+      if (result.code !== 0) {
+        failed.push({ id, reason: (result.stderr || result.stdout || `exit ${result.code}`).trim() });
+        continue;
+      }
+      removed += 1;
+    } catch (err) {
+      failed.push({ id, reason: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return { removed, failed };
+}
+
 export async function loadOpenClawConfig(openclawConfigPath: string): Promise<Record<string, unknown>> {
   const raw = await fs.readFile(openclawConfigPath, "utf8");
   // NOTE: openclaw.json is JSON5 in some deployments; but we avoid adding dependency here.

@@ -58,6 +58,20 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return !!v && typeof v === 'object' && !Array.isArray(v);
 }
 
+/**
+ * Emit machine-readable JSON to real stdout.
+ *
+ * Under `--json`, openclaw calls routeLogsToStderr() so diagnostics don't
+ * pollute the JSON stream — but that reroutes `console.log` to stderr too,
+ * which would send our payload to stderr (stdout ends up empty). openclaw does
+ * NOT wrap `process.stdout.write`, so it reliably reaches stdout for callers
+ * doing `JSON.parse(stdout)` (e.g. ClawKitchen's runOpenClaw). Use this for the
+ * JSON output of any command that declares `--json`.
+ */
+function emitJson(payload: unknown): void {
+  process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+}
+
 function asString(v: unknown, fallback = ''): string {
   return typeof v === 'string' ? v : (v == null ? fallback : String(v));
 }
@@ -413,7 +427,7 @@ const recipesPlugin = {
             const yes = !!options.yes;
             const result = await executeWorkspaceCleanup(plan, { yes });
             if (options.json) {
-              console.log(JSON.stringify(result, null, 2));
+              emitJson(result);
               return;
             }
             if (result.dryRun) {
@@ -599,7 +613,7 @@ const recipesPlugin = {
               console.error("Aborted; no changes made.");
             }
             const payload = "result" in out ? out.result : out;
-            console.log(JSON.stringify(payload, null, 2));
+            emitJson(payload);
             if (out.ok && "result" in out) {
               console.error("Restart required: openclaw gateway restart");
             }
@@ -614,7 +628,7 @@ const recipesPlugin = {
             if (!options.teamId) throw new Error("--team-id is required");
             const out = await handleTickets(api, { teamId: options.teamId });
             if (options.json) {
-              console.log(JSON.stringify(out, null, 2));
+              emitJson(out);
               return;
             }
             const print = (label: string, items: Array<{ id: string }>) => {
