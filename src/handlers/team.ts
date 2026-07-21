@@ -7,7 +7,13 @@ import { ensureDir, fileExists, writeFileSafely } from "../lib/fs-utils";
 import { writeJsonFile } from "../lib/json-utils";
 import { type RecipeFrontmatter } from "../lib/recipe-frontmatter";
 import { promptYesNo } from "../lib/prompt";
-import { buildRemoveTeamPlan, executeRemoveTeamPlan, loadCronStore, saveCronStore } from "../lib/remove-team";
+import {
+  buildRemoveTeamPlan,
+  collectRemoveCronIds,
+  deleteCronJobsViaCli,
+  executeRemoveTeamPlan,
+  loadCronJobsViaCli,
+} from "../lib/remove-team";
 import { resolveWorkspaceRoot } from "../lib/workspace";
 import { pickRecipeId } from "../lib/recipe-id";
 import { recipeIdTakenForTeam, validateRecipeAndSkills, writeWorkspaceRecipeFile } from "../lib/scaffold-utils";
@@ -663,9 +669,11 @@ export async function handleRemoveTeam(
 ) {
   const teamId = String(options.teamId);
   const workspaceRoot = resolveWorkspaceRoot(api);
-  const cronJobsPath = path.resolve(workspaceRoot, "..", "cron", "jobs.json");
+  // Cron jobs live in the gateway-managed subsystem (SQLite since 2026.7.x),
+  // not the legacy ~/.openclaw/cron/jobs.json file. Read/mutate via the CLI.
+  const cronJobsPath = "(openclaw cron subsystem)";
   const cfgObj = await loadOpenClawConfig(api);
-  const cronStore = await loadCronStore(cronJobsPath);
+  const cronStore = await loadCronJobsViaCli(api);
 
   // IMPORTANT: read cron provenance BEFORE deleting workspace.
   // Teams/recipes track installed cron jobs via notes/cron-jobs.json.
@@ -709,7 +717,16 @@ export async function handleRemoveTeam(
     cronStore,
   });
   await writeOpenClawConfig(api, cfgObj);
-  await saveCronStore(cronJobsPath, cronStore);
+  // Delete the matched cron jobs from the live subsystem. executeRemoveTeamPlan
+  // only mutates the in-memory store; the real deletion happens here via CLI.
+  const removeIds = collectRemoveCronIds(plan, Boolean(options.includeAmbiguous));
+  const cronDeletion = await deleteCronJobsViaCli(api, removeIds);
+  result.removed.cronJobsRemoved = cronDeletion.removed;
+  if (cronDeletion.failed.length > 0) {
+    result.plan.notes.push(
+      `cron-delete-failed: ${cronDeletion.failed.map((f) => `${f.id} (${f.reason})`).join("; ")}`,
+    );
+  }
   scheduleManifestRegeneration(api);
   return { ok: true as const, result };
 }

@@ -9707,16 +9707,55 @@ function isProtectedTeamId(teamId) {
   const t = teamId.trim().toLowerCase();
   return t === "development-team" || t === "main";
 }
-async function loadCronStore(cronJobsPath) {
-  const raw = await import_promises10.default.readFile(cronJobsPath, "utf8");
-  const data = JSON.parse(raw);
-  if (!data || typeof data !== "object" || !Array.isArray(data.jobs)) {
-    throw new Error(`Invalid cron store: ${cronJobsPath}`);
+async function loadCronJobsViaCli(api) {
+  const result = await api.runtime.system.runCommandWithTimeout(
+    ["openclaw", "cron", "list", "--all", "--json"],
+    { timeoutMs: 3e4 }
+  );
+  if (result.code !== 0) {
+    throw new Error(`openclaw cron list failed (code=${result.code}): ${result.stderr || result.stdout}`);
   }
-  return data;
+  const parsed = JSON.parse(result.stdout || "{}");
+  const rows = Array.isArray(parsed.jobs) ? parsed.jobs : [];
+  const jobs = rows.map((row) => {
+    const payload = row.payload ?? {};
+    return {
+      id: String(row.id ?? ""),
+      ...row.name != null ? { name: String(row.name) } : {},
+      ...typeof row.enabled === "boolean" ? { enabled: row.enabled } : {},
+      ...row.agentId != null ? { agentId: String(row.agentId) } : {},
+      payload: {
+        ...payload.kind != null ? { kind: String(payload.kind) } : {},
+        ...payload.message != null ? { message: String(payload.message) } : {}
+      }
+    };
+  });
+  return { version: 1, jobs };
 }
-async function saveCronStore(cronJobsPath, store) {
-  await import_promises10.default.writeFile(cronJobsPath, JSON.stringify(store, null, 2) + "\n", "utf8");
+function collectRemoveCronIds(plan, includeAmbiguous) {
+  const ids = plan.cronJobsExact.map((j) => j.id);
+  if (includeAmbiguous) ids.push(...plan.cronJobsAmbiguous.map((j) => j.id));
+  return Array.from(new Set(ids.filter(Boolean)));
+}
+async function deleteCronJobsViaCli(api, ids) {
+  let removed = 0;
+  const failed = [];
+  for (const id of ids) {
+    try {
+      const result = await api.runtime.system.runCommandWithTimeout(
+        ["openclaw", "cron", "rm", id, "--json"],
+        { timeoutMs: 3e4 }
+      );
+      if (result.code !== 0) {
+        failed.push({ id, reason: (result.stderr || result.stdout || `exit ${result.code}`).trim() });
+        continue;
+      }
+      removed += 1;
+    } catch (err) {
+      failed.push({ id, reason: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return { removed, failed };
 }
 function findAgentsToRemove(cfgObj, teamId) {
   const list = cfgObj?.agents?.list;
@@ -10980,9 +11019,9 @@ async function executeMigrateTeamPlan(api, plan) {
 async function handleRemoveTeam(api, options) {
   const teamId = String(options.teamId);
   const workspaceRoot = resolveWorkspaceRoot(api);
-  const cronJobsPath = import_node_path18.default.resolve(workspaceRoot, "..", "cron", "jobs.json");
+  const cronJobsPath = "(openclaw cron subsystem)";
   const cfgObj = await loadOpenClawConfig(api);
-  const cronStore = await loadCronStore(cronJobsPath);
+  const cronStore = await loadCronJobsViaCli(api);
   const teamDir = import_node_path18.default.resolve(workspaceRoot, "..", `workspace-${teamId}`);
   const cronMappingPath = import_node_path18.default.join(teamDir, "notes", "cron-jobs.json");
   let installedCronIds = [];
@@ -11019,7 +11058,14 @@ async function handleRemoveTeam(api, options) {
     cronStore
   });
   await writeOpenClawConfig(api, cfgObj);
-  await saveCronStore(cronJobsPath, cronStore);
+  const removeIds = collectRemoveCronIds(plan, Boolean(options.includeAmbiguous));
+  const cronDeletion = await deleteCronJobsViaCli(api, removeIds);
+  result.removed.cronJobsRemoved = cronDeletion.removed;
+  if (cronDeletion.failed.length > 0) {
+    result.plan.notes.push(
+      `cron-delete-failed: ${cronDeletion.failed.map((f) => `${f.id} (${f.reason})`).join("; ")}`
+    );
+  }
   scheduleManifestRegeneration(api);
   return { ok: true, result };
 }

@@ -3,7 +3,23 @@ import path from "node:path";
 import os from "node:os";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { __internal } from "../index";
-import { saveCronStore } from "../src/lib/remove-team";
+
+/**
+ * Stubs the `openclaw cron` CLI that handleRemoveTeam shells out to. Cron jobs
+ * live in the gateway subsystem, so the handler reads them via
+ * `openclaw cron list` and deletes via `openclaw cron rm`.
+ */
+function makeCronCli(jobs: Array<Record<string, unknown>> = []) {
+  return async (argv: string[]) => {
+    if (argv[1] === "cron" && argv[2] === "list") {
+      return { code: 0, stdout: JSON.stringify({ jobs }), stderr: "" };
+    }
+    if (argv[1] === "cron" && argv[2] === "rm") {
+      return { code: 0, stdout: "{}", stderr: "" };
+    }
+    return { code: 0, stdout: "", stderr: "" };
+  };
+}
 
 describe("index.ts handlers (remove-team)", () => {
   describe("extractEventText", () => {
@@ -87,12 +103,8 @@ describe("index.ts handlers (remove-team)", () => {
       const base = await fs.mkdtemp(path.join(os.tmpdir(), "remove-team-test-"));
       const workspaceRoot = path.join(base, "workspace");
       const workspaceDir = path.join(base, "workspace-qa-removal-team");
-      const cronPath = path.join(base, "cron", "jobs.json");
-      await fs.mkdir(path.dirname(cronPath), { recursive: true });
       await fs.mkdir(workspaceDir, { recursive: true });
       const cfgObj = { agents: { list: [{ id: "qa-removal-team-lead" }] } };
-      const cronStore = { version: 1, jobs: [] };
-      await saveCronStore(cronPath, cronStore);
       const api = {
         config: { agents: { defaults: { workspace: workspaceRoot } } },
         runtime: {
@@ -100,6 +112,7 @@ describe("index.ts handlers (remove-team)", () => {
             current: () => cfgObj,
             replaceConfigFile: async () => {},
           },
+          system: { runCommandWithTimeout: makeCronCli() },
         },
       } as any;
       try {
@@ -114,13 +127,13 @@ describe("index.ts handlers (remove-team)", () => {
     test("returns aborted when TTY and user declines prompt", async () => {
       const base = await fs.mkdtemp(path.join(os.tmpdir(), "remove-team-test-"));
       const workspaceRoot = path.join(base, "workspace");
-      const cronPath = path.join(base, "cron", "jobs.json");
-      await fs.mkdir(path.dirname(cronPath), { recursive: true });
-      await saveCronStore(cronPath, { version: 1, jobs: [] });
       const cfgObj = { agents: { list: [] } };
       const api = {
         config: { agents: { defaults: { workspace: workspaceRoot } } },
-        runtime: { config: { current: () => cfgObj, replaceConfigFile: async () => {} } },
+        runtime: {
+          config: { current: () => cfgObj, replaceConfigFile: async () => {} },
+          system: { runCommandWithTimeout: makeCronCli() },
+        },
       } as any;
       const origTTY = process.stdin.isTTY;
       Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
@@ -140,13 +153,13 @@ describe("index.ts handlers (remove-team)", () => {
     test("returns aborted when !yes and !TTY", async () => {
       const base = await fs.mkdtemp(path.join(os.tmpdir(), "remove-team-test-"));
       const workspaceRoot = path.join(base, "workspace");
-      const cronPath = path.join(base, "cron", "jobs.json");
-      await fs.mkdir(path.dirname(cronPath), { recursive: true });
-      await saveCronStore(cronPath, { version: 1, jobs: [] });
       const cfgObj = { agents: { list: [] } };
       const api = {
         config: { agents: { defaults: { workspace: workspaceRoot } } },
-        runtime: { config: { current: () => cfgObj, replaceConfigFile: async () => {} } },
+        runtime: {
+          config: { current: () => cfgObj, replaceConfigFile: async () => {} },
+          system: { runCommandWithTimeout: makeCronCli() },
+        },
       } as any;
       const orig = process.stdin.isTTY;
       Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
@@ -163,12 +176,8 @@ describe("index.ts handlers (remove-team)", () => {
       const base = await fs.mkdtemp(path.join(os.tmpdir(), "remove-team-test-"));
       const workspaceRoot = path.join(base, "workspace");
       const workspaceDir = path.join(base, "workspace-qa-exec-team");
-      const cronPath = path.join(base, "cron", "jobs.json");
-      await fs.mkdir(path.dirname(cronPath), { recursive: true });
       await fs.mkdir(workspaceDir, { recursive: true });
       const cfgObj = { agents: { list: [{ id: "qa-exec-team-lead" }] } };
-      const cronStore = { version: 1, jobs: [] };
-      await saveCronStore(cronPath, cronStore);
       const api = {
         config: { agents: { defaults: { workspace: workspaceRoot } } },
         runtime: {
@@ -178,6 +187,7 @@ describe("index.ts handlers (remove-team)", () => {
               Object.assign(cfgObj, nextConfig);
             },
           },
+          system: { runCommandWithTimeout: makeCronCli() },
         },
       } as any;
       try {
