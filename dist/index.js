@@ -14929,6 +14929,9 @@ async function executeWorkspaceCleanup(plan, opts) {
 function isRecord2(v) {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
+function emitJson(payload) {
+  process.stdout.write(JSON.stringify(payload, null, 2) + "\n");
+}
 function asString3(v, fallback = "") {
   return typeof v === "string" ? v : v == null ? fallback : String(v);
 }
@@ -15159,7 +15162,7 @@ var recipesPlugin = {
           const yes = !!options.yes;
           const result = await executeWorkspaceCleanup(plan, { yes });
           if (options.json) {
-            console.log(JSON.stringify(result, null, 2));
+            emitJson(result);
             return;
           }
           if (result.dryRun) {
@@ -15300,7 +15303,7 @@ var recipesPlugin = {
             console.error("Aborted; no changes made.");
           }
           const payload = "result" in out ? out.result : out;
-          console.log(JSON.stringify(payload, null, 2));
+          emitJson(payload);
           if (out.ok && "result" in out) {
             console.error("Restart required: openclaw gateway restart");
           }
@@ -15309,7 +15312,7 @@ var recipesPlugin = {
           if (!options.teamId) throw new Error("--team-id is required");
           const out = await handleTickets(api, { teamId: options.teamId });
           if (options.json) {
-            console.log(JSON.stringify(out, null, 2));
+            emitJson(out);
             return;
           }
           const print = (label, items) => {
