@@ -2,7 +2,7 @@
 id: marketing-team
 name: Marketing Team
 version: 0.1.0
-description: A marketing execution team (SEO, copy, ads, social, design, analytics) coordinated via a shared workspace.
+description: A marketing execution team (lead, seo, copywriter, ads, social, designer, analyst, video, compliance, offer, funnel, lifecycle) coordinated via a shared workspace.
 kind: team
 cronJobs:
   - id: lead-triage-loop

@@ -2,7 +2,7 @@
 id: product-team
 name: Product Team
 version: 0.1.0
-description: A product delivery team (pm, designer, engineer, qa) that turns ideas into shipped features.
+description: A product delivery team (lead, pm, designer, engineer, test) that turns ideas into shipped features.
 kind: team
 cronJobs:
   - id: lead-triage-loop

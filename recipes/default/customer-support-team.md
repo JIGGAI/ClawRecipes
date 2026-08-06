@@ -2,7 +2,7 @@
 id: customer-support-team
 name: Customer Support Team
 version: 0.1.0
-description: A support workflow team (triage, resolver, kb-writer) that turns cases into replies and knowledge base articles.
+description: A support workflow team (lead, triage, resolver, kb-writer) that turns cases into replies and knowledge base articles.
 kind: team
 cronJobs:
   - id: lead-triage-loop

@@ -2,7 +2,7 @@
 id: development-team
 name: Development Team
 version: 0.2.1
-description: A small engineering team with a shared workspace (lead, dev, devops, test) using file-first tickets.
+description: A small engineering team with a shared workspace (lead, dev, devops, test, workflow-runner) using file-first tickets.
 kind: team
 cronJobs:
   - id: lead-triage-loop
