@@ -2,7 +2,7 @@
 id: business-team
 name: Business Team
 version: 0.1.0
-description: A small generalist business team (ops, sales, marketing, finance, analyst) that runs execution through a shared workspace.
+description: A small generalist business team (lead, ops, sales, marketing, finance, analyst) that runs execution through a shared workspace.
 kind: team
 cronJobs:
   - id: lead-triage-loop

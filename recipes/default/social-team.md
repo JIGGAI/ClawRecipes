@@ -2,7 +2,7 @@
 id: social-team
 name: Social Team
 version: 0.1.0
-description: A platform-specialist social team with a shared workspace (lead + platform roles + ops roles).
+description: A platform-specialist social team with a shared workspace (lead, research, listening, social-seo, editorial, community, distributor, plus one role each for tiktok, instagram, youtube, facebook, x and linkedin).
 kind: team
 cronJobs:
   - id: lead-triage-loop
