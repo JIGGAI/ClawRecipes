@@ -178,6 +178,20 @@ Example success response:
 }
 ```
 
+## Runnable X adapter
+
+The repository includes a tested TweetClaw/Xquik adapter at
+[`examples/adapters/tweetclaw-xquik`](../examples/adapters/tweetclaw-xquik/).
+It implements the service contract above for `platform: "x"`.
+
+The adapter forwards the workflow idempotency key to Xquik, then polls the
+durable write until it reaches a terminal state. It supports public image or
+video URLs and `dryRun` validation. Local bearer authentication and approval
+receipt checks are enabled by default.
+
+Use this adapter only after reviewing its setup and approval requirements.
+Keep the Xquik API key and approval token outside workflow files.
+
 ---
 
 ## Security notes
