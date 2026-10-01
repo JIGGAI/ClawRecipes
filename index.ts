@@ -258,22 +258,27 @@ const recipesPlugin = {
     api.on("message_received" as never, approvalReplyHandler as never, { priority: 50 } as unknown as { priority: number });
 
 
-    // Ensure multi-agent config has an explicit agents.list with main at top.
+    // Ensure the agent config has a `main` agent marked as default.
     // Deferred to gateway_start because api.runtime.config.current() is not
     // available during register() in OpenClaw 2026.5.x.
+    //
+    // The before/after comparison must cover the whole `agents` section, not
+    // just `agents.list`: on hosts that store agents at `agents.entries` the
+    // legacy array is always absent, so comparing it alone reported a change on
+    // every single start and rewrote the config each time.
     api.on("gateway_start", async () => {
       try {
         const cfgObj = await loadOpenClawConfig(api);
-        const before = JSON.stringify(cfgObj.agents?.list ?? null);
+        const before = JSON.stringify(cfgObj.agents ?? null);
         ensureMainFirstInAgentsList(cfgObj, api);
-        const after = JSON.stringify(cfgObj.agents?.list ?? null);
+        const after = JSON.stringify(cfgObj.agents ?? null);
 
         if (before !== after) {
           await writeOpenClawConfig(api, cfgObj);
-          console.error("[recipes] ensured agents.list includes main as first/default");
+          console.error("[recipes] ensured main agent is present and default");
         }
       } catch (e) {
-        console.error(`[recipes] note: failed to ensure main agent in agents.list: ${(e as Error).message}`);
+        console.error(`[recipes] note: failed to ensure main agent in config: ${(e as Error).message}`);
       }
     });
 

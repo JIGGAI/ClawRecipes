@@ -1,5 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { upsertAgentInConfig, type AgentConfigSnippet } from "./agent-config";
+import { detectAgentsShape, readAgents, writeAgents, writeDefaultAgentId } from "./agents-shape";
 import { stableStringify } from "./stable-stringify";
 
 /**
@@ -72,38 +73,45 @@ function getWorkspaceRoot(cfgObj: OpenClawConfigMutable, api: OpenClawPluginApi)
 
 function buildMainAgentEntry(
   prevMain: Partial<{ id?: string; workspace?: string; sandbox?: unknown }>,
-  workspaceRoot: string
+  workspaceRoot: string,
+  includeDefaultMarker: boolean
 ) {
   return {
     ...prevMain,
     id: "main",
-    default: true,
+    // Only legacy `agents.list` carries a per-entry default marker; OpenClaw
+    // strips it from `agents.entries` as a retired key.
+    ...(includeDefaultMarker ? { default: true } : {}),
     workspace: prevMain?.workspace ?? workspaceRoot,
     sandbox: prevMain?.sandbox ?? { mode: "off" },
   };
 }
 
 /**
- * Ensure main agent is first in agents.list with default workspace.
- * Mutates cfgObj in place.
+ * Ensure a `main` agent exists with a default workspace, and that it is the
+ * one marked default. Mutates cfgObj in place.
+ *
+ * Ordering only means something for the legacy `agents.list` array, where main
+ * is moved to the front. The current `agents.entries` map has no order and the
+ * per-entry `default: true` marker is retired, so there main is recorded via
+ * `agents.defaults.systemAgent.agentId` instead (see agents-shape).
+ *
  * @param cfgObj - OpenClaw config object
  * @param api - OpenClaw plugin API (for defaults)
  */
 export function ensureMainFirstInAgentsList(cfgObj: OpenClawConfigMutable, api: OpenClawPluginApi) {
-  if (!cfgObj.agents) cfgObj.agents = {};
-  if (!Array.isArray(cfgObj.agents.list)) cfgObj.agents.list = [];
-
-  const list = cfgObj.agents.list;
+  const legacyShape = detectAgentsShape(cfgObj) === "list";
+  const list = readAgents(cfgObj);
   const workspaceRoot = getWorkspaceRoot(cfgObj, api);
   const idx = list.findIndex((a) => a?.id === "main");
   const prevMain = idx >= 0 ? list[idx] ?? {} : {};
-  const main = buildMainAgentEntry(prevMain, workspaceRoot);
+  const main = buildMainAgentEntry(prevMain, workspaceRoot, legacyShape);
 
-  for (const a of list) {
-    if (a?.id !== "main" && a?.default) a.default = false;
-  }
   if (idx >= 0) list.splice(idx, 1);
   list.unshift(main);
+
+  writeAgents(cfgObj, list);
+  writeDefaultAgentId(cfgObj, "main");
 }
 
 /**

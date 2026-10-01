@@ -1,3 +1,5 @@
+import { readAgents, writeAgents, type AgentsConfigMutable } from "./agents-shape";
+
 export type AgentConfigSnippet = {
   id: string;
   workspace: string;
@@ -5,15 +7,10 @@ export type AgentConfigSnippet = {
   tools?: { profile?: string; allow?: string[]; deny?: string[] };
 };
 
-type AgentsConfigMutable = Record<string, unknown> & {
-  agents?: { list?: Array<{ id?: string; workspace?: string; identity?: Record<string, unknown>; tools?: unknown }> };
-};
-
 export function upsertAgentInConfig(cfgObj: AgentsConfigMutable, snippet: AgentConfigSnippet) {
-  if (!cfgObj.agents) cfgObj.agents = {};
-  if (!Array.isArray(cfgObj.agents.list)) cfgObj.agents.list = [];
-
-  const list = cfgObj.agents.list;
+  // Read/write through agents-shape so this works whether the host stores
+  // agents as `agents.entries` (current) or `agents.list` (legacy).
+  const list = readAgents(cfgObj);
   const idx = list.findIndex((a) => a?.id === snippet.id);
   const prev = idx >= 0 ? list[idx] : {};
 
@@ -51,8 +48,9 @@ export function upsertAgentInConfig(cfgObj: AgentsConfigMutable, snippet: AgentC
 
   if (idx >= 0) {
     list[idx] = nextAgent;
-    return;
+  } else {
+    list.push(nextAgent);
   }
 
-  list.push(nextAgent);
+  writeAgents(cfgObj, list);
 }
