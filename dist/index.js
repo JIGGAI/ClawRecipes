@@ -1145,6 +1145,79 @@ var require_lib = __commonJS({
   }
 });
 
+// src/lib/agents-shape.ts
+function isRecord(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+function detectAgentsShape(cfgObj) {
+  const agents = cfgObj?.agents;
+  if (isRecord(agents)) {
+    if (isRecord(agents.entries)) return "entries";
+    if (Array.isArray(agents.list)) return "list";
+  }
+  return "entries";
+}
+function readAgents(cfgObj) {
+  const agents = cfgObj?.agents;
+  if (!isRecord(agents)) return [];
+  if (isRecord(agents.entries)) {
+    return Object.entries(agents.entries).filter(([id]) => id).map(([id, entry]) => ({ ...isRecord(entry) ? entry : {}, id }));
+  }
+  if (Array.isArray(agents.list)) {
+    return agents.list.filter(isRecord).filter((a) => String(a.id ?? ""));
+  }
+  return [];
+}
+function writeAgents(cfgObj, agents) {
+  if (!isRecord(cfgObj.agents)) cfgObj.agents = {};
+  const container = cfgObj.agents;
+  const shape = detectAgentsShape(cfgObj);
+  if (shape === "list") {
+    container.list = agents.filter((a) => String(a.id ?? ""));
+    return;
+  }
+  const next = {};
+  for (const agent of agents) {
+    const id = String(agent.id ?? "");
+    if (!id) continue;
+    const rest = { ...agent };
+    delete rest.id;
+    next[id] = rest;
+  }
+  container.entries = next;
+  delete container.list;
+}
+function readDefaultAgentId(cfgObj) {
+  const defaults = cfgObj?.agents?.defaults;
+  if (isRecord(defaults)) {
+    const systemAgent = defaults.systemAgent;
+    if (isRecord(systemAgent) && typeof systemAgent.agentId === "string" && systemAgent.agentId) {
+      return systemAgent.agentId;
+    }
+  }
+  const marked = readAgents(cfgObj).find((a) => a.default === true);
+  return marked ? String(marked.id ?? "") || void 0 : void 0;
+}
+function writeDefaultAgentId(cfgObj, agentId) {
+  if (!isRecord(cfgObj.agents)) cfgObj.agents = {};
+  const container = cfgObj.agents;
+  if (detectAgentsShape(cfgObj) === "list") {
+    for (const agent of container.list ?? []) {
+      if (isRecord(agent)) agent.default = agent.id === agentId;
+    }
+    return;
+  }
+  if (!isRecord(container.defaults)) container.defaults = {};
+  const defaults = container.defaults;
+  const systemAgent = isRecord(defaults.systemAgent) ? defaults.systemAgent : {};
+  defaults.systemAgent = { ...systemAgent, agentId };
+}
+var init_agents_shape = __esm({
+  "src/lib/agents-shape.ts"() {
+    "use strict";
+  }
+});
+
 // src/lib/config.ts
 var config_exports = {};
 __export(config_exports, {
@@ -8705,6 +8778,22 @@ async function readTeamDisplayName(teamDir) {
     return null;
   }
 }
+function readAgentManifestEntries(cfgObj) {
+  const defaultAgentId = readDefaultAgentId(cfgObj);
+  return readAgents(cfgObj).map((a) => {
+    const id = String(a.id ?? "");
+    const identity = a.identity;
+    const model = a.model;
+    const modelPrimary = typeof model === "string" ? model : typeof model?.primary === "string" ? model.primary : void 0;
+    return {
+      id,
+      identityName: typeof identity?.name === "string" ? identity.name : void 0,
+      workspace: typeof a.workspace === "string" ? a.workspace : void 0,
+      model: modelPrimary,
+      isDefault: a.default === true || !!defaultAgentId && id === defaultAgentId
+    };
+  }).filter((a) => a.id);
+}
 async function generateKitchenManifest(opts) {
   const { api } = opts;
   const outputPath = opts.outputPath ?? defaultManifestPath();
@@ -8746,16 +8835,7 @@ async function generateKitchenManifest(opts) {
   }
   let agents = [];
   try {
-    const list = api.config.agents?.list;
-    if (Array.isArray(list)) {
-      agents = list.map((a) => ({
-        id: String(a.id ?? ""),
-        identityName: typeof a.identity?.name === "string" ? a.identity.name : void 0,
-        workspace: typeof a.workspace === "string" ? a.workspace : void 0,
-        model: typeof a.model === "string" ? a.model : void 0,
-        isDefault: a.default === true
-      })).filter((a) => a.id);
-    }
+    agents = readAgentManifestEntries(api.config);
   } catch {
   }
   const recipes = [];
@@ -8808,6 +8888,7 @@ var init_kitchen_manifest = __esm({
     import_promises7 = __toESM(require("node:fs/promises"));
     import_node_os2 = __toESM(require("node:os"));
     import_node_path10 = __toESM(require("node:path"));
+    init_agents_shape();
     OPENCLAW_DIR = import_node_path10.default.join(import_node_os2.default.homedir(), ".openclaw");
     MANIFEST_FILENAME = "kitchen-manifest.json";
     debounceTimer = null;
@@ -8827,10 +8908,9 @@ var import_promises22 = __toESM(require("node:fs/promises"));
 var import_json5 = __toESM(require_lib());
 
 // src/lib/agent-config.ts
+init_agents_shape();
 function upsertAgentInConfig(cfgObj, snippet) {
-  if (!cfgObj.agents) cfgObj.agents = {};
-  if (!Array.isArray(cfgObj.agents.list)) cfgObj.agents.list = [];
-  const list = cfgObj.agents.list;
+  const list = readAgents(cfgObj);
   const idx = list.findIndex((a) => a?.id === snippet.id);
   const prev = idx >= 0 ? list[idx] : {};
   const prevTools = (() => {
@@ -8862,10 +8942,14 @@ function upsertAgentInConfig(cfgObj, snippet) {
   };
   if (idx >= 0) {
     list[idx] = nextAgent;
-    return;
+  } else {
+    list.push(nextAgent);
   }
-  list.push(nextAgent);
+  writeAgents(cfgObj, list);
 }
+
+// src/lib/recipes-config.ts
+init_agents_shape();
 
 // src/lib/stable-stringify.ts
 function stableStringify(x) {
@@ -8903,28 +8987,28 @@ async function writeOpenClawConfig(api, cfgObj) {
 function getWorkspaceRoot(cfgObj, api) {
   return cfgObj.agents?.defaults?.workspace ?? api.config.agents?.defaults?.workspace ?? "~/.openclaw/workspace";
 }
-function buildMainAgentEntry(prevMain, workspaceRoot) {
+function buildMainAgentEntry(prevMain, workspaceRoot, includeDefaultMarker) {
   return {
     ...prevMain,
     id: "main",
-    default: true,
+    // Only legacy `agents.list` carries a per-entry default marker; OpenClaw
+    // strips it from `agents.entries` as a retired key.
+    ...includeDefaultMarker ? { default: true } : {},
     workspace: prevMain?.workspace ?? workspaceRoot,
     sandbox: prevMain?.sandbox ?? { mode: "off" }
   };
 }
 function ensureMainFirstInAgentsList(cfgObj, api) {
-  if (!cfgObj.agents) cfgObj.agents = {};
-  if (!Array.isArray(cfgObj.agents.list)) cfgObj.agents.list = [];
-  const list = cfgObj.agents.list;
+  const legacyShape = detectAgentsShape(cfgObj) === "list";
+  const list = readAgents(cfgObj);
   const workspaceRoot = getWorkspaceRoot(cfgObj, api);
   const idx = list.findIndex((a) => a?.id === "main");
   const prevMain = idx >= 0 ? list[idx] ?? {} : {};
-  const main = buildMainAgentEntry(prevMain, workspaceRoot);
-  for (const a of list) {
-    if (a?.id !== "main" && a?.default) a.default = false;
-  }
+  const main = buildMainAgentEntry(prevMain, workspaceRoot, legacyShape);
   if (idx >= 0) list.splice(idx, 1);
   list.unshift(main);
+  writeAgents(cfgObj, list);
+  writeDefaultAgentId(cfgObj, "main");
 }
 function upsertBindingInConfig(cfgObj, binding) {
   if (!Array.isArray(cfgObj.bindings)) cfgObj.bindings = [];
@@ -9699,6 +9783,7 @@ async function writeJsonFile(p, data) {
 // src/lib/remove-team.ts
 var import_promises10 = __toESM(require("node:fs/promises"));
 var import_node_path13 = __toESM(require("node:path"));
+init_agents_shape();
 init_fs_utils();
 function stampTeamId(teamId) {
   return `recipes.teamId=${teamId}`;
@@ -9815,14 +9900,13 @@ async function executeRemoveTeamPlan(opts) {
   if (workspaceExists) {
     await import_promises10.default.rm(plan.workspaceDir, { recursive: true, force: true });
   }
-  const agents = opts.cfgObj?.agents;
-  const list = agents?.list;
-  const before = Array.isArray(list) ? list.length : 0;
-  if (Array.isArray(list) && opts.cfgObj.agents) {
-    const remove = new Set(plan.agentsToRemove);
-    opts.cfgObj.agents.list = list.filter((a) => !remove.has(String(a?.id ?? "")));
-  }
-  const after = Array.isArray(opts.cfgObj?.agents?.list) ? opts.cfgObj.agents.list.length : 0;
+  const cfgObj = opts.cfgObj;
+  const existing = readAgents(cfgObj);
+  const before = existing.length;
+  const remove = new Set(plan.agentsToRemove);
+  const kept = existing.filter((a) => !remove.has(String(a?.id ?? "")));
+  if (kept.length !== before) writeAgents(cfgObj, kept);
+  const after = kept.length;
   const exactIds = new Set(plan.cronJobsExact.map((j) => j.id));
   const ambiguousIds = new Set(plan.cronJobsAmbiguous.map((j) => j.id));
   const removeIds = /* @__PURE__ */ new Set([...exactIds]);
@@ -11480,11 +11564,11 @@ function sanitizeOutboundPostText(input) {
 }
 
 // src/lib/workflows/workflow-utils.ts
-function isRecord(v) {
+function isRecord2(v) {
   return !!v && typeof v == "object" && !Array.isArray(v);
 }
 function asRecord(v) {
-  return isRecord(v) ? v : {};
+  return isRecord2(v) ? v : {};
 }
 function asString(v, fallback = "") {
   return typeof v === "string" ? v : v == null ? fallback : String(v);
@@ -11515,7 +11599,7 @@ function normalizeWorkflow(raw) {
       ...config["provider"] != null ? { provider: asString(config["provider"]) } : {},
       // Tool
       ...config["tool"] != null ? { tool: asString(config["tool"]) } : {},
-      ...isRecord(config["args"]) ? { args: config["args"] } : {},
+      ...isRecord2(config["args"]) ? { args: config["args"] } : {},
       // Human approval
       ...config["approvalBindingId"] != null ? { approvalBindingId: asString(config["approvalBindingId"]) } : {}
     };
@@ -13574,7 +13658,7 @@ Reply with:`,
       } else if (kind === "tool") {
         const action = asRecord(node.action);
         const toolName = asString(action["tool"]).trim();
-        const toolArgs = isRecord(action["args"]) ? action["args"] : {};
+        const toolArgs = isRecord2(action["args"]) ? action["args"] : {};
         if (!toolName) throw new Error(`Node ${nodeLabel(node)} missing action.tool`);
         const artifactsDir = import_node_path23.default.join(runDir, "artifacts");
         await ensureDir3(artifactsDir);
@@ -14926,7 +15010,7 @@ async function executeWorkspaceCleanup(plan, opts) {
 }
 
 // index.ts
-function isRecord2(v) {
+function isRecord3(v) {
   return !!v && typeof v === "object" && !Array.isArray(v);
 }
 function emitJson(payload) {
@@ -14936,9 +15020,9 @@ function asString3(v, fallback = "") {
   return typeof v === "string" ? v : v == null ? fallback : String(v);
 }
 function extractEventText(evt, ctx, metadata) {
-  const msg = isRecord2(evt["message"]) ? evt["message"] : {};
+  const msg = isRecord3(evt["message"]) ? evt["message"] : {};
   const parts = Array.isArray(msg["content"]) ? msg["content"] : [];
-  const texts = parts.map((part) => isRecord2(part) ? asString3(part["text"]).trim() : "").filter(Boolean);
+  const texts = parts.map((part) => isRecord3(part) ? asString3(part["text"]).trim() : "").filter(Boolean);
   if (texts.length) return texts.join("\n").trim();
   const direct = [
     evt["content"],
@@ -14994,9 +15078,9 @@ var recipesPlugin = {
   register(api) {
     const approvalReplyHandler = async (evt, ctx) => {
       try {
-        const e = isRecord2(evt) ? evt : {};
-        const c = isRecord2(ctx) ? ctx : {};
-        const metadata = isRecord2(e["metadata"]) ? e["metadata"] : {};
+        const e = isRecord3(evt) ? evt : {};
+        const c = isRecord3(ctx) ? ctx : {};
+        const metadata = isRecord3(e["metadata"]) ? e["metadata"] : {};
         const text = extractEventText(e, c, metadata);
         if (!text) return;
         const reply = parseApprovalReply(text);
@@ -15075,15 +15159,15 @@ var recipesPlugin = {
     api.on("gateway_start", async () => {
       try {
         const cfgObj = await loadOpenClawConfig(api);
-        const before = JSON.stringify(cfgObj.agents?.list ?? null);
+        const before = JSON.stringify(cfgObj.agents ?? null);
         ensureMainFirstInAgentsList(cfgObj, api);
-        const after = JSON.stringify(cfgObj.agents?.list ?? null);
+        const after = JSON.stringify(cfgObj.agents ?? null);
         if (before !== after) {
           await writeOpenClawConfig(api, cfgObj);
-          console.error("[recipes] ensured agents.list includes main as first/default");
+          console.error("[recipes] ensured main agent is present and default");
         }
       } catch (e) {
-        console.error(`[recipes] note: failed to ensure main agent in agents.list: ${e.message}`);
+        console.error(`[recipes] note: failed to ensure main agent in config: ${e.message}`);
       }
     });
     api.registerCli(

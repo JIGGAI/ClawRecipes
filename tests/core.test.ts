@@ -49,19 +49,55 @@ describe("recipes plugin core behaviors", () => {
     expect(once).toContain("Status: testing");
   });
 
-  test("ensureMainFirstInAgentsList creates agents/list when missing", () => {
+  test("ensureMainFirstInAgentsList creates main in the current entries shape when agents are missing", () => {
     const cfgObj: any = {};
     __internal.ensureMainFirstInAgentsList(cfgObj, { config: { agents: { defaults: { workspace: "/ws" } } } } as any);
     expect(cfgObj.agents).toBeDefined();
-    expect(Array.isArray(cfgObj.agents.list)).toBe(true);
-    expect(cfgObj.agents.list[0].id).toBe("main");
+    expect(cfgObj.agents.entries.main).toBeDefined();
+    expect(cfgObj.agents.entries.main.workspace).toBe("/ws");
+    // The id is the key in this shape, and the per-entry default marker is retired.
+    expect(cfgObj.agents.entries.main.id).toBeUndefined();
+    expect(cfgObj.agents.entries.main.default).toBeUndefined();
+    expect(cfgObj.agents.defaults.systemAgent.agentId).toBe("main");
+    expect(cfgObj.agents.list).toBeUndefined();
   });
 
-  test("ensureMainFirstInAgentsList initializes list when not array", () => {
+  test("ensureMainFirstInAgentsList uses the entries shape when list is not a usable array", () => {
     const cfgObj: any = { agents: { list: null } };
     __internal.ensureMainFirstInAgentsList(cfgObj, { config: { agents: { defaults: { workspace: "/ws" } } } } as any);
-    expect(Array.isArray(cfgObj.agents.list)).toBe(true);
-    expect(cfgObj.agents.list[0].id).toBe("main");
+    expect(cfgObj.agents.entries.main).toBeDefined();
+    expect(cfgObj.agents.defaults.systemAgent.agentId).toBe("main");
+    // A malformed legacy key must not survive, or OpenClaw migrates it back over entries.
+    expect(cfgObj.agents.list).toBeUndefined();
+  });
+
+  test("ensureMainFirstInAgentsList preserves existing entries and their settings", () => {
+    const cfgObj: any = {
+      agents: {
+        defaults: { workspace: "/ws" },
+        entries: {
+          main: { workspace: "/ws", identity: { name: "Seven" }, tools: { profile: "full" } },
+          other: { workspace: "/ws-other", identity: { name: "Other" } },
+        },
+      },
+    };
+    __internal.ensureMainFirstInAgentsList(cfgObj, { config: { agents: { defaults: { workspace: "/ws" } } } } as any);
+    expect(cfgObj.agents.entries.main.identity.name).toBe("Seven");
+    expect(cfgObj.agents.entries.main.tools.profile).toBe("full");
+    expect(cfgObj.agents.entries.other.identity.name).toBe("Other");
+    expect(Object.keys(cfgObj.agents.entries).sort()).toEqual(["main", "other"]);
+  });
+
+  test("ensureMainFirstInAgentsList is idempotent on an entries config", () => {
+    const cfgObj: any = {
+      agents: { defaults: { workspace: "/ws", systemAgent: { agentId: "main" } }, entries: { main: { workspace: "/ws", sandbox: { mode: "off" } } } },
+    };
+    const api = { config: { agents: { defaults: { workspace: "/ws" } } } } as any;
+    __internal.ensureMainFirstInAgentsList(cfgObj, api);
+    const first = JSON.stringify(cfgObj.agents);
+    __internal.ensureMainFirstInAgentsList(cfgObj, api);
+    // A second pass must be a no-op, or the gateway_start hook rewrites config on every start.
+    expect(JSON.stringify(cfgObj.agents)).toBe(first);
   });
 
   test("removeBindingsInConfig removes matching binding by agentId and match", () => {

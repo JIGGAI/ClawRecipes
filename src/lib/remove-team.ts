@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
+import { readAgents, writeAgents, type AgentsConfigMutable } from "./agents-shape";
 import { fileExists } from "./fs-utils";
 
 export type CronJob = {
@@ -253,15 +254,14 @@ export async function executeRemoveTeamPlan(opts: {
     await fs.rm(plan.workspaceDir, { recursive: true, force: true });
   }
 
-  // 2) Remove agents from config
-  const agents = opts.cfgObj?.agents as { list?: Array<{ id?: string }> } | undefined;
-  const list = agents?.list;
-  const before = Array.isArray(list) ? list.length : 0;
-  if (Array.isArray(list) && opts.cfgObj.agents) {
-    const remove = new Set(plan.agentsToRemove);
-    (opts.cfgObj.agents as { list: Array<{ id?: string }> }).list = list.filter((a) => !remove.has(String(a?.id ?? "")));
-  }
-  const after = Array.isArray(opts.cfgObj?.agents?.list) ? opts.cfgObj.agents.list.length : 0;
+  // 2) Remove agents from config (works on `agents.entries` and legacy `agents.list`)
+  const cfgObj = opts.cfgObj as AgentsConfigMutable;
+  const existing = readAgents(cfgObj);
+  const before = existing.length;
+  const remove = new Set(plan.agentsToRemove);
+  const kept = existing.filter((a) => !remove.has(String(a?.id ?? "")));
+  if (kept.length !== before) writeAgents(cfgObj, kept);
+  const after = kept.length;
 
   // 3) Remove cron jobs from store
   const exactIds = new Set(plan.cronJobsExact.map((j) => j.id));

@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
+import { readAgents, readDefaultAgentId, type AgentsConfigMutable } from './agents-shape';
 
 // ── Manifest types ──────────────────────────────────────────────────────────
 
@@ -114,6 +115,33 @@ export interface GenerateManifestOptions {
   outputPath?: string;
 }
 
+/**
+ * Project configured agents into manifest entries, reading whichever agent
+ * shape the host uses (see agents-shape).
+ */
+function readAgentManifestEntries(cfgObj: AgentsConfigMutable): AgentManifestEntry[] {
+  const defaultAgentId = readDefaultAgentId(cfgObj);
+  return readAgents(cfgObj)
+    .map((a) => {
+      const id = String(a.id ?? '');
+      const identity = a.identity as Record<string, unknown> | undefined;
+      // `model` is an object (`{ primary, fallbacks }`) in current configs and a
+      // bare string in older ones.
+      const model = a.model as string | Record<string, unknown> | undefined;
+      const modelPrimary = typeof model === 'string'
+        ? model
+        : typeof model?.primary === 'string' ? model.primary : undefined;
+      return {
+        id,
+        identityName: typeof identity?.name === 'string' ? identity.name : undefined,
+        workspace: typeof a.workspace === 'string' ? a.workspace : undefined,
+        model: modelPrimary,
+        isDefault: a.default === true || (!!defaultAgentId && id === defaultAgentId),
+      };
+    })
+    .filter((a) => a.id);
+}
+
 export async function generateKitchenManifest(opts: GenerateManifestOptions): Promise<KitchenManifest> {
   const { api } = opts;
   const outputPath = opts.outputPath ?? defaultManifestPath();
@@ -164,18 +192,7 @@ export async function generateKitchenManifest(opts: GenerateManifestOptions): Pr
   // Read agents directly from config (avoids subprocess which can silently fail)
   let agents: AgentManifestEntry[] = [];
   try {
-    const list = (api.config as { agents?: { list?: Array<Record<string, unknown>> } }).agents?.list;
-    if (Array.isArray(list)) {
-      agents = list.map((a) => ({
-        id: String(a.id ?? ''),
-        identityName: typeof (a.identity as Record<string, unknown> | undefined)?.name === 'string'
-          ? (a.identity as { name: string }).name
-          : undefined,
-        workspace: typeof a.workspace === 'string' ? a.workspace : undefined,
-        model: typeof a.model === 'string' ? a.model : undefined,
-        isDefault: a.default === true,
-      })).filter((a) => a.id);
-    }
+    agents = readAgentManifestEntries(api.config as AgentsConfigMutable);
   } catch { /* best-effort */ }
 
   // Read recipes from filesystem (avoids subprocess which can silently fail)
