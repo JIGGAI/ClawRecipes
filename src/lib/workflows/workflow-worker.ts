@@ -15,6 +15,7 @@ import { loadPriorLlmInput, loadProposedPostTextFromPriorNode } from './workflow
 import { readTextFile, readJsonFile } from './workflow-runner-io';
 import { resolveApprovalBindingTarget } from './workflow-node-executor';
 import { buildKitchenWorkflowReviewUrl } from './kitchen-review-url';
+import { buildMemoryContext } from './memory-context';
 import {
   asRecord, asString, isRecord,
   normalizeWorkflow,
@@ -25,93 +26,6 @@ import {
   loadNodeStatesFromRun, pickNextRunnableNodeIndex,
   sanitizeDraftOnlyText, templateReplace, expandFileIncludes,
 } from './workflow-utils';
-
-/**
- * Build memory context for LLM nodes by reading team memory files
- */
-async function buildMemoryContext(teamDir: string): Promise<string> {
-  try {
-    const memoryDir = path.join(teamDir, 'shared-context', 'memory');
-    
-    // Check if memory directory exists
-    if (!await fileExists(memoryDir)) {
-      return '';
-    }
-
-    const memoryParts: string[] = [];
-    const maxTokens = 2000; // Rough token budget
-    let currentTokens = 0;
-
-    // Read pinned items first (highest priority)
-    const pinnedPath = path.join(memoryDir, 'pinned.jsonl');
-    if (await fileExists(pinnedPath)) {
-      const pinnedContent = await readTextFile(pinnedPath);
-      const pinnedItems = pinnedContent.trim().split('\n').filter(Boolean);
-      
-      if (pinnedItems.length > 0) {
-        memoryParts.push('[Team Memory — Pinned]');
-        for (const line of pinnedItems.slice(-5)) { // Last 5 pinned items
-          try {
-            const item = JSON.parse(line);
-            if (item.content || item.text) {
-              const summary = `- ${item.content || item.text} (${item.type || 'note'}, ${(item.ts || '').slice(0, 10)})`;
-              if (currentTokens + summary.length * 0.25 < maxTokens) { // Rough token estimate
-                memoryParts.push(summary);
-                currentTokens += summary.length * 0.25;
-              }
-            }
-          } catch {
-            // Skip malformed JSON lines
-          }
-        }
-      }
-    }
-
-    // Read recent items from other JSONL files  
-    const files = await fs.readdir(memoryDir);
-    const jsonlFiles = files.filter(f => f.endsWith('.jsonl') && f !== 'pinned.jsonl');
-    
-    for (const filename of jsonlFiles) {
-      if (currentTokens > maxTokens * 0.8) break; // Leave room for recent items
-      
-      const filePath = path.join(memoryDir, filename);
-      const content = await readTextFile(filePath);
-      const items = content.trim().split('\n').filter(Boolean);
-      
-      if (items.length > 0) {
-        const recentItems = items.slice(-3); // Last 3 items from each file
-        for (const line of recentItems) {
-          try {
-            const item = JSON.parse(line);
-            if (item.content || item.text) {
-              const summary = `- ${item.content || item.text} (${item.type || 'note'}, ${(item.ts || '').slice(0, 10)})`;
-              if (currentTokens + summary.length * 0.25 < maxTokens) {
-                if (memoryParts.length === 1) { // Only pinned section exists
-                  memoryParts.push('', '[Team Memory — Recent]');
-                }
-                memoryParts.push(summary);
-                currentTokens += summary.length * 0.25;
-              }
-            }
-          } catch {
-            // Skip malformed JSON lines
-          }
-        }
-      }
-    }
-
-    // If we have memory content, format it properly
-    if (memoryParts.length > 1) {
-      return memoryParts.join('\n') + '\n\n[Task]';
-    }
-
-    return '';
-  } catch (error) {
-    // Fail gracefully - memory injection is optional
-    console.warn('Memory context injection failed:', error);
-    return '';
-  }
-}
 
 /**
  * Build template variables from prior node outputs for prompt/path interpolation.
@@ -880,7 +794,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
         }
 
         // Inject team memory context for LLM nodes
-        const memoryContext = await buildMemoryContext(teamDir);
+        const memoryContext = await buildMemoryContext(teamDir, { teamId, runId, nodeId: node.id });
         const promptWithMemory = memoryContext ? `${memoryContext}\n\n${taskText}` : taskText;
 
         // Build JSON Schema from outputFields for structured validation
@@ -1313,7 +1227,7 @@ export async function runWorkflowWorkerTick(api: OpenClawPluginApi, opts: {
       let text = '';
       try {
         // Inject team memory context
-        const memoryContext = await buildMemoryContext(teamDir);
+        const memoryContext = await buildMemoryContext(teamDir, { teamId, runId: task.runId, nodeId: node.id });
         const timeoutMsRaw = Number(asString(config['timeoutMs'] ?? '300000'));
         const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : 300000;
 

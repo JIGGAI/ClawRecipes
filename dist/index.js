@@ -1331,17 +1331,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node, visitor, path35) {
-      const ctrl = callVisitor(key, node, visitor, path35);
+    function visit_(key, node, visitor, path36) {
+      const ctrl = callVisitor(key, node, visitor, path36);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path35, ctrl);
-        return visit_(key, ctrl, visitor, path35);
+        replaceNode(key, path36, ctrl);
+        return visit_(key, ctrl, visitor, path36);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path35 = Object.freeze(path35.concat(node));
+          path36 = Object.freeze(path36.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = visit_(i, node.items[i], visitor, path35);
+            const ci = visit_(i, node.items[i], visitor, path36);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -1352,13 +1352,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path35 = Object.freeze(path35.concat(node));
-          const ck = visit_("key", node.key, visitor, path35);
+          path36 = Object.freeze(path36.concat(node));
+          const ck = visit_("key", node.key, visitor, path36);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = visit_("value", node.value, visitor, path35);
+          const cv = visit_("value", node.value, visitor, path36);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -1379,17 +1379,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node, visitor, path35) {
-      const ctrl = await callVisitor(key, node, visitor, path35);
+    async function visitAsync_(key, node, visitor, path36) {
+      const ctrl = await callVisitor(key, node, visitor, path36);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path35, ctrl);
-        return visitAsync_(key, ctrl, visitor, path35);
+        replaceNode(key, path36, ctrl);
+        return visitAsync_(key, ctrl, visitor, path36);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node)) {
-          path35 = Object.freeze(path35.concat(node));
+          path36 = Object.freeze(path36.concat(node));
           for (let i = 0; i < node.items.length; ++i) {
-            const ci = await visitAsync_(i, node.items[i], visitor, path35);
+            const ci = await visitAsync_(i, node.items[i], visitor, path36);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -1400,13 +1400,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node)) {
-          path35 = Object.freeze(path35.concat(node));
-          const ck = await visitAsync_("key", node.key, visitor, path35);
+          path36 = Object.freeze(path36.concat(node));
+          const ck = await visitAsync_("key", node.key, visitor, path36);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node.key = null;
-          const cv = await visitAsync_("value", node.value, visitor, path35);
+          const cv = await visitAsync_("value", node.value, visitor, path36);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -1433,23 +1433,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node, visitor, path35) {
+    function callVisitor(key, node, visitor, path36) {
       if (typeof visitor === "function")
-        return visitor(key, node, path35);
+        return visitor(key, node, path36);
       if (identity.isMap(node))
-        return visitor.Map?.(key, node, path35);
+        return visitor.Map?.(key, node, path36);
       if (identity.isSeq(node))
-        return visitor.Seq?.(key, node, path35);
+        return visitor.Seq?.(key, node, path36);
       if (identity.isPair(node))
-        return visitor.Pair?.(key, node, path35);
+        return visitor.Pair?.(key, node, path36);
       if (identity.isScalar(node))
-        return visitor.Scalar?.(key, node, path35);
+        return visitor.Scalar?.(key, node, path36);
       if (identity.isAlias(node))
-        return visitor.Alias?.(key, node, path35);
+        return visitor.Alias?.(key, node, path36);
       return void 0;
     }
-    function replaceNode(key, path35, node) {
-      const parent = path35[path35.length - 1];
+    function replaceNode(key, path36, node) {
+      const parent = path36[path36.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node;
       } else if (identity.isPair(parent)) {
@@ -2057,10 +2057,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path35, value) {
+    function collectionFromPath(schema, path36, value) {
       let v = value;
-      for (let i = path35.length - 1; i >= 0; --i) {
-        const k = path35[i];
+      for (let i = path36.length - 1; i >= 0; --i) {
+        const k = path36[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -2079,7 +2079,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path35) => path35 == null || typeof path35 === "object" && !!path35[Symbol.iterator]().next().done;
+    var isEmptyPath = (path36) => path36 == null || typeof path36 === "object" && !!path36[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -2109,11 +2109,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path35, value) {
-        if (isEmptyPath(path35))
+      addIn(path36, value) {
+        if (isEmptyPath(path36))
           this.add(value);
         else {
-          const [key, ...rest] = path35;
+          const [key, ...rest] = path36;
           const node = this.get(key, true);
           if (identity.isCollection(node))
             node.addIn(rest, value);
@@ -2127,8 +2127,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path35) {
-        const [key, ...rest] = path35;
+      deleteIn(path36) {
+        const [key, ...rest] = path36;
         if (rest.length === 0)
           return this.delete(key);
         const node = this.get(key, true);
@@ -2142,8 +2142,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path35, keepScalar) {
-        const [key, ...rest] = path35;
+      getIn(path36, keepScalar) {
+        const [key, ...rest] = path36;
         const node = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node) ? node.value : node;
@@ -2161,8 +2161,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path35) {
-        const [key, ...rest] = path35;
+      hasIn(path36) {
+        const [key, ...rest] = path36;
         if (rest.length === 0)
           return this.has(key);
         const node = this.get(key, true);
@@ -2172,8 +2172,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path35, value) {
-        const [key, ...rest] = path35;
+      setIn(path36, value) {
+        const [key, ...rest] = path36;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -4677,9 +4677,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path35, value) {
+      addIn(path36, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path35, value);
+          this.contents.addIn(path36, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -4754,14 +4754,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path35) {
-        if (Collection.isEmptyPath(path35)) {
+      deleteIn(path36) {
+        if (Collection.isEmptyPath(path36)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path35) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path36) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -4776,10 +4776,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path35, keepScalar) {
-        if (Collection.isEmptyPath(path35))
+      getIn(path36, keepScalar) {
+        if (Collection.isEmptyPath(path36))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path35, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path36, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -4790,10 +4790,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path35) {
-        if (Collection.isEmptyPath(path35))
+      hasIn(path36) {
+        if (Collection.isEmptyPath(path36))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path35) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path36) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -4810,13 +4810,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path35, value) {
-        if (Collection.isEmptyPath(path35)) {
+      setIn(path36, value) {
+        if (Collection.isEmptyPath(path36)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path35), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path36), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path35, value);
+          this.contents.setIn(path36, value);
         }
       }
       /**
@@ -6768,9 +6768,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path35) => {
+    visit.itemAtPath = (cst, path36) => {
       let item = cst;
-      for (const [field, index] of path35) {
+      for (const [field, index] of path36) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -6779,23 +6779,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path35) => {
-      const parent = visit.itemAtPath(cst, path35.slice(0, -1));
-      const field = path35[path35.length - 1][0];
+    visit.parentCollection = (cst, path36) => {
+      const parent = visit.itemAtPath(cst, path36.slice(0, -1));
+      const field = path36[path36.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path35, item, visitor) {
-      let ctrl = visitor(item, path35);
+    function _visit(path36, item, visitor) {
+      let ctrl = visitor(item, path36);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path35.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path36.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -6806,10 +6806,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path35);
+            ctrl = ctrl(item, path36);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path35) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path36) : ctrl;
     }
     exports2.visit = visit;
   }
@@ -8094,14 +8094,14 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs25 = this.flowScalar(this.type);
+              const fs26 = this.flowScalar(this.type);
               if (atNextItem || it.value) {
-                map.items.push({ start, key: fs25, sep: [] });
+                map.items.push({ start, key: fs26, sep: [] });
                 this.onKeyLine = true;
               } else if (it.sep) {
-                this.stack.push(fs25);
+                this.stack.push(fs26);
               } else {
-                Object.assign(it, { key: fs25, sep: [] });
+                Object.assign(it, { key: fs26, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -8229,13 +8229,13 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs25 = this.flowScalar(this.type);
+              const fs26 = this.flowScalar(this.type);
               if (!it || it.value)
-                fc.items.push({ start: [], key: fs25, sep: [] });
+                fc.items.push({ start: [], key: fs26, sep: [] });
               else if (it.sep)
-                this.stack.push(fs25);
+                this.stack.push(fs26);
               else
-                Object.assign(it, { key: fs25, sep: [] });
+                Object.assign(it, { key: fs26, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -8903,8 +8903,8 @@ __export(index_exports, {
   default: () => index_default
 });
 module.exports = __toCommonJS(index_exports);
-var import_node_path28 = __toESM(require("node:path"));
-var import_promises22 = __toESM(require("node:fs/promises"));
+var import_node_path29 = __toESM(require("node:path"));
+var import_promises23 = __toESM(require("node:fs/promises"));
 var import_json5 = __toESM(require_lib());
 
 // src/lib/agent-config.ts
@@ -11221,8 +11221,8 @@ async function handleAddRoleToTeam(api, options) {
 }
 
 // src/lib/workflows/workflow-runner.ts
-var import_promises20 = __toESM(require("node:fs/promises"));
-var import_node_path26 = __toESM(require("node:path"));
+var import_promises21 = __toESM(require("node:fs/promises"));
+var import_node_path27 = __toESM(require("node:path"));
 var import_node_crypto5 = __toESM(require("node:crypto"));
 
 // src/lib/workflows/workflow-queue.ts
@@ -12056,8 +12056,8 @@ async function resolveApprovalBindingTarget(api, bindingId) {
 }
 
 // src/lib/workflows/workflow-worker.ts
-var import_promises17 = __toESM(require("node:fs/promises"));
-var import_node_path23 = __toESM(require("node:path"));
+var import_promises18 = __toESM(require("node:fs/promises"));
+var import_node_path24 = __toESM(require("node:path"));
 var import_node_crypto3 = __toESM(require("node:crypto"));
 
 // src/lib/workflows/workflow-error-classify.ts
@@ -12772,73 +12772,155 @@ function buildKitchenWorkflowReviewUrl(api, teamId, workflowId) {
   return `${baseUrl}/teams/${encodeURIComponent(teamId)}/workflows/${encodeURIComponent(workflowId)}`;
 }
 
-// src/lib/workflows/workflow-worker.ts
-async function buildMemoryContext(teamDir) {
+// src/lib/workflows/memory-context.ts
+var import_promises17 = __toESM(require("node:fs/promises"));
+var import_node_path23 = __toESM(require("node:path"));
+var MAX_MEMORY_TOKENS = 2e3;
+var TOKEN_ESTIMATE_FACTOR = 0.25;
+function estimateTokens(value) {
+  return value.length * TOKEN_ESTIMATE_FACTOR;
+}
+function summarizeMemoryLine(line) {
   try {
-    const memoryDir = import_node_path23.default.join(teamDir, "shared-context", "memory");
-    if (!await fileExists3(memoryDir)) {
-      return "";
-    }
-    const memoryParts = [];
-    const maxTokens = 2e3;
-    let currentTokens = 0;
-    const pinnedPath = import_node_path23.default.join(memoryDir, "pinned.jsonl");
-    if (await fileExists3(pinnedPath)) {
-      const pinnedContent = await readTextFile(pinnedPath);
-      const pinnedItems = pinnedContent.trim().split("\n").filter(Boolean);
-      if (pinnedItems.length > 0) {
-        memoryParts.push("[Team Memory \u2014 Pinned]");
-        for (const line of pinnedItems.slice(-5)) {
-          try {
-            const item = JSON.parse(line);
-            if (item.content || item.text) {
-              const summary = `- ${item.content || item.text} (${item.type || "note"}, ${(item.ts || "").slice(0, 10)})`;
-              if (currentTokens + summary.length * 0.25 < maxTokens) {
-                memoryParts.push(summary);
-                currentTokens += summary.length * 0.25;
-              }
-            }
-          } catch {
-          }
-        }
-      }
-    }
-    const files = await import_promises17.default.readdir(memoryDir);
-    const jsonlFiles = files.filter((f) => f.endsWith(".jsonl") && f !== "pinned.jsonl");
-    for (const filename of jsonlFiles) {
-      if (currentTokens > maxTokens * 0.8) break;
-      const filePath = import_node_path23.default.join(memoryDir, filename);
-      const content = await readTextFile(filePath);
-      const items = content.trim().split("\n").filter(Boolean);
-      if (items.length > 0) {
-        const recentItems = items.slice(-3);
-        for (const line of recentItems) {
-          try {
-            const item = JSON.parse(line);
-            if (item.content || item.text) {
-              const summary = `- ${item.content || item.text} (${item.type || "note"}, ${(item.ts || "").slice(0, 10)})`;
-              if (currentTokens + summary.length * 0.25 < maxTokens) {
-                if (memoryParts.length === 1) {
-                  memoryParts.push("", "[Team Memory \u2014 Recent]");
-                }
-                memoryParts.push(summary);
-                currentTokens += summary.length * 0.25;
-              }
-            }
-          } catch {
-          }
-        }
-      }
-    }
-    if (memoryParts.length > 1) {
-      return memoryParts.join("\n") + "\n\n[Task]";
-    }
-    return "";
-  } catch (error) {
-    console.warn("Memory context injection failed:", error);
-    return "";
+    const item = JSON.parse(line);
+    const body = item.content || item.text;
+    if (!body) return null;
+    return `- ${String(body)} (${String(item.type || "note")}, ${String(item.ts || "").slice(0, 10)})`;
+  } catch {
+    return null;
   }
 }
+function nonEmptyLines(content) {
+  return content.trim().split("\n").filter(Boolean);
+}
+async function appendMeasurement(teamDir, invocation, stats, context) {
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+  const logDir = import_node_path23.default.join(teamDir, "shared-context", "agent-outputs", "memory-injection-log");
+  await ensureDir3(logDir);
+  const record = {
+    timestamp,
+    teamId: invocation.teamId,
+    runId: invocation.runId,
+    nodeId: invocation.nodeId,
+    tokens_injected: context ? Math.ceil(estimateTokens(context)) : 0,
+    token_cap: MAX_MEMORY_TOKENS,
+    items_included: stats.itemsIncluded,
+    items_dropped_by_cap: stats.itemsDroppedByCap,
+    pinned_included: stats.pinnedIncluded,
+    pinned_available: stats.pinnedAvailable,
+    files_scanned: stats.filesScanned,
+    files_scanned_count: stats.filesScanned.length,
+    total_available_tokens: Math.ceil(stats.totalAvailableTokens),
+    items_available: stats.itemsAvailable
+  };
+  await import_promises17.default.appendFile(import_node_path23.default.join(logDir, `${timestamp.slice(0, 10)}.jsonl`), `${JSON.stringify(record)}
+`, "utf8");
+}
+async function buildMemoryContext(teamDir, invocation) {
+  const stats = {
+    filesScanned: [],
+    totalAvailableTokens: 0,
+    itemsAvailable: 0,
+    pinnedAvailable: 0,
+    pinnedIncluded: 0,
+    itemsIncluded: 0,
+    itemsDroppedByCap: 0
+  };
+  let context = "";
+  try {
+    const memoryDir = import_node_path23.default.join(teamDir, "shared-context", "memory");
+    if (await fileExists3(memoryDir)) {
+      const files = await import_promises17.default.readdir(memoryDir);
+      const jsonlFiles = files.filter((filename) => filename.endsWith(".jsonl"));
+      const contents = /* @__PURE__ */ new Map();
+      for (const filename of jsonlFiles) {
+        try {
+          const content = await readTextFile(import_node_path23.default.join(memoryDir, filename));
+          contents.set(filename, content);
+          stats.filesScanned.push(filename);
+          for (const line of nonEmptyLines(content)) {
+            const summary = summarizeMemoryLine(line);
+            if (!summary) continue;
+            stats.itemsAvailable++;
+            stats.totalAvailableTokens += estimateTokens(summary);
+            if (filename === "pinned.jsonl") stats.pinnedAvailable++;
+          }
+        } catch (error) {
+          console.warn(`Memory measurement scan failed for ${filename}:`, error);
+        }
+      }
+      const readMemoryFile = async (filename) => {
+        const cached = contents.get(filename);
+        if (cached !== void 0) return cached;
+        return readTextFile(import_node_path23.default.join(memoryDir, filename));
+      };
+      const memoryParts = [];
+      let currentTokens = 0;
+      const pinnedPath = import_node_path23.default.join(memoryDir, "pinned.jsonl");
+      if (await fileExists3(pinnedPath)) {
+        const pinnedContent = await readMemoryFile("pinned.jsonl");
+        const pinnedItems = nonEmptyLines(pinnedContent);
+        if (pinnedItems.length > 0) {
+          memoryParts.push("[Team Memory \u2014 Pinned]");
+          for (const line of pinnedItems.slice(-5)) {
+            const summary = summarizeMemoryLine(line);
+            if (!summary) continue;
+            const tokens = estimateTokens(summary);
+            if (currentTokens + tokens < MAX_MEMORY_TOKENS) {
+              memoryParts.push(summary);
+              currentTokens += tokens;
+              stats.itemsIncluded++;
+              stats.pinnedIncluded++;
+            } else {
+              stats.itemsDroppedByCap++;
+            }
+          }
+        }
+      }
+      const recentFiles = files.filter((filename) => filename.endsWith(".jsonl") && filename !== "pinned.jsonl");
+      for (let fileIndex = 0; fileIndex < recentFiles.length; fileIndex++) {
+        if (currentTokens > MAX_MEMORY_TOKENS * 0.8) {
+          for (const skippedFilename of recentFiles.slice(fileIndex)) {
+            const skippedContent = contents.get(skippedFilename);
+            if (skippedContent === void 0) continue;
+            stats.itemsDroppedByCap += nonEmptyLines(skippedContent).slice(-3).filter((line) => summarizeMemoryLine(line) !== null).length;
+          }
+          break;
+        }
+        const content = await readMemoryFile(recentFiles[fileIndex]);
+        const items = nonEmptyLines(content);
+        if (items.length === 0) continue;
+        for (const line of items.slice(-3)) {
+          const summary = summarizeMemoryLine(line);
+          if (!summary) continue;
+          const tokens = estimateTokens(summary);
+          if (currentTokens + tokens < MAX_MEMORY_TOKENS) {
+            if (memoryParts.length === 1) memoryParts.push("", "[Team Memory \u2014 Recent]");
+            memoryParts.push(summary);
+            currentTokens += tokens;
+            stats.itemsIncluded++;
+          } else {
+            stats.itemsDroppedByCap++;
+          }
+        }
+      }
+      if (memoryParts.length > 1) context = `${memoryParts.join("\n")}
+
+[Task]`;
+    }
+  } catch (error) {
+    console.warn("Memory context injection failed:", error);
+    context = "";
+  }
+  try {
+    await appendMeasurement(teamDir, invocation, stats, context);
+  } catch (error) {
+    console.warn("Memory injection measurement failed:", error);
+  }
+  return context;
+}
+
+// src/lib/workflows/workflow-worker.ts
 async function buildTemplateVars(teamDir, runsDir, runId, workflowFile, workflow) {
   const vars = {
     date: (/* @__PURE__ */ new Date()).toISOString(),
@@ -12862,7 +12944,7 @@ async function buildTemplateVars(teamDir, runsDir, runId, workflowFile, workflow
     const nrOutPath = String(nr.nodeOutputPath ?? "");
     if (nid && nrOutPath) {
       try {
-        const outAbs = import_node_path23.default.resolve(teamDir, nrOutPath);
+        const outAbs = import_node_path24.default.resolve(teamDir, nrOutPath);
         const outputContent = await readTextFile(outAbs);
         vars[`${nid}.output`] = outputContent;
         try {
@@ -12902,10 +12984,10 @@ async function buildTemplateVars(teamDir, runsDir, runId, workflowFile, workflow
 async function enqueueWorkflowRunForHandoff(api, opts) {
   const teamId = String(opts.teamId);
   const teamDir = resolveTeamDir(api, teamId);
-  const sharedContextDir = import_node_path23.default.join(teamDir, "shared-context");
-  const workflowsDir = import_node_path23.default.join(sharedContextDir, "workflows");
-  const runsDir = import_node_path23.default.join(sharedContextDir, "workflow-runs");
-  const workflowPath = import_node_path23.default.join(workflowsDir, opts.workflowFile);
+  const sharedContextDir = import_node_path24.default.join(teamDir, "shared-context");
+  const workflowsDir = import_node_path24.default.join(sharedContextDir, "workflows");
+  const runsDir = import_node_path24.default.join(sharedContextDir, "workflow-runs");
+  const workflowPath = import_node_path24.default.join(workflowsDir, opts.workflowFile);
   const raw = await readTextFile(workflowPath);
   const workflow = normalizeWorkflow(JSON.parse(raw));
   if (!workflow.nodes?.length) throw new Error("Handoff target workflow has no nodes");
@@ -12916,20 +12998,20 @@ async function enqueueWorkflowRunForHandoff(api, opts) {
   const initialLane = firstLaneRaw;
   const runId = `${isoCompact()}-${import_node_crypto3.default.randomBytes(4).toString("hex")}`;
   await ensureDir3(runsDir);
-  const runDir = import_node_path23.default.join(runsDir, runId);
+  const runDir = import_node_path24.default.join(runsDir, runId);
   await ensureDir3(runDir);
   await Promise.all([
-    ensureDir3(import_node_path23.default.join(runDir, "node-outputs")),
-    ensureDir3(import_node_path23.default.join(runDir, "artifacts")),
-    ensureDir3(import_node_path23.default.join(runDir, "approvals"))
+    ensureDir3(import_node_path24.default.join(runDir, "node-outputs")),
+    ensureDir3(import_node_path24.default.join(runDir, "artifacts")),
+    ensureDir3(import_node_path24.default.join(runDir, "approvals"))
   ]);
-  const runLogPath = import_node_path23.default.join(runDir, "run.json");
+  const runLogPath = import_node_path24.default.join(runDir, "run.json");
   const ticketNum = await nextTicketNumber(teamDir);
-  const slug = `workflow-run-${(workflow.id ?? import_node_path23.default.basename(opts.workflowFile, import_node_path23.default.extname(opts.workflowFile))).replace(/[^a-z0-9-]+/gi, "-").toLowerCase()}`;
+  const slug = `workflow-run-${(workflow.id ?? import_node_path24.default.basename(opts.workflowFile, import_node_path24.default.extname(opts.workflowFile))).replace(/[^a-z0-9-]+/gi, "-").toLowerCase()}`;
   const ticketFile = `${ticketNum}-${slug}.md`;
-  const laneDir2 = import_node_path23.default.join(teamDir, "work", initialLane);
+  const laneDir2 = import_node_path24.default.join(teamDir, "work", initialLane);
   await ensureDir3(laneDir2);
-  const ticketPath = import_node_path23.default.join(laneDir2, ticketFile);
+  const ticketPath = import_node_path24.default.join(laneDir2, ticketFile);
   const trigger = opts.trigger ?? { kind: "handoff" };
   const createdAt = (/* @__PURE__ */ new Date()).toISOString();
   const handoffMeta = opts.triggerInput?._handoff;
@@ -12941,9 +13023,9 @@ async function enqueueWorkflowRunForHandoff(api, opts) {
     `Status: ${laneToStatus(initialLane)}`,
     `
 ## Run`,
-    `- workflow: ${import_node_path23.default.relative(teamDir, workflowPath)}`,
-    `- run dir: ${import_node_path23.default.relative(teamDir, runDir)}`,
-    `- run file: ${import_node_path23.default.relative(teamDir, runLogPath)}`,
+    `- workflow: ${import_node_path24.default.relative(teamDir, workflowPath)}`,
+    `- run dir: ${import_node_path24.default.relative(teamDir, runDir)}`,
+    `- run file: ${import_node_path24.default.relative(teamDir, runLogPath)}`,
     `- trigger: ${trigger.kind}${trigger.at ? ` @ ${trigger.at}` : ""}`,
     `- runId: ${runId}`,
     handoffMeta ? `- handoff from: team=${handoffMeta.sourceTeamId}, workflow=${handoffMeta.sourceWorkflowName}, run=${handoffMeta.sourceRunId}` : "",
@@ -12958,7 +13040,7 @@ async function enqueueWorkflowRunForHandoff(api, opts) {
     updatedAt: createdAt,
     teamId,
     workflow: { file: opts.workflowFile, id: workflow.id ?? null, name: workflow.name ?? null },
-    ticket: { file: import_node_path23.default.relative(teamDir, ticketPath), number: ticketNum, lane: initialLane },
+    ticket: { file: import_node_path24.default.relative(teamDir, ticketPath), number: ticketNum, lane: initialLane },
     trigger,
     ...opts.triggerInput && Object.keys(opts.triggerInput).length > 0 ? { triggerInput: opts.triggerInput } : {},
     status: "queued",
@@ -12970,33 +13052,33 @@ async function enqueueWorkflowRunForHandoff(api, opts) {
     nodeResults: []
   };
   await Promise.all([
-    import_promises17.default.writeFile(ticketPath, md, "utf8"),
-    import_promises17.default.writeFile(runLogPath, JSON.stringify(initialLog, null, 2), "utf8")
+    import_promises18.default.writeFile(ticketPath, md, "utf8"),
+    import_promises18.default.writeFile(runLogPath, JSON.stringify(initialLog, null, 2), "utf8")
   ]);
   return { runId, runLogPath };
 }
 async function checkWaitingHandoffs(api, teamId, teamDir) {
   const results = [];
-  const runsDir = import_node_path23.default.join(teamDir, "shared-context", "workflow-runs");
+  const runsDir = import_node_path24.default.join(teamDir, "shared-context", "workflow-runs");
   let runDirs = [];
   try {
-    const entries = await import_promises17.default.readdir(runsDir, { withFileTypes: true });
+    const entries = await import_promises18.default.readdir(runsDir, { withFileTypes: true });
     runDirs = entries.filter((e) => e.isDirectory()).map((e) => e.name);
   } catch {
     return results;
   }
   for (const runDirName of runDirs) {
-    const runDir = import_node_path23.default.join(runsDir, runDirName);
-    const handoffWaitDir = import_node_path23.default.join(runDir, "handoff-waits");
+    const runDir = import_node_path24.default.join(runsDir, runDirName);
+    const handoffWaitDir = import_node_path24.default.join(runDir, "handoff-waits");
     let waitFiles = [];
     try {
-      const entries = await import_promises17.default.readdir(handoffWaitDir);
+      const entries = await import_promises18.default.readdir(handoffWaitDir);
       waitFiles = entries.filter((f) => f.endsWith(".json"));
     } catch {
       continue;
     }
     if (waitFiles.length === 0) continue;
-    const runPath = import_node_path23.default.join(runDir, "run.json");
+    const runPath = import_node_path24.default.join(runDir, "run.json");
     let run;
     try {
       const raw = await readTextFile(runPath);
@@ -13007,14 +13089,14 @@ async function checkWaitingHandoffs(api, teamId, teamDir) {
     if (run.status !== "waiting_handoff") {
       for (const wf of waitFiles) {
         try {
-          await import_promises17.default.unlink(import_node_path23.default.join(handoffWaitDir, wf));
+          await import_promises18.default.unlink(import_node_path24.default.join(handoffWaitDir, wf));
         } catch {
         }
       }
       continue;
     }
     for (const waitFile of waitFiles) {
-      const waitPath = import_node_path23.default.join(handoffWaitDir, waitFile);
+      const waitPath = import_node_path24.default.join(handoffWaitDir, waitFile);
       let marker;
       try {
         marker = await readJsonFile2(waitPath);
@@ -13037,14 +13119,14 @@ async function checkWaitingHandoffs(api, teamId, teamDir) {
           }]
         }));
         try {
-          await import_promises17.default.unlink(waitPath);
+          await import_promises18.default.unlink(waitPath);
         } catch {
         }
         results.push({ runId: run.runId, nodeId: marker.nodeId, status: "timeout" });
         continue;
       }
       const targetTeamDir = resolveTeamDir(api, marker.targetTeamId);
-      const targetRunsDir = import_node_path23.default.join(targetTeamDir, "shared-context", "workflow-runs");
+      const targetRunsDir = import_node_path24.default.join(targetTeamDir, "shared-context", "workflow-runs");
       let targetRun;
       try {
         const loaded = await loadRunFile(targetTeamDir, targetRunsDir, marker.targetRunId);
@@ -13064,7 +13146,7 @@ async function checkWaitingHandoffs(api, teamId, teamDir) {
           }]
         }));
         try {
-          await import_promises17.default.unlink(waitPath);
+          await import_promises18.default.unlink(waitPath);
         } catch {
         }
         results.push({ runId: run.runId, nodeId: marker.nodeId, status: "error" });
@@ -13079,8 +13161,8 @@ async function checkWaitingHandoffs(api, teamId, teamDir) {
             }
           }
         }
-        const nodeOutputAbs = import_node_path23.default.resolve(runDir, marker.nodeOutputRel);
-        await ensureDir3(import_node_path23.default.dirname(nodeOutputAbs));
+        const nodeOutputAbs = import_node_path24.default.resolve(runDir, marker.nodeOutputRel);
+        await ensureDir3(import_node_path24.default.dirname(nodeOutputAbs));
         const outputObj = {
           runId: run.runId,
           teamId,
@@ -13095,12 +13177,12 @@ async function checkWaitingHandoffs(api, teamId, teamDir) {
             targetOutput
           }, null, 2)
         };
-        await import_promises17.default.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + "\n", "utf8");
+        await import_promises18.default.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + "\n", "utf8");
         const completedTs = (/* @__PURE__ */ new Date()).toISOString();
-        const workflowsDir = import_node_path23.default.join(teamDir, "shared-context", "workflows");
+        const workflowsDir = import_node_path24.default.join(teamDir, "shared-context", "workflows");
         let workflow;
         try {
-          const wfRaw = await readTextFile(import_node_path23.default.join(workflowsDir, run.workflow.file));
+          const wfRaw = await readTextFile(import_node_path24.default.join(workflowsDir, run.workflow.file));
           workflow = normalizeWorkflow(JSON.parse(wfRaw));
         } catch {
           workflow = null;
@@ -13167,7 +13249,7 @@ async function checkWaitingHandoffs(api, teamId, teamDir) {
           }
         }
         try {
-          await import_promises17.default.unlink(waitPath);
+          await import_promises18.default.unlink(waitPath);
         } catch {
         }
         results.push({ runId: run.runId, nodeId: marker.nodeId, status: "completed" });
@@ -13191,7 +13273,7 @@ async function checkWaitingHandoffs(api, teamId, teamDir) {
           }]
         }));
         try {
-          await import_promises17.default.unlink(waitPath);
+          await import_promises18.default.unlink(waitPath);
         } catch {
         }
         results.push({ runId: run.runId, nodeId: marker.nodeId, status: "error" });
@@ -13206,9 +13288,9 @@ async function runWorkflowWorkerTick(api, opts) {
   if (!teamId) throw new Error("--team-id is required");
   if (!agentId) throw new Error("--agent-id is required");
   const teamDir = resolveTeamDir(api, teamId);
-  const sharedContextDir = import_node_path23.default.join(teamDir, "shared-context");
-  const workflowsDir = import_node_path23.default.join(sharedContextDir, "workflows");
-  const runsDir = import_node_path23.default.join(sharedContextDir, "workflow-runs");
+  const sharedContextDir = import_node_path24.default.join(teamDir, "shared-context");
+  const workflowsDir = import_node_path24.default.join(sharedContextDir, "workflows");
+  const runsDir = import_node_path24.default.join(sharedContextDir, "workflow-runs");
   const workerId = String(opts.workerId ?? `workflow-worker:${process.pid}`);
   const limit = typeof opts.limit === "number" && opts.limit > 0 ? Math.floor(opts.limit) : 1;
   const results = [];
@@ -13234,9 +13316,9 @@ async function runWorkflowWorkerTick(api, opts) {
     if (!dq.ok || !dq.task) break;
     const { task: task2 } = dq.task;
     const runPath = runFilePathFor(runsDir, task2.runId);
-    const runDir = import_node_path23.default.dirname(runPath);
-    const lockDir = import_node_path23.default.join(runDir, "locks");
-    const lockPath = import_node_path23.default.join(lockDir, `${task2.nodeId}.lock`);
+    const runDir = import_node_path24.default.dirname(runPath);
+    const lockDir = import_node_path24.default.join(runDir, "locks");
+    const lockPath = import_node_path24.default.join(lockDir, `${task2.nodeId}.lock`);
     let lockHeld = false;
     let countedTowardLimit = true;
     try {
@@ -13252,7 +13334,7 @@ async function runWorkflowWorkerTick(api, opts) {
         expiresAt: new Date(Date.now() + DEFAULT_LOCK_TTL_MS).toISOString()
       };
       try {
-        await import_promises17.default.writeFile(lockPath, JSON.stringify(lockInfo, null, 2), { encoding: "utf8", flag: "wx" });
+        await import_promises18.default.writeFile(lockPath, JSON.stringify(lockInfo, null, 2), { encoding: "utf8", flag: "wx" });
         lockHeld = true;
       } catch {
         let unlocked = false;
@@ -13267,14 +13349,14 @@ async function runWorkflowWorkerTick(api, opts) {
           const stale = Number.isFinite(effectiveExpiryMs) && Date.now() > effectiveExpiryMs;
           const dead = isLockHolderDead(parsed);
           if (stale || dead) {
-            await import_promises17.default.unlink(lockPath);
+            await import_promises18.default.unlink(lockPath);
             unlocked = true;
           }
         } catch {
         }
         if (unlocked) {
           try {
-            await import_promises17.default.writeFile(lockPath, JSON.stringify(lockInfo, null, 2), { encoding: "utf8", flag: "wx" });
+            await import_promises18.default.writeFile(lockPath, JSON.stringify(lockInfo, null, 2), { encoding: "utf8", flag: "wx" });
             lockHeld = true;
           } catch {
             results.push({ taskId: task2.id, runId: task2.runId, nodeId: task2.nodeId, status: "skipped_locked" });
@@ -13311,7 +13393,7 @@ async function runWorkflowWorkerTick(api, opts) {
       try {
         ({ run } = await loadRunFile(teamDir, runsDir, runId));
         workflowFile = String(run.workflow.file);
-        const workflowPath = import_node_path23.default.join(workflowsDir, workflowFile);
+        const workflowPath = import_node_path24.default.join(workflowsDir, workflowFile);
         const workflowRaw = await readTextFile(workflowPath);
         workflow = normalizeWorkflow(JSON.parse(workflowRaw));
         nodeIdx = workflow.nodes.findIndex((n) => String(n.id) === String(task2.nodeId));
@@ -13329,7 +13411,7 @@ async function runWorkflowWorkerTick(api, opts) {
       try {
         const nodeLockTtlMs = getNodeLockTtlMs(node);
         if (nodeLockTtlMs !== lockInfo.ttlMs) {
-          await import_promises17.default.writeFile(
+          await import_promises18.default.writeFile(
             lockPath,
             JSON.stringify({ ...lockInfo, ttlMs: nodeLockTtlMs, expiresAt: new Date(Date.now() + nodeLockTtlMs).toISOString() }, null, 2),
             { encoding: "utf8" }
@@ -13348,7 +13430,7 @@ async function runWorkflowWorkerTick(api, opts) {
       const laneRaw = String(run.ticket.lane);
       assertLane(laneRaw);
       let curLane = laneRaw;
-      let curTicketPath = import_node_path23.default.join(teamDir, run.ticket.file);
+      let curTicketPath = import_node_path24.default.join(teamDir, run.ticket.file);
       const laneNodeRaw = node?.lane ? String(node.lane) : null;
       if (laneNodeRaw) {
         assertLane(laneNodeRaw);
@@ -13358,7 +13440,7 @@ async function runWorkflowWorkerTick(api, opts) {
           curTicketPath = moved.ticketPath;
           await appendRunLog(runPath, (cur) => ({
             ...cur,
-            ticket: { ...cur.ticket, file: import_node_path23.default.relative(teamDir, curTicketPath), lane: curLane },
+            ticket: { ...cur.ticket, file: import_node_path24.default.relative(teamDir, curTicketPath), lane: curLane },
             events: [...cur.events, { ts: (/* @__PURE__ */ new Date()).toISOString(), type: "ticket.moved", lane: curLane, nodeId: node.id }]
           }));
         }
@@ -13382,14 +13464,14 @@ async function runWorkflowWorkerTick(api, opts) {
         const promptTemplateInline = asString(action["promptTemplate"]).trim();
         if (!agentIdExec) throw new Error(`Node ${nodeLabel(node)} missing assignedTo.agentId`);
         if (!promptTemplatePath && !promptTemplateInline) throw new Error(`Node ${nodeLabel(node)} missing action.promptTemplatePath or action.promptTemplate`);
-        const promptPathAbs = promptTemplatePath ? import_node_path23.default.resolve(teamDir, promptTemplatePath) : "";
-        const defaultNodeOutputRel = import_node_path23.default.join("node-outputs", `${String(nodeIdx).padStart(3, "0")}-${node.id}.json`);
+        const promptPathAbs = promptTemplatePath ? import_node_path24.default.resolve(teamDir, promptTemplatePath) : "";
+        const defaultNodeOutputRel = import_node_path24.default.join("node-outputs", `${String(nodeIdx).padStart(3, "0")}-${node.id}.json`);
         const nodeOutputRel = String(node?.output?.path ?? "").trim() || defaultNodeOutputRel;
-        const nodeOutputAbs = import_node_path23.default.resolve(runDir, nodeOutputRel);
-        if (!nodeOutputAbs.startsWith(runDir + import_node_path23.default.sep) && nodeOutputAbs !== runDir) {
+        const nodeOutputAbs = import_node_path24.default.resolve(runDir, nodeOutputRel);
+        if (!nodeOutputAbs.startsWith(runDir + import_node_path24.default.sep) && nodeOutputAbs !== runDir) {
           throw new Error(`Node output.path must be within the run directory: ${nodeOutputRel}`);
         }
-        await ensureDir3(import_node_path23.default.dirname(nodeOutputAbs));
+        await ensureDir3(import_node_path24.default.dirname(nodeOutputAbs));
         const promptRaw = promptTemplateInline ? promptTemplateInline : await readTextFile(promptPathAbs);
         const vars = await buildTemplateVars(teamDir, runsDir, runId2, workflowFile, workflow);
         const promptVarsResolved = templateReplace(promptRaw, vars);
@@ -13456,7 +13538,7 @@ OUTPUT FORMAT
               if (provider === modelProvider) model = bareModel;
             }
           }
-          const memoryContext = await buildMemoryContext(teamDir);
+          const memoryContext = await buildMemoryContext(teamDir, { teamId, runId: runId2, nodeId: node.id });
           const promptWithMemory = memoryContext ? `${memoryContext}
 
 ${taskText}` : taskText;
@@ -13543,14 +13625,14 @@ ${taskText}` : taskText;
           completedAt: (/* @__PURE__ */ new Date()).toISOString(),
           text
         };
-        await import_promises17.default.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + "\n", "utf8");
+        await import_promises18.default.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + "\n", "utf8");
         const completedTs = (/* @__PURE__ */ new Date()).toISOString();
         await appendRunLog(runLogPath, (cur) => ({
           ...cur,
           nextNodeIndex: nodeIdx + 1,
           nodeStates: { ...cur.nodeStates ?? {}, [node.id]: { status: "success", ts: completedTs } },
-          events: [...cur.events, { ts: completedTs, type: "node.completed", nodeId: node.id, kind: node.kind, nodeOutputPath: import_node_path23.default.relative(teamDir, nodeOutputAbs) }],
-          nodeResults: [...cur.nodeResults ?? [], { nodeId: node.id, kind: node.kind, agentId: agentIdExec, nodeOutputPath: import_node_path23.default.relative(teamDir, nodeOutputAbs), bytes: Buffer.byteLength(text, "utf8") }]
+          events: [...cur.events, { ts: completedTs, type: "node.completed", nodeId: node.id, kind: node.kind, nodeOutputPath: import_node_path24.default.relative(teamDir, nodeOutputAbs) }],
+          nodeResults: [...cur.nodeResults ?? [], { nodeId: node.id, kind: node.kind, agentId: agentIdExec, nodeOutputPath: import_node_path24.default.relative(teamDir, nodeOutputAbs), bytes: Buffer.byteLength(text, "utf8") }]
         }));
       } else if (kind === "human_approval") {
         const approvalBindingId = String(node?.action?.approvalBindingId ?? "");
@@ -13588,9 +13670,9 @@ ${taskText}` : taskText;
         if (!target) {
           throw new Error(`Node ${nodeLabel(node)} missing approval target (provide config.target or binding mapping)`);
         }
-        const approvalsDir = import_node_path23.default.join(runDir, "approvals");
+        const approvalsDir = import_node_path24.default.join(runDir, "approvals");
         await ensureDir3(approvalsDir);
-        const approvalPath = import_node_path23.default.join(approvalsDir, "approval.json");
+        const approvalPath = import_node_path24.default.join(approvalsDir, "approval.json");
         const code = Math.random().toString(36).slice(2, 8).toUpperCase();
         const approvalObj = {
           runId: task2.runId,
@@ -13601,15 +13683,15 @@ ${taskText}` : taskText;
           requestedAt: (/* @__PURE__ */ new Date()).toISOString(),
           status: "pending",
           code,
-          ticket: import_node_path23.default.relative(teamDir, curTicketPath),
-          runLog: import_node_path23.default.relative(teamDir, runPath)
+          ticket: import_node_path24.default.relative(teamDir, curTicketPath),
+          runLog: import_node_path24.default.relative(teamDir, runPath)
         };
-        await import_promises17.default.writeFile(approvalPath, JSON.stringify(approvalObj, null, 2), "utf8");
+        await import_promises18.default.writeFile(approvalPath, JSON.stringify(approvalObj, null, 2), "utf8");
         let proposed = "";
         try {
-          const nodeOutputsDir = import_node_path23.default.join(runDir, "node-outputs");
+          const nodeOutputsDir = import_node_path24.default.join(runDir, "node-outputs");
           const qcId = "qc_brand";
-          const hasQc = await fileExists3(nodeOutputsDir) && (await import_promises17.default.readdir(nodeOutputsDir)).some((f) => f.endsWith(`-${qcId}.json`));
+          const hasQc = await fileExists3(nodeOutputsDir) && (await import_promises18.default.readdir(nodeOutputsDir)).some((f) => f.endsWith(`-${qcId}.json`));
           const priorId = hasQc ? qcId : String(workflow.nodes?.[Math.max(0, nodeIdx - 1)]?.id ?? "");
           if (priorId) proposed = await loadProposedPostTextFromPriorNode({ runDir, nodeOutputsDir, priorNodeId: priorId });
         } catch {
@@ -13619,7 +13701,7 @@ ${taskText}` : taskText;
         const kitchenReviewUrl = buildKitchenWorkflowReviewUrl(api, teamId, String(workflow.id ?? ""));
         const msg = [
           `Approval requested: ${workflow.name ?? workflow.id ?? workflowFile}`,
-          `Ticket: ${import_node_path23.default.relative(teamDir, curTicketPath)}`,
+          `Ticket: ${import_node_path24.default.relative(teamDir, curTicketPath)}`,
           `Code: ${code}`,
           proposed ? `
 ---
@@ -13650,8 +13732,8 @@ Reply with:`,
           status: "awaiting_approval",
           nextNodeIndex: nodeIdx + 1,
           nodeStates: { ...cur.nodeStates ?? {}, [node.id]: { status: "waiting", ts: waitingTs } },
-          events: [...cur.events, { ts: waitingTs, type: "node.awaiting_approval", nodeId: node.id, bindingId: approvalBindingId, approvalFile: import_node_path23.default.relative(teamDir, approvalPath) }],
-          nodeResults: [...cur.nodeResults ?? [], { nodeId: node.id, kind: node.kind, approvalBindingId, approvalFile: import_node_path23.default.relative(teamDir, approvalPath) }]
+          events: [...cur.events, { ts: waitingTs, type: "node.awaiting_approval", nodeId: node.id, bindingId: approvalBindingId, approvalFile: import_node_path24.default.relative(teamDir, approvalPath) }],
+          nodeResults: [...cur.nodeResults ?? [], { nodeId: node.id, kind: node.kind, approvalBindingId, approvalFile: import_node_path24.default.relative(teamDir, approvalPath) }]
         }));
         results.push({ taskId: task2.id, runId: task2.runId, nodeId: task2.nodeId, status: "awaiting_approval" });
         continue;
@@ -13660,9 +13742,9 @@ Reply with:`,
         const toolName = asString(action["tool"]).trim();
         const toolArgs = isRecord2(action["args"]) ? action["args"] : {};
         if (!toolName) throw new Error(`Node ${nodeLabel(node)} missing action.tool`);
-        const artifactsDir = import_node_path23.default.join(runDir, "artifacts");
+        const artifactsDir = import_node_path24.default.join(runDir, "artifacts");
         await ensureDir3(artifactsDir);
-        const artifactPath = import_node_path23.default.join(artifactsDir, `${String(nodeIdx).padStart(3, "0")}-${node.id}.tool.json`);
+        const artifactPath = import_node_path24.default.join(artifactsDir, `${String(nodeIdx).padStart(3, "0")}-${node.id}.tool.json`);
         let toolOutputText = "";
         try {
           if (toolName === "fs.append") {
@@ -13673,14 +13755,14 @@ Reply with:`,
             const vars = await buildTemplateVars(teamDir, runsDir, runId, workflowFile, workflow);
             const relPath = templateReplace(relPathRaw, vars);
             const content = templateReplace(contentRaw, vars);
-            const abs = import_node_path23.default.resolve(teamDir, relPath);
-            if (!abs.startsWith(teamDir + import_node_path23.default.sep) && abs !== teamDir) {
+            const abs = import_node_path24.default.resolve(teamDir, relPath);
+            if (!abs.startsWith(teamDir + import_node_path24.default.sep) && abs !== teamDir) {
               throw new Error("fs.append path must be within the team workspace");
             }
-            await ensureDir3(import_node_path23.default.dirname(abs));
-            await import_promises17.default.appendFile(abs, content, "utf8");
-            const result = { appendedTo: import_node_path23.default.relative(teamDir, abs), bytes: Buffer.byteLength(content, "utf8") };
-            await import_promises17.default.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + "\n", "utf8");
+            await ensureDir3(import_node_path24.default.dirname(abs));
+            await import_promises18.default.appendFile(abs, content, "utf8");
+            const result = { appendedTo: import_node_path24.default.relative(teamDir, abs), bytes: Buffer.byteLength(content, "utf8") };
+            await import_promises18.default.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + "\n", "utf8");
             toolOutputText = JSON.stringify(result);
           } else if (toolName === "fs.write") {
             const relPathRaw = String(toolArgs.path ?? "").trim();
@@ -13689,14 +13771,14 @@ Reply with:`,
             const vars = await buildTemplateVars(teamDir, runsDir, runId, workflowFile, workflow);
             const relPath = templateReplace(relPathRaw, vars);
             const content = templateReplace(contentRaw, vars);
-            const abs = import_node_path23.default.resolve(teamDir, relPath);
-            if (!abs.startsWith(teamDir + import_node_path23.default.sep) && abs !== teamDir) {
+            const abs = import_node_path24.default.resolve(teamDir, relPath);
+            if (!abs.startsWith(teamDir + import_node_path24.default.sep) && abs !== teamDir) {
               throw new Error("fs.write path must be within the team workspace");
             }
-            await ensureDir3(import_node_path23.default.dirname(abs));
-            await import_promises17.default.writeFile(abs, content, "utf8");
-            const result = { writtenTo: import_node_path23.default.relative(teamDir, abs), bytes: Buffer.byteLength(content, "utf8") };
-            await import_promises17.default.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + "\n", "utf8");
+            await ensureDir3(import_node_path24.default.dirname(abs));
+            await import_promises18.default.writeFile(abs, content, "utf8");
+            const result = { writtenTo: import_node_path24.default.relative(teamDir, abs), bytes: Buffer.byteLength(content, "utf8") };
+            await import_promises18.default.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: toolArgs, result }, null, 2) + "\n", "utf8");
             toolOutputText = JSON.stringify(result);
           } else {
             const vars = await buildTemplateVars(teamDir, runsDir, runId, workflowFile, workflow);
@@ -13744,7 +13826,7 @@ ${combined}`);
                 args: processedToolArgs
               });
             }
-            await import_promises17.default.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: processedToolArgs, result: toolRes }, null, 2) + "\n", "utf8");
+            await import_promises18.default.writeFile(artifactPath, JSON.stringify({ ok: true, tool: toolName, args: processedToolArgs, result: toolRes }, null, 2) + "\n", "utf8");
             if (toolName === "exec" && toolRes && typeof toolRes === "object" && "stdout" in toolRes) {
               toolOutputText = String(toolRes.stdout ?? "").trim();
             } else if (typeof toolRes === "string") {
@@ -13753,11 +13835,11 @@ ${combined}`);
               toolOutputText = JSON.stringify(toolRes, null, 2);
             }
           }
-          const defaultNodeOutputRel = import_node_path23.default.join("node-outputs", `${String(nodeIdx).padStart(3, "0")}-${node.id}.json`);
+          const defaultNodeOutputRel = import_node_path24.default.join("node-outputs", `${String(nodeIdx).padStart(3, "0")}-${node.id}.json`);
           const nodeOutputRel = String(node?.output?.path ?? "").trim() || defaultNodeOutputRel;
-          const nodeOutputAbs = import_node_path23.default.resolve(runDir, nodeOutputRel);
-          await ensureDir3(import_node_path23.default.dirname(nodeOutputAbs));
-          await import_promises17.default.writeFile(nodeOutputAbs, JSON.stringify({
+          const nodeOutputAbs = import_node_path24.default.resolve(runDir, nodeOutputRel);
+          await ensureDir3(import_node_path24.default.dirname(nodeOutputAbs));
+          await import_promises18.default.writeFile(nodeOutputAbs, JSON.stringify({
             runId: task2.runId,
             teamId,
             nodeId: node.id,
@@ -13765,26 +13847,26 @@ ${combined}`);
             completedAt: (/* @__PURE__ */ new Date()).toISOString(),
             tool: toolName,
             text: toolOutputText,
-            artifactPath: import_node_path23.default.relative(teamDir, artifactPath)
+            artifactPath: import_node_path24.default.relative(teamDir, artifactPath)
           }, null, 2) + "\n", "utf8");
           const completedTs = (/* @__PURE__ */ new Date()).toISOString();
           await appendRunLog(runPath, (cur) => ({
             ...cur,
             nextNodeIndex: nodeIdx + 1,
             nodeStates: { ...cur.nodeStates ?? {}, [node.id]: { status: "success", ts: completedTs } },
-            events: [...cur.events, { ts: completedTs, type: "node.completed", nodeId: node.id, kind: node.kind, artifactPath: import_node_path23.default.relative(teamDir, artifactPath), nodeOutputPath: import_node_path23.default.relative(teamDir, nodeOutputAbs) }],
-            nodeResults: [...cur.nodeResults ?? [], { nodeId: node.id, kind: node.kind, tool: toolName, artifactPath: import_node_path23.default.relative(teamDir, artifactPath), nodeOutputPath: import_node_path23.default.relative(teamDir, nodeOutputAbs) }]
+            events: [...cur.events, { ts: completedTs, type: "node.completed", nodeId: node.id, kind: node.kind, artifactPath: import_node_path24.default.relative(teamDir, artifactPath), nodeOutputPath: import_node_path24.default.relative(teamDir, nodeOutputAbs) }],
+            nodeResults: [...cur.nodeResults ?? [], { nodeId: node.id, kind: node.kind, tool: toolName, artifactPath: import_node_path24.default.relative(teamDir, artifactPath), nodeOutputPath: import_node_path24.default.relative(teamDir, nodeOutputAbs) }]
           }));
         } catch (e) {
           const errorCategory = classifyError(e);
-          await import_promises17.default.writeFile(artifactPath, JSON.stringify({ ok: false, tool: toolName, error: e.message, errorCategory }, null, 2) + "\n", "utf8");
+          await import_promises18.default.writeFile(artifactPath, JSON.stringify({ ok: false, tool: toolName, error: e.message, errorCategory }, null, 2) + "\n", "utf8");
           const errorTs = (/* @__PURE__ */ new Date()).toISOString();
           await appendRunLog(runPath, (cur) => ({
             ...cur,
             status: "error",
             nodeStates: { ...cur.nodeStates ?? {}, [node.id]: { status: "error", ts: errorTs, errorCategory } },
-            events: [...cur.events, { ts: errorTs, type: "node.error", nodeId: node.id, kind: node.kind, tool: toolName, message: e.message, artifactPath: import_node_path23.default.relative(teamDir, artifactPath), errorCategory }],
-            nodeResults: [...cur.nodeResults ?? [], { nodeId: node.id, kind: node.kind, tool: toolName, error: e.message, artifactPath: import_node_path23.default.relative(teamDir, artifactPath), errorCategory }]
+            events: [...cur.events, { ts: errorTs, type: "node.error", nodeId: node.id, kind: node.kind, tool: toolName, message: e.message, artifactPath: import_node_path24.default.relative(teamDir, artifactPath), errorCategory }],
+            nodeResults: [...cur.nodeResults ?? [], { nodeId: node.id, kind: node.kind, tool: toolName, error: e.message, artifactPath: import_node_path24.default.relative(teamDir, artifactPath), errorCategory }]
           }));
           results.push({ taskId: task2.id, runId: task2.runId, nodeId: task2.nodeId, status: "error", error: e.message, errorCategory });
           continue;
@@ -13806,16 +13888,16 @@ ${combined}`);
         const promptVarsResolved = templateReplace(promptTemplateRaw, vars);
         const prompt = await expandFileIncludes(promptVarsResolved, teamDir);
         const outputRelPath = templateReplace(outputPathRaw, vars);
-        const defaultNodeOutputRel = import_node_path23.default.join("node-outputs", `${String(nodeIdx).padStart(3, "0")}-${node.id}.json`);
+        const defaultNodeOutputRel = import_node_path24.default.join("node-outputs", `${String(nodeIdx).padStart(3, "0")}-${node.id}.json`);
         const nodeOutputRel = String(node?.output?.path ?? "").trim() || defaultNodeOutputRel;
-        const nodeOutputAbs = import_node_path23.default.resolve(runDir, nodeOutputRel);
-        await ensureDir3(import_node_path23.default.dirname(nodeOutputAbs));
-        const mediaDir = outputRelPath ? import_node_path23.default.resolve(runDir, import_node_path23.default.dirname(outputRelPath)) : import_node_path23.default.resolve(runDir, "media");
+        const nodeOutputAbs = import_node_path24.default.resolve(runDir, nodeOutputRel);
+        await ensureDir3(import_node_path24.default.dirname(nodeOutputAbs));
+        const mediaDir = outputRelPath ? import_node_path24.default.resolve(runDir, import_node_path24.default.dirname(outputRelPath)) : import_node_path24.default.resolve(runDir, "media");
         await ensureDir3(mediaDir);
         const promptKey = mediaType === "video" ? "video_prompt" : "image_prompt";
         let text = "";
         try {
-          const memoryContext = await buildMemoryContext(teamDir);
+          const memoryContext = await buildMemoryContext(teamDir, { teamId, runId: task2.runId, nodeId: node.id });
           const timeoutMsRaw = Number(asString(config["timeoutMs"] ?? "300000"));
           const timeoutMs = Number.isFinite(timeoutMsRaw) && timeoutMsRaw > 0 ? timeoutMsRaw : 3e5;
           const addRefinement = String(config["addRefinement"] ?? config["add_refinement"] ?? "false").toLowerCase() === "true";
@@ -13927,14 +14009,14 @@ ${step1Text}` : step1Text;
           mediaDir,
           text
         };
-        await import_promises17.default.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + "\n", "utf8");
+        await import_promises18.default.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + "\n", "utf8");
         const completedTs = (/* @__PURE__ */ new Date()).toISOString();
         await appendRunLog(runPath, (cur) => ({
           ...cur,
           nextNodeIndex: nodeIdx + 1,
           nodeStates: { ...cur.nodeStates ?? {}, [node.id]: { status: "success", ts: completedTs } },
-          events: [...cur.events, { ts: completedTs, type: "node.completed", nodeId: node.id, kind: node.kind, nodeOutputPath: import_node_path23.default.relative(teamDir, nodeOutputAbs) }],
-          nodeResults: [...cur.nodeResults ?? [], { nodeId: node.id, kind: node.kind, mediaType, agentId: agentIdMedia || agentId, nodeOutputPath: import_node_path23.default.relative(teamDir, nodeOutputAbs), bytes: new TextEncoder().encode(text).byteLength }]
+          events: [...cur.events, { ts: completedTs, type: "node.completed", nodeId: node.id, kind: node.kind, nodeOutputPath: import_node_path24.default.relative(teamDir, nodeOutputAbs) }],
+          nodeResults: [...cur.nodeResults ?? [], { nodeId: node.id, kind: node.kind, mediaType, agentId: agentIdMedia || agentId, nodeOutputPath: import_node_path24.default.relative(teamDir, nodeOutputAbs), bytes: new TextEncoder().encode(text).byteLength }]
         }));
       } else if (kind === "handoff") {
         const config = asRecord(node["config"]);
@@ -13960,14 +14042,14 @@ ${step1Text}` : step1Text;
           }
         }
         const targetTeamDir = resolveTeamDir(api, targetTeamId);
-        const targetWorkflowsDir = import_node_path23.default.join(targetTeamDir, "shared-context", "workflows");
+        const targetWorkflowsDir = import_node_path24.default.join(targetTeamDir, "shared-context", "workflows");
         let targetWorkflowFile = "";
         const candidateFiles = [
           `${targetWorkflowId}.json`,
           `${targetWorkflowId}`
         ];
         for (const candidate of candidateFiles) {
-          const candidatePath = import_node_path23.default.join(targetWorkflowsDir, candidate);
+          const candidatePath = import_node_path24.default.join(targetWorkflowsDir, candidate);
           if (await fileExists3(candidatePath)) {
             targetWorkflowFile = candidate;
             break;
@@ -13975,11 +14057,11 @@ ${step1Text}` : step1Text;
         }
         if (!targetWorkflowFile) {
           try {
-            const wfFiles = await import_promises17.default.readdir(targetWorkflowsDir);
+            const wfFiles = await import_promises18.default.readdir(targetWorkflowsDir);
             for (const wf of wfFiles) {
               if (!wf.endsWith(".json")) continue;
               try {
-                const wfPath = import_node_path23.default.join(targetWorkflowsDir, wf);
+                const wfPath = import_node_path24.default.join(targetWorkflowsDir, wf);
                 const wfRaw = await readTextFile(wfPath);
                 const wfParsed = JSON.parse(wfRaw);
                 if (String(wfParsed.id ?? "") === targetWorkflowId || String(wfParsed.name ?? "") === targetWorkflowId) {
@@ -14002,10 +14084,10 @@ ${step1Text}` : step1Text;
           triggerInput
         });
         const handoffMode = asString(config["mode"] ?? "fire-and-forget").trim() || "fire-and-forget";
-        const defaultNodeOutputRel = import_node_path23.default.join("node-outputs", `${String(nodeIdx).padStart(3, "0")}-${node.id}.json`);
+        const defaultNodeOutputRel = import_node_path24.default.join("node-outputs", `${String(nodeIdx).padStart(3, "0")}-${node.id}.json`);
         const nodeOutputRel = String(node?.output?.path ?? "").trim() || defaultNodeOutputRel;
-        const nodeOutputAbs = import_node_path23.default.resolve(runDir, nodeOutputRel);
-        await ensureDir3(import_node_path23.default.dirname(nodeOutputAbs));
+        const nodeOutputAbs = import_node_path24.default.resolve(runDir, nodeOutputRel);
+        await ensureDir3(import_node_path24.default.dirname(nodeOutputAbs));
         if (handoffMode === "wait-for-completion") {
           const waitTimeoutMs = typeof config["waitTimeoutMs"] === "number" ? config["waitTimeoutMs"] : 5 * 60 * 1e3;
           const outputObj = {
@@ -14022,8 +14104,8 @@ ${step1Text}` : step1Text;
               triggerInputKeys: Object.keys(triggerInput)
             }, null, 2)
           };
-          await import_promises17.default.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + "\n", "utf8");
-          const handoffWaitDir = import_node_path23.default.join(runDir, "handoff-waits");
+          await import_promises18.default.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + "\n", "utf8");
+          const handoffWaitDir = import_node_path24.default.join(runDir, "handoff-waits");
           await ensureDir3(handoffWaitDir);
           const waitMarker = {
             nodeId: node.id,
@@ -14036,8 +14118,8 @@ ${step1Text}` : step1Text;
             timeoutAt: new Date(Date.now() + waitTimeoutMs).toISOString(),
             nodeOutputRel
           };
-          await import_promises17.default.writeFile(
-            import_node_path23.default.join(handoffWaitDir, `${node.id}.json`),
+          await import_promises18.default.writeFile(
+            import_node_path24.default.join(handoffWaitDir, `${node.id}.json`),
             JSON.stringify(waitMarker, null, 2) + "\n",
             "utf8"
           );
@@ -14063,7 +14145,7 @@ ${step1Text}` : step1Text;
               targetTeamId,
               targetWorkflowId,
               targetRunId: enqueueResult.runId,
-              nodeOutputPath: import_node_path23.default.relative(teamDir, nodeOutputAbs)
+              nodeOutputPath: import_node_path24.default.relative(teamDir, nodeOutputAbs)
             }]
           }));
           results.push({ taskId: task2.id, runId: task2.runId, nodeId: task2.nodeId, status: "waiting_handoff" });
@@ -14084,7 +14166,7 @@ ${step1Text}` : step1Text;
               triggerInputKeys: Object.keys(triggerInput)
             }, null, 2)
           };
-          await import_promises17.default.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + "\n", "utf8");
+          await import_promises18.default.writeFile(nodeOutputAbs, JSON.stringify(outputObj, null, 2) + "\n", "utf8");
           const completedTs = (/* @__PURE__ */ new Date()).toISOString();
           await appendRunLog(runPath, (cur) => ({
             ...cur,
@@ -14098,7 +14180,7 @@ ${step1Text}` : step1Text;
               targetTeamId,
               targetWorkflowId,
               targetRunId: enqueueResult.runId,
-              nodeOutputPath: import_node_path23.default.relative(teamDir, nodeOutputAbs)
+              nodeOutputPath: import_node_path24.default.relative(teamDir, nodeOutputAbs)
             }],
             nodeResults: [...cur.nodeResults ?? [], {
               nodeId: node.id,
@@ -14106,7 +14188,7 @@ ${step1Text}` : step1Text;
               targetTeamId,
               targetWorkflowId,
               targetRunId: enqueueResult.runId,
-              nodeOutputPath: import_node_path23.default.relative(teamDir, nodeOutputAbs)
+              nodeOutputPath: import_node_path24.default.relative(teamDir, nodeOutputAbs)
             }]
           }));
         }
@@ -14190,7 +14272,7 @@ ${step1Text}` : step1Text;
     } finally {
       if (lockHeld) {
         try {
-          await import_promises17.default.unlink(lockPath);
+          await import_promises18.default.unlink(lockPath);
         } catch {
         }
       }
@@ -14209,30 +14291,30 @@ ${step1Text}` : step1Text;
 }
 
 // src/lib/workflows/workflow-tick.ts
-var import_promises18 = __toESM(require("node:fs/promises"));
-var import_node_path24 = __toESM(require("node:path"));
+var import_promises19 = __toESM(require("node:fs/promises"));
+var import_node_path25 = __toESM(require("node:path"));
 var import_node_crypto4 = __toESM(require("node:crypto"));
 async function runWorkflowRunnerTick(api, opts) {
   const teamId = String(opts.teamId);
   const teamDir = resolveTeamDir(api, teamId);
-  const sharedContextDir = import_node_path24.default.join(teamDir, "shared-context");
-  const runsDir = import_node_path24.default.join(sharedContextDir, "workflow-runs");
-  const workflowsDir = import_node_path24.default.join(sharedContextDir, "workflows");
+  const sharedContextDir = import_node_path25.default.join(teamDir, "shared-context");
+  const runsDir = import_node_path25.default.join(sharedContextDir, "workflow-runs");
+  const workflowsDir = import_node_path25.default.join(sharedContextDir, "workflows");
   if (!await fileExists3(runsDir)) {
     return { ok: true, teamId, claimed: 0, message: "No workflow-runs directory present." };
   }
   const concurrency = typeof opts.concurrency === "number" && opts.concurrency > 0 ? Math.floor(opts.concurrency) : 1;
   const leaseSeconds = typeof opts.leaseSeconds === "number" && opts.leaseSeconds > 0 ? opts.leaseSeconds : 300;
   const now = Date.now();
-  const entries = await import_promises18.default.readdir(runsDir);
+  const entries = await import_promises19.default.readdir(runsDir);
   const candidates = [];
   for (const e of entries) {
-    const abs = import_node_path24.default.join(runsDir, e);
+    const abs = import_node_path25.default.join(runsDir, e);
     let runPath = null;
     try {
-      const st = await import_promises18.default.stat(abs);
+      const st = await import_promises19.default.stat(abs);
       if (st.isDirectory()) {
-        const p = import_node_path24.default.join(abs, "run.json");
+        const p = import_node_path25.default.join(abs, "run.json");
         if (await fileExists3(p)) runPath = p;
       }
     } catch {
@@ -14275,7 +14357,7 @@ async function runWorkflowRunnerTick(api, opts) {
       claimExpiresAt,
       events: [...cur.events ?? [], { ts: (/* @__PURE__ */ new Date()).toISOString(), type: "run.claimed", claimedBy, claimExpiresAt }]
     };
-    await import_promises18.default.writeFile(runPath, JSON.stringify(next, null, 2), "utf8");
+    await import_promises19.default.writeFile(runPath, JSON.stringify(next, null, 2), "utf8");
     return next;
   }
   const claimed = [];
@@ -14289,7 +14371,7 @@ async function runWorkflowRunnerTick(api, opts) {
   }
   async function execClaimed(runPath, run) {
     const workflowFile = String(run.workflow.file);
-    const workflowPath = import_node_path24.default.join(workflowsDir, workflowFile);
+    const workflowPath = import_node_path25.default.join(workflowsDir, workflowFile);
     const workflowRaw = await readTextFile(workflowPath);
     const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
     try {
@@ -14358,23 +14440,23 @@ async function runWorkflowRunnerTick(api, opts) {
 }
 
 // src/lib/workflows/workflow-approvals.ts
-var import_promises19 = __toESM(require("node:fs/promises"));
-var import_node_path25 = __toESM(require("node:path"));
+var import_promises20 = __toESM(require("node:fs/promises"));
+var import_node_path26 = __toESM(require("node:path"));
 async function approvalsPathFor(teamDir, runId) {
-  const runsDir = import_node_path25.default.join(teamDir, "shared-context", "workflow-runs");
-  return import_node_path25.default.join(runsDir, runId, "approvals", "approval.json");
+  const runsDir = import_node_path26.default.join(teamDir, "shared-context", "workflow-runs");
+  return import_node_path26.default.join(runsDir, runId, "approvals", "approval.json");
 }
 async function pollWorkflowApprovals(api, opts) {
   const teamId = String(opts.teamId);
   const teamDir = resolveTeamDir(api, teamId);
-  const runsDir = import_node_path25.default.join(teamDir, "shared-context", "workflow-runs");
+  const runsDir = import_node_path26.default.join(teamDir, "shared-context", "workflow-runs");
   if (!await fileExists3(runsDir)) {
     return { ok: true, teamId, polled: 0, resumed: 0, skipped: 0, message: "No workflow-runs directory present." };
   }
   const approvalPaths = [];
-  const entries = await import_promises19.default.readdir(runsDir);
+  const entries = await import_promises20.default.readdir(runsDir);
   for (const e of entries) {
-    const p = import_node_path25.default.join(runsDir, e, "approvals", "approval.json");
+    const p = import_node_path26.default.join(runsDir, e, "approvals", "approval.json");
     if (await fileExists3(p)) approvalPaths.push(p);
   }
   const limitedPaths = approvalPaths.slice(0, typeof opts.limit === "number" && opts.limit > 0 ? opts.limit : void 0);
@@ -14390,7 +14472,7 @@ async function pollWorkflowApprovals(api, opts) {
       approval = await readJsonFile2(approvalPath);
     } catch (e) {
       skipped++;
-      results.push({ runId: import_node_path25.default.basename(import_node_path25.default.dirname(import_node_path25.default.dirname(approvalPath))), status: "unknown", action: "error", message: `Failed to parse: ${e.message}` });
+      results.push({ runId: import_node_path26.default.basename(import_node_path26.default.dirname(import_node_path26.default.dirname(approvalPath))), status: "unknown", action: "error", message: `Failed to parse: ${e.message}` });
       continue;
     }
     if (approval.status === "pending") {
@@ -14412,7 +14494,7 @@ async function pollWorkflowApprovals(api, opts) {
         resumedAt: (/* @__PURE__ */ new Date()).toISOString(),
         resumedStatus: String(res.status ?? "ok")
       };
-      await import_promises19.default.writeFile(approvalPath, JSON.stringify(next, null, 2), "utf8");
+      await import_promises20.default.writeFile(approvalPath, JSON.stringify(next, null, 2), "utf8");
     } catch (e) {
       results.push({ runId: approval.runId, status: approval.status, action: "error", message: e.message });
       const next = {
@@ -14421,7 +14503,7 @@ async function pollWorkflowApprovals(api, opts) {
         resumedStatus: "error",
         resumeError: e.message
       };
-      await import_promises19.default.writeFile(approvalPath, JSON.stringify(next, null, 2), "utf8");
+      await import_promises20.default.writeFile(approvalPath, JSON.stringify(next, null, 2), "utf8");
     }
   }
   return { ok: true, teamId, polled: limitedPaths.length, resumed, skipped, results };
@@ -14432,7 +14514,7 @@ async function approveWorkflowRun(api, opts) {
   const teamDir = resolveTeamDir(api, teamId);
   const approvalPath = await approvalsPathFor(teamDir, runId);
   if (!await fileExists3(approvalPath)) {
-    throw new Error(`Approval file not found for runId=${runId}: ${import_node_path25.default.relative(teamDir, approvalPath)}`);
+    throw new Error(`Approval file not found for runId=${runId}: ${import_node_path26.default.relative(teamDir, approvalPath)}`);
   }
   const raw = await readTextFile(approvalPath);
   const cur = JSON.parse(raw);
@@ -14442,16 +14524,16 @@ async function approveWorkflowRun(api, opts) {
     decidedAt: (/* @__PURE__ */ new Date()).toISOString(),
     ...opts.note ? { note: String(opts.note) } : {}
   };
-  await import_promises19.default.writeFile(approvalPath, JSON.stringify(next, null, 2), "utf8");
-  return { ok: true, runId, status: next.status, approvalFile: import_node_path25.default.relative(teamDir, approvalPath) };
+  await import_promises20.default.writeFile(approvalPath, JSON.stringify(next, null, 2), "utf8");
+  return { ok: true, runId, status: next.status, approvalFile: import_node_path26.default.relative(teamDir, approvalPath) };
 }
 async function resumeWorkflowRun(api, opts) {
   const teamId = String(opts.teamId);
   const runId = String(opts.runId);
   const teamDir = resolveTeamDir(api, teamId);
-  const sharedContextDir = import_node_path25.default.join(teamDir, "shared-context");
-  const runsDir = import_node_path25.default.join(sharedContextDir, "workflow-runs");
-  const workflowsDir = import_node_path25.default.join(sharedContextDir, "workflows");
+  const sharedContextDir = import_node_path26.default.join(teamDir, "shared-context");
+  const runsDir = import_node_path26.default.join(sharedContextDir, "workflow-runs");
+  const workflowsDir = import_node_path26.default.join(sharedContextDir, "workflows");
   const loaded = await loadRunFile(teamDir, runsDir, runId);
   const runLogPath = loaded.path;
   const runLog = loaded.run;
@@ -14462,17 +14544,17 @@ async function resumeWorkflowRun(api, opts) {
     throw new Error(`Run is not awaiting approval (status=${runLog.status}).`);
   }
   const workflowFile = String(runLog.workflow.file);
-  const workflowPath = import_node_path25.default.join(workflowsDir, workflowFile);
+  const workflowPath = import_node_path26.default.join(workflowsDir, workflowFile);
   const workflowRaw = await readTextFile(workflowPath);
   const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
   const approvalPath = await approvalsPathFor(teamDir, runId);
-  if (!await fileExists3(approvalPath)) throw new Error(`Missing approval file: ${import_node_path25.default.relative(teamDir, approvalPath)}`);
+  if (!await fileExists3(approvalPath)) throw new Error(`Missing approval file: ${import_node_path26.default.relative(teamDir, approvalPath)}`);
   const approvalRaw = await readTextFile(approvalPath);
   const approval = JSON.parse(approvalRaw);
   if (approval.status === "pending") {
-    throw new Error(`Approval still pending. Update ${import_node_path25.default.relative(teamDir, approvalPath)} first.`);
+    throw new Error(`Approval still pending. Update ${import_node_path26.default.relative(teamDir, approvalPath)} first.`);
   }
-  const ticketPath = import_node_path25.default.join(teamDir, runLog.ticket.file);
+  const ticketPath = import_node_path26.default.join(teamDir, runLog.ticket.file);
   const approvalIdx = workflow.nodes.findIndex((n) => n.kind === "human_approval" && String(n.id) === String(approval.nodeId));
   if (approvalIdx < 0) throw new Error(`Approval node not found in workflow: nodeId=${approval.nodeId}`);
   if (approval.status === "rejected") {
@@ -14521,14 +14603,14 @@ async function resumeWorkflowRun(api, opts) {
     });
     try {
       const runPath = runLogPath;
-      const runDir = import_node_path25.default.dirname(runPath);
-      const lockDir = import_node_path25.default.join(runDir, "locks");
+      const runDir = import_node_path26.default.dirname(runPath);
+      const lockDir = import_node_path26.default.join(runDir, "locks");
       for (let i = reviseIdx; i < (workflow.nodes?.length ?? 0); i++) {
         const id = String(workflow.nodes[i]?.id ?? "").trim();
         if (!id) continue;
-        const lp = import_node_path25.default.join(lockDir, `${id}.lock`);
+        const lp = import_node_path26.default.join(lockDir, `${id}.lock`);
         try {
-          await import_promises19.default.unlink(lp);
+          await import_promises20.default.unlink(lp);
         } catch {
         }
       }
@@ -14604,10 +14686,10 @@ async function resumeWorkflowRun(api, opts) {
 async function enqueueWorkflowRun(api, opts) {
   const teamId = String(opts.teamId);
   const teamDir = resolveTeamDir(api, teamId);
-  const sharedContextDir = import_node_path26.default.join(teamDir, "shared-context");
-  const workflowsDir = import_node_path26.default.join(sharedContextDir, "workflows");
-  const runsDir = import_node_path26.default.join(sharedContextDir, "workflow-runs");
-  const workflowPath = import_node_path26.default.join(workflowsDir, opts.workflowFile);
+  const sharedContextDir = import_node_path27.default.join(teamDir, "shared-context");
+  const workflowsDir = import_node_path27.default.join(sharedContextDir, "workflows");
+  const runsDir = import_node_path27.default.join(sharedContextDir, "workflow-runs");
+  const workflowPath = import_node_path27.default.join(workflowsDir, opts.workflowFile);
   const raw = await readTextFile(workflowPath);
   const workflow = normalizeWorkflow(JSON.parse(raw));
   if (!workflow.nodes?.length) throw new Error("Workflow has no nodes");
@@ -14616,20 +14698,20 @@ async function enqueueWorkflowRun(api, opts) {
   const initialLane = firstLaneRaw;
   const runId = `${isoCompact()}-${import_node_crypto5.default.randomBytes(4).toString("hex")}`;
   await ensureDir3(runsDir);
-  const runDir = import_node_path26.default.join(runsDir, runId);
+  const runDir = import_node_path27.default.join(runsDir, runId);
   await ensureDir3(runDir);
   await Promise.all([
-    ensureDir3(import_node_path26.default.join(runDir, "node-outputs")),
-    ensureDir3(import_node_path26.default.join(runDir, "artifacts")),
-    ensureDir3(import_node_path26.default.join(runDir, "approvals"))
+    ensureDir3(import_node_path27.default.join(runDir, "node-outputs")),
+    ensureDir3(import_node_path27.default.join(runDir, "artifacts")),
+    ensureDir3(import_node_path27.default.join(runDir, "approvals"))
   ]);
-  const runLogPath = import_node_path26.default.join(runDir, "run.json");
+  const runLogPath = import_node_path27.default.join(runDir, "run.json");
   const ticketNum = await nextTicketNumber(teamDir);
-  const slug = `workflow-run-${(workflow.id ?? import_node_path26.default.basename(opts.workflowFile, import_node_path26.default.extname(opts.workflowFile))).replace(/[^a-z0-9-]+/gi, "-").toLowerCase()}`;
+  const slug = `workflow-run-${(workflow.id ?? import_node_path27.default.basename(opts.workflowFile, import_node_path27.default.extname(opts.workflowFile))).replace(/[^a-z0-9-]+/gi, "-").toLowerCase()}`;
   const ticketFile = `${ticketNum}-${slug}.md`;
-  const laneDir2 = import_node_path26.default.join(teamDir, "work", initialLane);
+  const laneDir2 = import_node_path27.default.join(teamDir, "work", initialLane);
   await ensureDir3(laneDir2);
-  const ticketPath = import_node_path26.default.join(laneDir2, ticketFile);
+  const ticketPath = import_node_path27.default.join(laneDir2, ticketFile);
   const header = `# ${ticketNum} \u2014 Workflow run: ${workflow.name ?? workflow.id ?? opts.workflowFile}
 
 `;
@@ -14639,9 +14721,9 @@ async function enqueueWorkflowRun(api, opts) {
     `Status: ${laneToStatus(initialLane)}`,
     `
 ## Run`,
-    `- workflow: ${import_node_path26.default.relative(teamDir, workflowPath)}`,
-    `- run dir: ${import_node_path26.default.relative(teamDir, import_node_path26.default.dirname(runLogPath))}`,
-    `- run file: ${import_node_path26.default.relative(teamDir, runLogPath)}`,
+    `- workflow: ${import_node_path27.default.relative(teamDir, workflowPath)}`,
+    `- run dir: ${import_node_path27.default.relative(teamDir, import_node_path27.default.dirname(runLogPath))}`,
+    `- run file: ${import_node_path27.default.relative(teamDir, runLogPath)}`,
     `- trigger: ${opts.trigger?.kind ?? "manual"}${opts.trigger?.at ? ` @ ${opts.trigger.at}` : ""}`,
     `- runId: ${runId}`,
     `
@@ -14657,7 +14739,7 @@ async function enqueueWorkflowRun(api, opts) {
     updatedAt: createdAt,
     teamId,
     workflow: { file: opts.workflowFile, id: workflow.id ?? null, name: workflow.name ?? null },
-    ticket: { file: import_node_path26.default.relative(teamDir, ticketPath), number: ticketNum, lane: initialLane },
+    ticket: { file: import_node_path27.default.relative(teamDir, ticketPath), number: ticketNum, lane: initialLane },
     trigger,
     ...opts.triggerInput && Object.keys(opts.triggerInput).length > 0 ? { triggerInput: opts.triggerInput } : {},
     status: "queued",
@@ -14669,8 +14751,8 @@ async function enqueueWorkflowRun(api, opts) {
     nodeResults: []
   };
   await Promise.all([
-    import_promises20.default.writeFile(ticketPath, md, "utf8"),
-    import_promises20.default.writeFile(runLogPath, JSON.stringify(initialLog, null, 2), "utf8")
+    import_promises21.default.writeFile(ticketPath, md, "utf8"),
+    import_promises21.default.writeFile(runLogPath, JSON.stringify(initialLog, null, 2), "utf8")
   ]);
   return {
     ok: true,
@@ -14687,23 +14769,23 @@ async function enqueueWorkflowRun(api, opts) {
 async function runWorkflowRunnerOnce(api, opts) {
   const teamId = String(opts.teamId);
   const teamDir = resolveTeamDir(api, teamId);
-  const sharedContextDir = import_node_path26.default.join(teamDir, "shared-context");
-  const runsDir = import_node_path26.default.join(sharedContextDir, "workflow-runs");
-  const workflowsDir = import_node_path26.default.join(sharedContextDir, "workflows");
+  const sharedContextDir = import_node_path27.default.join(teamDir, "shared-context");
+  const runsDir = import_node_path27.default.join(sharedContextDir, "workflow-runs");
+  const workflowsDir = import_node_path27.default.join(sharedContextDir, "workflows");
   if (!await fileExists3(runsDir)) {
     return { ok: true, teamId, claimed: 0, message: "No workflow-runs directory present." };
   }
   const leaseSeconds = typeof opts.leaseSeconds === "number" && opts.leaseSeconds > 0 ? opts.leaseSeconds : 60;
   const now = Date.now();
-  const entries = await import_promises20.default.readdir(runsDir);
+  const entries = await import_promises21.default.readdir(runsDir);
   const candidates = [];
   for (const e of entries) {
-    const abs = import_node_path26.default.join(runsDir, e);
+    const abs = import_node_path27.default.join(runsDir, e);
     let runPath = null;
     try {
-      const st = await import_promises20.default.stat(abs);
+      const st = await import_promises21.default.stat(abs);
       if (st.isDirectory()) {
-        const p = import_node_path26.default.join(abs, "run.json");
+        const p = import_node_path27.default.join(abs, "run.json");
         if (await fileExists3(p)) runPath = p;
       }
     } catch {
@@ -14721,7 +14803,7 @@ async function runWorkflowRunnerOnce(api, opts) {
   }
   const targetRunId = opts.runId?.trim();
   if (targetRunId) {
-    const match = candidates.filter((c) => import_node_path26.default.basename(import_node_path26.default.dirname(c.file)) === targetRunId);
+    const match = candidates.filter((c) => import_node_path27.default.basename(import_node_path27.default.dirname(c.file)) === targetRunId);
     candidates.length = 0;
     candidates.push(...match);
   }
@@ -14746,7 +14828,7 @@ async function runWorkflowRunnerOnce(api, opts) {
     events: [...cur.events, { ts: (/* @__PURE__ */ new Date()).toISOString(), type: "run.claimed", claimedBy: runnerId, claimExpiresAt }]
   }));
   const workflowFile = String(chosen.run.workflow.file);
-  const workflowPath = import_node_path26.default.join(workflowsDir, workflowFile);
+  const workflowPath = import_node_path27.default.join(workflowsDir, workflowFile);
   const workflowRaw = await readTextFile(workflowPath);
   const workflow = normalizeWorkflow(JSON.parse(workflowRaw));
   try {
@@ -14888,13 +14970,13 @@ async function handleMediaDriversList() {
 init_recipes();
 
 // src/lib/cleanup-workspaces.ts
-var import_promises21 = __toESM(require("node:fs/promises"));
-var import_node_path27 = __toESM(require("node:path"));
+var import_promises22 = __toESM(require("node:fs/promises"));
+var import_node_path28 = __toESM(require("node:path"));
 var DEFAULT_ALLOWED_PREFIXES = ["smoke-", "qa-", "tmp-", "test-"];
 var DEFAULT_PROTECTED_TEAM_IDS = ["development-team"];
 async function isDir(p) {
   try {
-    const st = await import_promises21.default.stat(p);
+    const st = await import_promises22.default.stat(p);
     return st.isDirectory();
   } catch {
     return false;
@@ -14902,7 +14984,7 @@ async function isDir(p) {
 }
 async function isSymlink(p) {
   try {
-    const st = await import_promises21.default.lstat(p);
+    const st = await import_promises22.default.lstat(p);
     return st.isSymbolicLink();
   } catch {
     return false;
@@ -14925,13 +15007,13 @@ function isEligibleTeamId(opts) {
   return { ok: true };
 }
 async function planWorkspaceCleanup(opts) {
-  const rootDir = import_node_path27.default.resolve(opts.rootDir);
+  const rootDir = import_node_path28.default.resolve(opts.rootDir);
   const prefixes = opts.prefixes?.length ? opts.prefixes : [...DEFAULT_ALLOWED_PREFIXES];
   const protectedTeamIds = opts.protectedTeamIds?.length ? opts.protectedTeamIds : [...DEFAULT_PROTECTED_TEAM_IDS];
   const decisions = [];
   let entries = [];
   try {
-    entries = await import_promises21.default.readdir(rootDir);
+    entries = await import_promises22.default.readdir(rootDir);
   } catch (e) {
     return {
       rootDir,
@@ -14949,7 +15031,7 @@ async function planWorkspaceCleanup(opts) {
   }
   for (const dirName of entries) {
     if (!dirName.startsWith("workspace-")) continue;
-    const absPath = import_node_path27.default.join(rootDir, dirName);
+    const absPath = import_node_path28.default.join(rootDir, dirName);
     if (!await isDir(absPath)) continue;
     const teamId = parseTeamIdFromWorkspaceDirName(dirName);
     if (!teamId) {
@@ -14960,9 +15042,9 @@ async function planWorkspaceCleanup(opts) {
       decisions.push({ kind: "skip", teamId, dirName, absPath, reason: "refusing to operate on symlink" });
       continue;
     }
-    const real = await import_promises21.default.realpath(absPath);
-    const rootReal = await import_promises21.default.realpath(rootDir);
-    if (!real.startsWith(rootReal + import_node_path27.default.sep) && real !== rootReal) {
+    const real = await import_promises22.default.realpath(absPath);
+    const rootReal = await import_promises22.default.realpath(rootDir);
+    if (!real.startsWith(rootReal + import_node_path28.default.sep) && real !== rootReal) {
       decisions.push({ kind: "skip", teamId, dirName, absPath, reason: "resolved path escapes rootDir" });
       continue;
     }
@@ -14992,7 +15074,7 @@ async function executeWorkspaceCleanup(plan, opts) {
   const deleteErrors = [];
   for (const c of candidates) {
     try {
-      await import_promises21.default.rm(c.absPath, { recursive: true, force: true });
+      await import_promises22.default.rm(c.absPath, { recursive: true, force: true });
       deleted.push(c.absPath);
     } catch (e) {
       deleteErrors.push({ path: c.absPath, error: e instanceof Error ? e.message : String(e) });
@@ -15086,8 +15168,8 @@ var recipesPlugin = {
         const reply = parseApprovalReply(text);
         if (!reply) return;
         const workspaceRoot = resolveCanonicalWorkspaceRoot(api);
-        const parent = import_node_path28.default.resolve(workspaceRoot, "..");
-        const roots = Array.from(/* @__PURE__ */ new Set([parent, workspaceRoot, import_node_path28.default.join(workspaceRoot, "workspace")]));
+        const parent = import_node_path29.default.resolve(workspaceRoot, "..");
+        const roots = Array.from(/* @__PURE__ */ new Set([parent, workspaceRoot, import_node_path29.default.join(workspaceRoot, "workspace")]));
         const channelHints = [
           c["channelId"],
           c["channel"],
@@ -15109,27 +15191,27 @@ var recipesPlugin = {
         const teamDirs = [];
         for (const root of roots) {
           try {
-            const entries = await import_promises22.default.readdir(root, { withFileTypes: true });
+            const entries = await import_promises23.default.readdir(root, { withFileTypes: true });
             for (const d of entries) {
-              if (d.isDirectory() && d.name.startsWith("workspace-")) teamDirs.push(import_node_path28.default.join(root, d.name));
+              if (d.isDirectory() && d.name.startsWith("workspace-")) teamDirs.push(import_node_path29.default.join(root, d.name));
             }
           } catch {
           }
         }
         let found = null;
         for (const teamDir of teamDirs) {
-          const teamId = import_node_path28.default.basename(teamDir).replace(/^workspace-/, "");
-          const runsDir = import_node_path28.default.join(teamDir, "shared-context", "workflow-runs");
+          const teamId = import_node_path29.default.basename(teamDir).replace(/^workspace-/, "");
+          const runsDir = import_node_path29.default.join(teamDir, "shared-context", "workflow-runs");
           let runIds = [];
           try {
-            runIds = (await import_promises22.default.readdir(runsDir, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name);
+            runIds = (await import_promises23.default.readdir(runsDir, { withFileTypes: true })).filter((d) => d.isDirectory()).map((d) => d.name);
           } catch {
             continue;
           }
           for (const runId of runIds) {
-            const approvalPath = import_node_path28.default.join(runsDir, runId, "approvals", "approval.json");
+            const approvalPath = import_node_path29.default.join(runsDir, runId, "approvals", "approval.json");
             try {
-              const raw = await import_promises22.default.readFile(approvalPath, "utf8");
+              const raw = await import_promises23.default.readFile(approvalPath, "utf8");
               const a = JSON.parse(raw);
               if (String(a?.code ?? "").trim().toUpperCase() === code && String(a?.status ?? "") === "pending") {
                 found = { teamId: String(a?.teamId ?? teamId), runId: String(a?.runId ?? runId), approvalPath };
@@ -15240,7 +15322,7 @@ var recipesPlugin = {
           "List (dry-run, default) or delete (with --yes) temporary test/scaffold team workspaces under your OpenClaw home directory"
         ).option("--yes", "Actually delete eligible workspaces").option("--prefix <prefix>", "Allowed team id prefix (repeatable)", (v, acc) => [...acc ?? [], v], []).option("--json", "Output JSON").action(async (options) => {
           const workspaceRoot = resolveWorkspaceRoot(api);
-          const rootDir = import_node_path28.default.resolve(workspaceRoot, "..");
+          const rootDir = import_node_path29.default.resolve(workspaceRoot, "..");
           const prefixes = Array.isArray(options.prefix) && options.prefix.length ? options.prefix : void 0;
           const plan = await planWorkspaceCleanup({ rootDir, prefixes });
           const yes = !!options.yes;
