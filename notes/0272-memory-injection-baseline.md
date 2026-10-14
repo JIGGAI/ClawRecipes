@@ -1,6 +1,6 @@
 # 0272 — Memory injection baseline
 
-Measurement window: 2026-10-08 through 2026-10-14 UTC  
+Measurement window: 2026-10-08 through 2026-10-14 UTC
 Candidate: `task/0272-memory-injection-baseline` at `f4445e8`
 
 ## Method
