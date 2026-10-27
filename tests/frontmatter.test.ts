@@ -21,12 +21,18 @@ describe('recipe frontmatter parsing/validation', () => {
     ).toThrow(/Duplicate cronJobs\[\]\.id/);
 
     expect(() => normalizeCronJobs({ cronJobs: [{ id: 'x', schedule: '', message: 'm' }] })).toThrow(/schedule is required/);
-    expect(() => normalizeCronJobs({ cronJobs: [{ id: 'x', schedule: '* * * * *', message: '' }] })).toThrow(/message is required/);
+    expect(() => normalizeCronJobs({ cronJobs: [{ id: 'x', schedule: '* * * * *', message: '' }] })).toThrow(/requires message or command/);
+    expect(() => normalizeCronJobs({ cronJobs: [{ id: 'x', schedule: '* * * * *', message: 'm', command: 'echo x' }] })).toThrow(/cannot define both/);
 
     const out = normalizeCronJobs({ cronJobs: [{ id: 'job', schedule: '* * * * *', message: 'ping' }] });
     expect(out).toHaveLength(1);
     expect(out[0].id).toBe('job');
     expect(out[0].message).toBe('ping');
+
+    const command = normalizeCronJobs({
+      cronJobs: [{ id: 'backup', schedule: '0 0 * * *', command: './backup.sh', commandCwd: '/workspace' }],
+    });
+    expect(command[0]).toEqual(expect.objectContaining({ command: './backup.sh', commandCwd: '/workspace' }));
   });
 
   test('normalizeCronJobs accepts task and prompt as message fallback', () => {

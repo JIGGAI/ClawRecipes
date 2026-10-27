@@ -124,7 +124,7 @@ const TEAM_RECIPES: Record<string, {
     ],
   },
   "development-team": {
-    roles: ["lead", "dev", "devops", "test", "workflow-runner"],
+    roles: ["lead", "dev", "dev-2", "devops", "test", "workflow-runner"],
     extraTeamFiles: [
       "shared-context/MEMORY_PLAN.md",
       "shared-context/ticket-flow.json",
@@ -261,7 +261,7 @@ describe("scaffold-team smoke tests", () => {
       expect(res.ok).toBe(true);
       if (!res.ok) return;
 
-      const expectedRoles = ["lead", "dev", "devops", "test", "workflow-runner"];
+      const expectedRoles = ["lead", "dev", "dev-2", "devops", "test", "workflow-runner"];
       expect(res.agents.length).toBe(expectedRoles.length);
 
       await assertStandardTeamStructure(res.teamDir, teamId, expectedRoles);
@@ -270,6 +270,10 @@ describe("scaffold-team smoke tests", () => {
       expect(await readText(path.join(res.teamDir, "shared-context", "MEMORY_PLAN.md"))).toContain("Memory Plan");
       expect(await fileExists(path.join(res.teamDir, "shared-context", "ticket-flow.json"))).toBe(true);
       expect(await readText(path.join(res.teamDir, "notes", "QA_ACCESS.md"))).toBeTruthy();
+      expect(await fileExists(path.join(res.teamDir, "scripts", "ticket-transition.py"))).toBe(true);
+      expect(await fileExists(path.join(res.teamDir, "scripts", "pr-state-sync.py"))).toBe(true);
+      expect(await fileExists(path.join(res.teamDir, "shared-context", "WORKFLOW_RULES.md"))).toBe(true);
+      expect(await readText(path.join(res.teamDir, "roles", "dev-2", "HEARTBEAT.md"))).toContain("dev-2-owned");
 
       // Dev-team has a QA checklist (has test role → qaChecklist auto-enabled)
       expect(await fileExists(path.join(res.teamDir, "notes", "QA_CHECKLIST.md"))).toBe(true);
