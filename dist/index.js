@@ -8565,14 +8565,18 @@ function validateCronJobInput(j) {
   if (!id) throw new Error("cronJobs[].id is required");
   const schedule = String(j.schedule ?? "").trim();
   const message = String(j.message ?? j.task ?? j.prompt ?? "").trim();
+  const command = String(j.command ?? "").trim();
   if (!schedule) throw new Error(`cronJobs[${id}].schedule is required`);
-  if (!message) throw new Error(`cronJobs[${id}].message is required`);
+  if (!message && !command) throw new Error(`cronJobs[${id}] requires message or command`);
+  if (message && command) throw new Error(`cronJobs[${id}] cannot define both message and command`);
 }
 function buildCronJobSpec(j, id) {
   return {
     id,
     schedule: String(j.schedule ?? "").trim(),
-    message: String(j.message ?? j.task ?? j.prompt ?? "").trim(),
+    message: String(j.message ?? j.task ?? j.prompt ?? "").trim() || void 0,
+    command: String(j.command ?? "").trim() || void 0,
+    commandCwd: j.commandCwd != null ? String(j.commandCwd).trim() || void 0 : void 0,
     name: j.name != null ? String(j.name) : void 0,
     description: j.description != null ? String(j.description) : void 0,
     timezone: j.timezone != null ? String(j.timezone) : void 0,
@@ -10052,7 +10056,8 @@ function interpolateTemplate(input, vars) {
 function applyCronJobVars(scope, j) {
   const vars = {
     recipeId: scope.recipeId,
-    ...scope.kind === "team" ? { teamId: scope.teamId } : { agentId: scope.agentId }
+    workspaceDir: scope.stateDir,
+    ...scope.kind === "team" ? { teamId: scope.teamId, teamDir: scope.stateDir } : { agentId: scope.agentId }
   };
   return {
     ...j,
@@ -10063,12 +10068,15 @@ function applyCronJobVars(scope, j) {
     to: interpolateTemplate(j.to, vars),
     agentId: interpolateTemplate(j.agentId, vars),
     description: interpolateTemplate(j.description, vars),
-    message: interpolateTemplate(j.message, vars)
+    message: interpolateTemplate(j.message, vars),
+    command: interpolateTemplate(j.command, vars),
+    commandCwd: interpolateTemplate(j.commandCwd, vars)
   };
 }
 function buildCronJobForCreate(scope, j, wantEnabled) {
   const name = j.name ?? `${scope.kind === "team" ? scope.teamId : scope.agentId} \u2022 ${scope.recipeId} \u2022 ${j.id}`;
-  const effectiveAgentId = typeof j.agentId === "string" && j.agentId.trim() ? j.agentId.trim() : scope.kind === "team" ? `${scope.teamId}-lead` : scope.agentId;
+  const isCommand = Boolean(j.command);
+  const effectiveAgentId = isCommand ? void 0 : typeof j.agentId === "string" && j.agentId.trim() ? j.agentId.trim() : scope.kind === "team" ? `${scope.teamId}-lead` : scope.agentId;
   const sessionTarget = effectiveAgentId ? "isolated" : "main";
   return {
     name,
@@ -10078,7 +10086,7 @@ function buildCronJobForCreate(scope, j, wantEnabled) {
     wakeMode: "next-heartbeat",
     sessionTarget,
     schedule: { kind: "cron", expr: j.schedule, ...j.timezone ? { tz: j.timezone } : {} },
-    payload: effectiveAgentId ? { kind: "agentTurn", message: j.message, ...j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {} } : { kind: "systemEvent", text: j.message },
+    payload: isCommand ? { kind: "command", command: j.command, cwd: j.commandCwd, ...j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {} } : effectiveAgentId ? { kind: "agentTurn", message: j.message, ...j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {} } : { kind: "systemEvent", text: j.message },
     ...j.delivery === "none" ? { delivery: { mode: "none" } } : j.delivery === "announce" || j.channel || j.to ? {
       delivery: {
         mode: "announce",
@@ -10094,15 +10102,15 @@ function buildCronJobForCreate(scope, j, wantEnabled) {
   };
 }
 function buildCronJobPatch(j, name) {
-  const effectiveAgentId = typeof j.agentId === "string" && j.agentId.trim() ? j.agentId.trim() : void 0;
+  const isCommand = Boolean(j.command);
+  const effectiveAgentId = isCommand ? void 0 : typeof j.agentId === "string" && j.agentId.trim() ? j.agentId.trim() : void 0;
   const patch = {
     name,
-    agentId: effectiveAgentId ?? null,
     description: j.description ?? "",
-    sessionTarget: effectiveAgentId ? "isolated" : "main",
     wakeMode: "next-heartbeat",
     schedule: { kind: "cron", expr: j.schedule, ...j.timezone ? { tz: j.timezone } : {} },
-    payload: effectiveAgentId ? { kind: "agentTurn", message: j.message, ...j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {} } : { kind: "systemEvent", text: j.message }
+    payload: isCommand ? { kind: "command", command: j.command, cwd: j.commandCwd, ...j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {} } : { kind: "agentTurn", message: j.message, ...j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {} },
+    ...isCommand ? { agentId: null, sessionTarget: "main" } : effectiveAgentId ? { agentId: effectiveAgentId, sessionTarget: "isolated" } : {}
   };
   if (j.delivery === "none") {
     patch.delivery = { mode: "none" };
@@ -10174,6 +10182,13 @@ async function cronAdd(api, job) {
     const pk = String(payload.kind ?? "");
     if (pk === "agentTurn" && payload.message) argv.push("--message", String(payload.message));
     if (pk === "systemEvent" && payload.text) argv.push("--system-event", String(payload.text));
+    if (pk === "command" && payload.command) {
+      argv.push("--command", String(payload.command));
+      if (payload.cwd) argv.push("--command-cwd", String(payload.cwd));
+    }
+    if (typeof payload.timeoutSeconds === "number") {
+      argv.push("--timeout-seconds", String(payload.timeoutSeconds));
+    }
   }
   const delivery = j.delivery;
   if (delivery && typeof delivery === "object") {
@@ -10197,16 +10212,34 @@ async function cronUpdate(api, jobId, patch) {
   const argv = ["openclaw", "cron", "edit", jobId];
   if (patch.name) argv.push("--name", String(patch.name));
   if (patch.description) argv.push("--description", String(patch.description));
-  if (patch.cron) argv.push("--cron", String(patch.cron));
-  if (patch.every) argv.push("--every", String(patch.every));
-  if (patch.at) argv.push("--at", String(patch.at));
-  if (patch.tz) argv.push("--tz", String(patch.tz));
+  const schedule = patch.schedule;
+  if (schedule?.kind === "cron") {
+    argv.push("--cron", String(schedule.expr ?? ""));
+    if (schedule.tz) argv.push("--tz", String(schedule.tz));
+  }
   if (patch.agentId) argv.push("--agent", String(patch.agentId));
-  if (patch.sessionKey === null) argv.push("--clear-session-key");
-  if (patch.message) argv.push("--message", String(patch.message));
-  if (patch.systemEvent) argv.push("--system-event", String(patch.systemEvent));
-  if (patch.channel) argv.push("--channel", String(patch.channel));
-  if (patch.to) argv.push("--to", String(patch.to));
+  else if (patch.agentId === null) argv.push("--clear-agent");
+  if (patch.sessionTarget === "main" || patch.sessionTarget === "isolated") {
+    argv.push("--session", String(patch.sessionTarget));
+  }
+  const payload = patch.payload;
+  if (payload?.kind === "agentTurn" && payload.message) argv.push("--message", String(payload.message));
+  if (payload?.kind === "systemEvent" && payload.text) argv.push("--system-event", String(payload.text));
+  if (payload?.kind === "command" && payload.command) {
+    argv.push("--command", String(payload.command));
+    if (payload.cwd) argv.push("--command-cwd", String(payload.cwd));
+  }
+  if (typeof payload?.timeoutSeconds === "number") {
+    argv.push("--timeout-seconds", String(payload.timeoutSeconds));
+  }
+  const delivery = patch.delivery;
+  if (delivery?.mode === "none") argv.push("--no-deliver");
+  if (delivery?.mode === "announce") {
+    argv.push("--announce");
+    if (delivery.channel) argv.push("--channel", String(delivery.channel));
+    if (delivery.to) argv.push("--to", String(delivery.to));
+    if (delivery.bestEffort) argv.push("--best-effort-deliver");
+  }
   if (typeof patch.enabled === "boolean") argv.push(patch.enabled ? "--enable" : "--disable");
   const result = await api.runtime.system.runCommandWithTimeout(argv, { timeoutMs: 3e4 });
   if (result.code !== 0) {
@@ -10268,6 +10301,8 @@ async function reconcileOneCronJob(ctx, j, userOptIn, enableInstalled) {
     channel: jj.channel ?? "last",
     to: jj.to ?? "",
     agentId: jj.agentId ?? "",
+    command: jj.command ?? "",
+    commandCwd: jj.commandCwd ?? "",
     name,
     description: jj.description ?? ""
   });
@@ -10385,11 +10420,14 @@ async function scaffoldAgentFromRecipe(api, recipe, opts) {
       const filePath = String(o.path ?? "").trim();
       const template = String(o.template ?? "").trim();
       const modeRaw = o.mode != null ? String(o.mode).trim() : "";
+      const scopeRaw = o.scope != null ? String(o.scope).trim() : "";
       if (!filePath) throw new Error(`recipe.files[${idx}].path is required`);
       if (!template) throw new Error(`recipe.files[${idx}].template is required`);
       const mode = modeRaw === "createOnly" || modeRaw === "overwrite" ? modeRaw : void 0;
       if (modeRaw && !mode) throw new Error(`recipe.files[${idx}].mode must be createOnly|overwrite`);
-      return { path: filePath, template, mode };
+      const scope = scopeRaw === "role" || scopeRaw === "team" ? scopeRaw : void 0;
+      if (scopeRaw && !scope) throw new Error(`recipe.files[${idx}].scope must be role|team`);
+      return { path: filePath, template, mode, scope };
     });
   }
   const templates = normalizeTemplates(recipe.templates);
@@ -10397,6 +10435,7 @@ async function scaffoldAgentFromRecipe(api, recipe, opts) {
   const vars = opts.vars ?? {};
   const fileResults = [];
   for (const f of files) {
+    if (f.scope === "team") continue;
     const raw = templates[f.template];
     if (typeof raw !== "string") throw new Error(`Missing template: ${String(f.template)}`);
     const rendered = renderTemplate(raw, vars);
@@ -10748,7 +10787,8 @@ async function writeTeamLevelRecipeFiles(opts) {
   for (const f of files) {
     const filePath = String(f.path ?? "").trim();
     if (!filePath) continue;
-    if (!filePath.startsWith("shared-context/") && !filePath.startsWith("notes/")) continue;
+    const isExplicitTeamFile = String(f.scope ?? "") === "team";
+    if (!isExplicitTeamFile && !filePath.startsWith("shared-context/") && !filePath.startsWith("notes/")) continue;
     const templateKey = String(f.template ?? "").trim();
     if (!templateKey) continue;
     const templateContent = templates[templateKey];
@@ -10802,7 +10842,7 @@ async function scaffoldTeamAgents(api, recipe, teamId, teamDir, rolesDir, overwr
     const role = a.role;
     const agentId = a.agentId ?? `${teamId}-${role}`;
     const agentName = a.name ?? `${teamId} ${role}`;
-    const roleFiles = baseFiles.filter((f) => !String(f.path).startsWith("shared-context/")).map((f) => ({
+    const roleFiles = baseFiles.filter((f) => String(f.scope ?? "") !== "team").filter((f) => !String(f.path).startsWith("shared-context/") && !String(f.path).startsWith("notes/")).map((f) => ({
       ...f,
       template: String(f.template).includes(".") ? f.template : `${role}.${f.template}`
     }));

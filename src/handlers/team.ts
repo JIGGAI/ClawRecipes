@@ -171,8 +171,9 @@ async function writeTeamLevelRecipeFiles(opts: {
   for (const f of files) {
     const filePath = String(f.path ?? "").trim();
     if (!filePath) continue;
-    // Only process paths that are team-scoped (filtered out of per-role scaffolding).
-    if (!filePath.startsWith("shared-context/") && !filePath.startsWith("notes/")) continue;
+    // Explicit scope is preferred. The path fallback preserves older recipes.
+    const isExplicitTeamFile = String((f as Record<string, unknown>).scope ?? "") === "team";
+    if (!isExplicitTeamFile && !filePath.startsWith("shared-context/") && !filePath.startsWith("notes/")) continue;
 
     const templateKey = String(f.template ?? "").trim();
     if (!templateKey) continue;
@@ -245,9 +246,9 @@ async function scaffoldTeamAgents(
     const agentId = a.agentId ?? `${teamId}-${role}`;
     const agentName = a.name ?? `${teamId} ${role}`;
     const roleFiles = baseFiles
-      // Guardrail: role workspaces should not create role-local shared-context.
-      // Team-level shared-context lives at <teamDir>/shared-context/.
-      .filter((f) => !String(f.path).startsWith("shared-context/"))
+      // Guardrail: role workspaces should not create team-scoped files.
+      .filter((f) => String((f as Record<string, unknown>).scope ?? "") !== "team")
+      .filter((f) => !String(f.path).startsWith("shared-context/") && !String(f.path).startsWith("notes/"))
       .map((f) => ({
         ...f,
         template: String(f.template).includes(".") ? f.template : `${role}.${f.template}`,

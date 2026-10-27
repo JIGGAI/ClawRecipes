@@ -39,6 +39,7 @@ export async function scaffoldAgentFromRecipe(
     path: string;
     template: string;
     mode?: RecipeFileMode;
+    scope?: "role" | "team";
   };
 
   function normalizeTemplates(input: unknown): Record<string, string> {
@@ -61,6 +62,7 @@ export async function scaffoldAgentFromRecipe(
       const filePath = String(o.path ?? "").trim();
       const template = String(o.template ?? "").trim();
       const modeRaw = o.mode != null ? String(o.mode).trim() : "";
+      const scopeRaw = o.scope != null ? String(o.scope).trim() : "";
 
       if (!filePath) throw new Error(`recipe.files[${idx}].path is required`);
       if (!template) throw new Error(`recipe.files[${idx}].template is required`);
@@ -68,8 +70,10 @@ export async function scaffoldAgentFromRecipe(
       const mode: RecipeFileMode | undefined =
         modeRaw === "createOnly" || modeRaw === "overwrite" ? (modeRaw as RecipeFileMode) : undefined;
       if (modeRaw && !mode) throw new Error(`recipe.files[${idx}].mode must be createOnly|overwrite`);
+      const scope = scopeRaw === "role" || scopeRaw === "team" ? scopeRaw : undefined;
+      if (scopeRaw && !scope) throw new Error(`recipe.files[${idx}].scope must be role|team`);
 
-      return { path: filePath, template, mode };
+      return { path: filePath, template, mode, scope };
     });
   }
 
@@ -79,6 +83,7 @@ export async function scaffoldAgentFromRecipe(
 
   const fileResults: Array<{ path: string; wrote: boolean; reason: string }> = [];
   for (const f of files) {
+    if (f.scope === "team") continue;
     const raw = templates[f.template];
     if (typeof raw !== "string") throw new Error(`Missing template: ${String(f.template)}`);
     const rendered = renderTemplate(raw, vars);

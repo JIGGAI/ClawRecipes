@@ -1,6 +1,6 @@
 import path from "node:path";
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
-import type { RecipeFrontmatter } from "../lib/recipe-frontmatter";
+import type { CronJobSpec, RecipeFrontmatter } from "../lib/recipe-frontmatter";
 import { cronKey, hashSpec, loadCronMappingState } from "../lib/cron-utils";
 import { writeJsonFile } from "../lib/json-utils";
 import { promptYesNo } from "../lib/prompt";
@@ -19,11 +19,12 @@ function interpolateTemplate(input: string | undefined, vars: Record<string, str
 
 function applyCronJobVars(
   scope: CronReconcileScope,
-  j: { id: string; name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; enabledByDefault?: boolean; delivery?: 'none' | 'announce' },
-): typeof j {
+  j: CronJobSpec,
+): CronJobSpec {
   const vars: Record<string, string> = {
     recipeId: scope.recipeId,
-    ...(scope.kind === "team" ? { teamId: scope.teamId } : { agentId: scope.agentId }),
+    workspaceDir: scope.stateDir,
+    ...(scope.kind === "team" ? { teamId: scope.teamId, teamDir: scope.stateDir } : { agentId: scope.agentId }),
   };
   return {
     ...j,
@@ -35,6 +36,8 @@ function applyCronJobVars(
     agentId: interpolateTemplate(j.agentId, vars),
     description: interpolateTemplate(j.description, vars),
     message: interpolateTemplate(j.message, vars),
+    command: interpolateTemplate(j.command, vars),
+    commandCwd: interpolateTemplate(j.commandCwd, vars),
   };
 }
 
@@ -64,7 +67,7 @@ type CronReconcileScope =
 
 function buildCronJobForCreate(
   scope: CronReconcileScope,
-  j: { id: string; name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; enabledByDefault?: boolean; delivery?: 'none' | 'announce'; timeoutSeconds?: number },
+  j: CronJobSpec,
   wantEnabled: boolean
 ): Record<string, unknown> {
   const name =
@@ -74,8 +77,10 @@ function buildCronJobForCreate(
   // - Team scaffolds should wake the team lead by default.
   // - Agent scaffolds should wake the agent being installed by default.
   // - Recipe can override with an explicit agentId.
-  const effectiveAgentId =
-    typeof j.agentId === "string" && j.agentId.trim()
+  const isCommand = Boolean(j.command);
+  const effectiveAgentId = isCommand
+    ? undefined
+    : typeof j.agentId === "string" && j.agentId.trim()
       ? j.agentId.trim()
       : scope.kind === "team"
         ? `${scope.teamId}-lead`
@@ -90,9 +95,11 @@ function buildCronJobForCreate(
     wakeMode: "next-heartbeat",
     sessionTarget,
     schedule: { kind: "cron", expr: j.schedule, ...(j.timezone ? { tz: j.timezone } : {}) },
-    payload: effectiveAgentId
-      ? { kind: "agentTurn", message: j.message, ...(j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {}) }
-      : { kind: "systemEvent", text: j.message },
+    payload: isCommand
+      ? { kind: "command", command: j.command, cwd: j.commandCwd, ...(j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {}) }
+      : effectiveAgentId
+        ? { kind: "agentTurn", message: j.message, ...(j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {}) }
+        : { kind: "systemEvent", text: j.message },
     ...(j.delivery === 'none'
       ? { delivery: { mode: "none" } }
       : j.delivery === 'announce' || j.channel || j.to
@@ -111,21 +118,29 @@ function buildCronJobForCreate(
 }
 
 function buildCronJobPatch(
-  j: { name?: string; schedule?: string; timezone?: string; channel?: string; to?: string; agentId?: string; description?: string; message?: string; delivery?: 'none' | 'announce'; timeoutSeconds?: number },
+  j: CronJobSpec,
   name: string
 ): CronJobPatch {
-  const effectiveAgentId = typeof j.agentId === "string" && j.agentId.trim() ? j.agentId.trim() : undefined;
+  const isCommand = Boolean(j.command);
+  const effectiveAgentId = isCommand
+    ? undefined
+    : typeof j.agentId === "string" && j.agentId.trim()
+      ? j.agentId.trim()
+      : undefined;
 
   const patch: CronJobPatch = {
     name,
-    agentId: effectiveAgentId ?? null,
     description: j.description ?? "",
-    sessionTarget: effectiveAgentId ? "isolated" : "main",
     wakeMode: "next-heartbeat",
     schedule: { kind: "cron", expr: j.schedule, ...(j.timezone ? { tz: j.timezone } : {}) },
-    payload: effectiveAgentId
-      ? { kind: "agentTurn", message: j.message, ...(j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {}) }
-      : { kind: "systemEvent", text: j.message },
+    payload: isCommand
+      ? { kind: "command", command: j.command, cwd: j.commandCwd, ...(j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {}) }
+      : { kind: "agentTurn", message: j.message, ...(j.timeoutSeconds ? { timeoutSeconds: j.timeoutSeconds } : {}) },
+    ...(isCommand
+      ? { agentId: null, sessionTarget: "main" }
+      : effectiveAgentId
+        ? { agentId: effectiveAgentId, sessionTarget: "isolated" }
+        : {}),
   };
   if (j.delivery === 'none') {
     patch.delivery = { mode: "none" };
@@ -199,7 +214,10 @@ async function cronAdd(api: OpenClawPluginApi, job: Record<string, unknown>): Pr
     agentId?: string | null;
     sessionTarget?: "main" | "isolated";
     schedule?: { kind: "cron"; expr: string; tz?: string } | { kind: "every"; every: string } | { kind: "at"; at: string };
-    payload?: { kind: "agentTurn"; message: string } | { kind: "systemEvent"; text: string };
+    payload?:
+      | { kind: "agentTurn"; message: string; timeoutSeconds?: number }
+      | { kind: "systemEvent"; text: string }
+      | { kind: "command"; command: string; cwd?: string; timeoutSeconds?: number };
     delivery?: { mode: "announce"; channel?: string; to?: string; bestEffort?: boolean };
   };
 
@@ -239,6 +257,13 @@ async function cronAdd(api: OpenClawPluginApi, job: Record<string, unknown>): Pr
     const pk = String(payload.kind ?? "");
     if (pk === "agentTurn" && payload.message) argv.push("--message", String(payload.message));
     if (pk === "systemEvent" && payload.text) argv.push("--system-event", String(payload.text));
+    if (pk === "command" && payload.command) {
+      argv.push("--command", String(payload.command));
+      if (payload.cwd) argv.push("--command-cwd", String(payload.cwd));
+    }
+    if (typeof payload.timeoutSeconds === "number") {
+      argv.push("--timeout-seconds", String(payload.timeoutSeconds));
+    }
   }
 
   // delivery
@@ -268,16 +293,38 @@ async function cronUpdate(api: OpenClawPluginApi, jobId: string, patch: CronJobP
 
   if (patch.name) argv.push("--name", String(patch.name));
   if (patch.description) argv.push("--description", String(patch.description));
-  if (patch.cron) argv.push("--cron", String(patch.cron));
-  if (patch.every) argv.push("--every", String(patch.every));
-  if (patch.at) argv.push("--at", String(patch.at));
-  if (patch.tz) argv.push("--tz", String(patch.tz));
+
+  const schedule = patch.schedule as Record<string, unknown> | undefined;
+  if (schedule?.kind === "cron") {
+    argv.push("--cron", String(schedule.expr ?? ""));
+    if (schedule.tz) argv.push("--tz", String(schedule.tz));
+  }
+
   if (patch.agentId) argv.push("--agent", String(patch.agentId));
-  if (patch.sessionKey === null) argv.push("--clear-session-key");
-  if (patch.message) argv.push("--message", String(patch.message));
-  if (patch.systemEvent) argv.push("--system-event", String(patch.systemEvent));
-  if (patch.channel) argv.push("--channel", String(patch.channel));
-  if (patch.to) argv.push("--to", String(patch.to));
+  else if (patch.agentId === null) argv.push("--clear-agent");
+  if (patch.sessionTarget === "main" || patch.sessionTarget === "isolated") {
+    argv.push("--session", String(patch.sessionTarget));
+  }
+
+  const payload = patch.payload as Record<string, unknown> | undefined;
+  if (payload?.kind === "agentTurn" && payload.message) argv.push("--message", String(payload.message));
+  if (payload?.kind === "systemEvent" && payload.text) argv.push("--system-event", String(payload.text));
+  if (payload?.kind === "command" && payload.command) {
+    argv.push("--command", String(payload.command));
+    if (payload.cwd) argv.push("--command-cwd", String(payload.cwd));
+  }
+  if (typeof payload?.timeoutSeconds === "number") {
+    argv.push("--timeout-seconds", String(payload.timeoutSeconds));
+  }
+
+  const delivery = patch.delivery as Record<string, unknown> | undefined;
+  if (delivery?.mode === "none") argv.push("--no-deliver");
+  if (delivery?.mode === "announce") {
+    argv.push("--announce");
+    if (delivery.channel) argv.push("--channel", String(delivery.channel));
+    if (delivery.to) argv.push("--to", String(delivery.to));
+    if (delivery.bestEffort) argv.push("--best-effort-deliver");
+  }
   if (typeof patch.enabled === "boolean") argv.push(patch.enabled ? "--enable" : "--disable");
 
   const result = await api.runtime.system.runCommandWithTimeout(argv, { timeoutMs: 30_000 });
@@ -393,6 +440,8 @@ async function reconcileOneCronJob(
     channel: jj.channel ?? "last",
     to: jj.to ?? "",
     agentId: jj.agentId ?? "",
+    command: jj.command ?? "",
+    commandCwd: jj.commandCwd ?? "",
     name,
     description: jj.description ?? "",
   });

@@ -3,7 +3,9 @@ import YAML from 'yaml';
 export type CronJobSpec = {
   id: string;
   schedule: string;
-  message: string;
+  message?: string;
+  command?: string;
+  commandCwd?: string;
   name?: string;
   description?: string;
   timezone?: string;
@@ -24,6 +26,8 @@ type CronJobInput = {
   message?: unknown;
   task?: unknown;
   prompt?: unknown;
+  command?: unknown;
+  commandCwd?: unknown;
   name?: unknown;
   description?: unknown;
   timezone?: unknown;
@@ -73,15 +77,19 @@ function validateCronJobInput(j: CronJobInput): void {
   if (!id) throw new Error("cronJobs[].id is required");
   const schedule = String(j.schedule ?? "").trim();
   const message = String(j.message ?? j.task ?? j.prompt ?? "").trim();
+  const command = String(j.command ?? "").trim();
   if (!schedule) throw new Error(`cronJobs[${id}].schedule is required`);
-  if (!message) throw new Error(`cronJobs[${id}].message is required`);
+  if (!message && !command) throw new Error(`cronJobs[${id}] requires message or command`);
+  if (message && command) throw new Error(`cronJobs[${id}] cannot define both message and command`);
 }
 
 function buildCronJobSpec(j: CronJobInput, id: string): CronJobSpec {
   return {
     id,
     schedule: String(j.schedule ?? "").trim(),
-    message: String(j.message ?? j.task ?? j.prompt ?? "").trim(),
+    message: String(j.message ?? j.task ?? j.prompt ?? "").trim() || undefined,
+    command: String(j.command ?? "").trim() || undefined,
+    commandCwd: j.commandCwd != null ? String(j.commandCwd).trim() || undefined : undefined,
     name: j.name != null ? String(j.name) : undefined,
     description: j.description != null ? String(j.description) : undefined,
     timezone: j.timezone != null ? String(j.timezone) : undefined,
